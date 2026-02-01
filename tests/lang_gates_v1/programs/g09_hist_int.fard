@@ -1,0 +1,2 @@
+import("std/list") as List
+List.hist_int([2,1,2,3,2,1])

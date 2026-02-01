@@ -146,6 +146,33 @@ gate_G14_perf_floor() {
   has "$out/trace.ndjson" || return 1
 }
 
+
+gate_G6_stdlib_min_surface() {
+  out="$OUT_ROOT/g6"
+  run_prog "tests/lang_gates_v1/programs/g06_std_min_surface.fard" "$out" || return 1
+  has "$out/result.json" || return 1
+  jq -e '.result == "OK"' "$out/result.json" >/dev/null 2>/dev/null || return 1
+}
+
+gate_G8_dedupe_contract() {
+  out="$OUT_ROOT/g8"
+  run_prog "tests/lang_gates_v1/programs/g08_dedupe_sorted.fard" "$out" || return 1
+  has "$out/result.json" || return 1
+  jq -e '.result == [1,2,3,4]' "$out/result.json" >/dev/null 2>/dev/null || return 1
+}
+
+gate_G9_hist_contract() {
+  out="$OUT_ROOT/g9"
+  run_prog "tests/lang_gates_v1/programs/g09_hist_int.fard" "$out" || return 1
+  has "$out/result.json" || return 1
+  jq -e '.result == [{"count":2,"v":1},{"count":3,"v":2},{"count":1,"v":3}]' "$out/result.json" >/dev/null 2>/dev/null || return 1
+}
+
+
+
+
+
+
 run_one() {
   name="$1"
   fn="$2"
@@ -162,6 +189,9 @@ run_one "G3_lock_mismatch_diagnostics" gate_G3_lock_mismatch_diagnostics
 run_one "G4_import_cycle_diagnostics" gate_G4_import_cycle_diagnostics
 
 run_one "G5_core_value_model_eq" gate_G5_core_value_model_eq
+run_one "G6_stdlib_min_surface" gate_G6_stdlib_min_surface
+run_one "G8_dedupe_contract" gate_G8_dedupe_contract
+run_one "G9_hist_contract" gate_G9_hist_contract
 run_one "G7_sort_stability_contract" gate_G7_sort_stability_contract
 run_one "G10_grow_unfold_order" gate_G10_grow_unfold_order
 run_one "G11_result_shortcircuit" gate_G11_result_shortcircuit

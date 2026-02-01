@@ -1,0 +1,2 @@
+import("std/grow") as Grow
+Grow.unfold({i:0}, {steps:3}, fn(s){ [{i:s.i+1}] })

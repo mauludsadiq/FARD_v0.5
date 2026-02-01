@@ -1,0 +1,12 @@
+import("std/list") as List
+import("std/flow") as Flow
+import("std/grow") as Grow
+import("std/result") as Result
+
+let _a = List.sort_int([2,1])
+let _b = List.dedupe_sorted_int([1,1,2])
+let _c = Flow.pipe(1, [fn(x){x+1}, fn(x){x+1}])
+let _d = Result.andThen(Result.ok(1), fn(x){ Result.ok(x+1) })
+let _u = Grow.unfold({i:0}, {steps:3}, fn(s){ [{i:s.i+1}] })
+
+"OK"

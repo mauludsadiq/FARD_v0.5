@@ -1,0 +1,13 @@
+import("std/list") as List
+import("std/result") as Result
+import("std/flow") as Flow
+import("std/grow") as Grow
+
+let a = List.sort_int([2,1]) in
+let b = List.dedupe_sorted_int([1,1,2]) in
+let c = Result.andThen(Result.ok(1), fn(x){ Result.ok(x+1) }) in
+let d = Flow.pipe(1, [fn(x){x+1}, fn(x){x+1}]) in
+let e = Grow.unfold({i:0}, {steps:3}, fn(s){
+  if s.i == 3 then [] else [{i:s.i+1, out:s.i}]
+}) in
+"OK"

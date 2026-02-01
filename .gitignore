@@ -10,3 +10,4 @@ tests/**/out/**
 
 # mac junk
 .DS_Store
+target/

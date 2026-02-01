@@ -1,0 +1,2 @@
+import("std/list") as List
+List.sort_int([2,1])

@@ -1,0 +1,2 @@
+import("std/flow") as Flow
+Flow.pipe(1, [fn(x){x+1}, fn(x){x+1}])

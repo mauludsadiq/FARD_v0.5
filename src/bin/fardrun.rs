@@ -460,7 +460,16 @@ impl Parser {
                 items.push(Item::Fn(name, params, body));
                 continue;
             }
-            if self.eat_kw("let") {
+
+            if matches!(self.peek(), Tok::Kw(s) if s == "let") {
+                let __save = self.i;
+                if let Ok(e) = self.parse_expr() {
+                    items.push(Item::Expr(e));
+                    break;
+                }
+                self.i = __save;
+
+                self.expect_kw("let")?;
                 let name = self.expect_ident()?;
                 self.expect_sym("=")?;
                 let rhs = self.parse_expr()?;
@@ -684,6 +693,8 @@ struct Func {
 }
 #[derive(Clone, Debug)]
 enum Builtin {
+    ResultOk,
+    ResultAndThen,
     ListGet,
     ListSortByIntKey,
     GrowUnfoldTree,
@@ -696,6 +707,7 @@ enum Builtin {
     DedupeSortedInt,
     HistInt,
     Unfold,
+    FlowPipe,
 }
 
 #[derive(Clone, Debug)]
@@ -874,6 +886,46 @@ fn call_builtin(
     loader: &mut ModuleLoader,
 ) -> Result<Val> {
     match b {
+
+        Builtin::ResultOk => {
+            if args.len() != 1 { bail!("ERROR_BADARG result.ok expects 1 arg"); }
+            let mut m = BTreeMap::new();
+            m.insert("ok".to_string(), args[0].clone());
+            Ok(Val::Rec(m))
+        }
+
+        Builtin::ResultAndThen => {
+            if args.len() != 2 { bail!("ERROR_BADARG result.andThen expects 2 args"); }
+            let r = args[0].clone();
+            let f = args[1].clone();
+
+            let m = match r {
+                Val::Rec(m) => m,
+                _ => bail!("ERROR_BADARG result.andThen arg0 must be record"),
+            };
+
+            if let Some(v) = m.get("ok").cloned() {
+                call(f, vec![v], tracer, loader)
+            } else {
+                Ok(Val::Rec(m))
+            }
+        }
+
+        Builtin::FlowPipe => {
+            if args.len() != 2 {
+                bail!("ERROR_BADARG flow.pipe expects 2 args");
+            }
+            let mut acc = args[0].clone();
+            let fs = match &args[1] {
+                Val::List(xs) => xs.clone(),
+                _ => bail!("ERROR_BADARG flow.pipe arg1 must be list"),
+            };
+            for f in fs {
+                acc = call(f, vec![acc], tracer, loader)?;
+            }
+            Ok(acc)
+        }
+
         Builtin::ListGet => {
             if args.len() != 2 { bail!("ERROR_BADARG list.get expects 2 args"); }
             let xs = match &args[0] { Val::List(v) => v.clone(), _ => bail!("ERROR_BADARG list.get arg0 must be list") };
@@ -1040,9 +1092,14 @@ fn call_builtin(
                 bail!("unfold arity");
             }
             let mut seed = args[0].clone();
-            let fuel = match args[1] {
-                Val::Int(n) => n,
-                _ => bail!("unfold fuel must be int"),
+            let fuel = match &args[1] {
+                Val::Int(n) => *n,
+                Val::Rec(m) => {
+                    if let Some(Val::Int(n)) = m.get("fuel") { *n }
+                    else if let Some(Val::Int(n)) = m.get("steps") { *n }
+                    else { bail!("unfold opts must include fuel:int or steps:int"); }
+                }
+                _ => bail!("unfold opts must be record or int"),
             };
             let step = args[2].clone();
 
@@ -1053,18 +1110,47 @@ fn call_builtin(
                 match r {
                     Val::Null => break,
                     Val::Rec(m) => {
-                        let next_seed = m
-                            .get("seed")
-                            .cloned()
-                            .ok_or_else(|| anyhow!("unfold step missing seed"))?;
+                        let next_seed = if let Some(v) = m.get("seed").cloned() {
+                            v
+                        } else if let Some(v) = m.get("i").cloned() {
+                            let mut mm = BTreeMap::new();
+                            mm.insert("i".to_string(), v);
+                            Val::Rec(mm)
+                        } else {
+                            bail!("unfold step missing seed/i");
+                        };
                         let val = m
                             .get("value")
+                            .or_else(|| m.get("out"))
                             .cloned()
-                            .ok_or_else(|| anyhow!("unfold step missing value"))?;
+                            .ok_or_else(|| anyhow!("unfold step missing value/out"))?;
                         out.push(val);
                         seed = next_seed;
                     }
-                    _ => bail!("unfold step must return record or null"),
+                    Val::List(xs) => {
+                        if xs.is_empty() { break; }
+                        let m = match &xs[0] {
+                            Val::Rec(m) => m,
+                            _ => bail!("unfold step list must contain record"),
+                        };
+                        let next_seed = if let Some(v) = m.get("seed").cloned() {
+                            v
+                        } else if let Some(v) = m.get("i").cloned() {
+                            let mut mm = BTreeMap::new();
+                            mm.insert("i".to_string(), v);
+                            Val::Rec(mm)
+                        } else {
+                            bail!("unfold step missing seed/i");
+                        };
+                        let val = m
+                            .get("value")
+                            .or_else(|| m.get("out"))
+                            .cloned()
+                            .ok_or_else(|| anyhow!("unfold step missing value/out"))?;
+                        out.push(val);
+                        seed = next_seed;
+                    }
+                    _ => bail!("unfold step must return record, list, or null"),
                 }
                 k += 1;
             }
@@ -1090,7 +1176,31 @@ struct Lockfile {
 }
 impl Lockfile {
     fn load(p: &Path) -> Result<Self> {
-        let v: J = serde_json::from_slice(&fs::read(p)?)?;
+        let bytes = match fs::read(p) {
+            Ok(b) => b,
+            Err(e) => {
+                // If the program has chdir’d (e.g., into --out), a relative lock path
+                // like "fard.lock.json" will fail. Retry against the shell’s original PWD.
+                if e.kind() == std::io::ErrorKind::NotFound && !p.is_absolute() {
+                    if let Ok(pwd) = std::env::var("PWD") {
+                        let alt = std::path::Path::new(&pwd).join(p);
+                        fs::read(&alt).with_context(|| {
+                            format!(
+                                "missing lock file: {} (also tried {})",
+                                p.display(),
+                                alt.display()
+                            )
+                        })?
+                    } else {
+                        return Err(e).with_context(|| format!("missing lock file: {}", p.display()));
+                    }
+                } else {
+                    return Err(e).with_context(|| format!("missing lock file: {}", p.display()));
+                }
+            }
+        };
+        let v: J = serde_json::from_slice(&bytes)?;
+let v: J = serde_json::from_slice(&bytes)?;
         let mut modules = HashMap::new();
         if let Some(ms) = v.get("modules").and_then(|x| x.as_object()) {
             for (k, vv) in ms {
@@ -1126,7 +1236,9 @@ impl ModuleLoader {
     }
 
     fn eval_main(&mut self, main_path: &Path, tracer: &mut Tracer) -> Result<Val> {
-        let src = fs::read_to_string(main_path)?;
+        
+           let src = fs::read_to_string(main_path)
+              .with_context(|| format!("missing main program file: {}", main_path.display()))?;
         let mut p = Parser::from_src(&src)?;
         let items = p.parse_module()?;
         let mut env = base_env();
@@ -1251,12 +1363,25 @@ impl ModuleLoader {
                 m.insert("hist_int".to_string(), Val::Builtin(Builtin::HistInt));
                 Ok(m)
             }
-            "std/grow" => {
+            
+            "std/result" => {
+                let mut m = BTreeMap::new();
+                m.insert("ok".to_string(), Val::Builtin(Builtin::ResultOk));
+                m.insert("andThen".to_string(), Val::Builtin(Builtin::ResultAndThen));
+                Ok(m)
+            }
+
+"std/grow" => {
                 let mut m = BTreeMap::new();
                 m.insert("unfold_tree".to_string(), Val::Builtin(Builtin::GrowUnfoldTree));
                 m.insert("unfold".to_string(), Val::Builtin(Builtin::Unfold));
                 Ok(m)
             }
+            "std/flow" => {
+                let mut m = BTreeMap::new();
+                m.insert("pipe".to_string(), Val::Builtin(Builtin::FlowPipe));
+                Ok(m)
+            },
             _ => bail!("unknown std module: {name}"),
         }
     }

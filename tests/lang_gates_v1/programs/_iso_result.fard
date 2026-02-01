@@ -1,0 +1,2 @@
+import("std/result") as Result
+Result.andThen(Result.ok(1), fn(x){ Result.ok(x+1) })
