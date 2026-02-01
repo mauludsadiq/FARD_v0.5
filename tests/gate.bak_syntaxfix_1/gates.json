@@ -1,0 +1,60 @@
+{
+  "schema": "fard_language_gate_v0_5",
+  "gates": [
+    { "id": "G01_core_eval", "name": "G01_core_eval",
+      "kind": "run_expect_result",
+      "program": "tests/gate/programs/g01_core_eval.fard",
+      "expect_result": 144
+    },
+    { "id": "G02_modules_export_import", "name": "G02_modules_export_import",
+      "kind": "run_expect_result",
+      "program": "tests/gate/programs/g02_modules_export_import/main.fard",
+      "expect_result": 75
+    },
+    { "id": "G03_trace_parseable", "name": "G03_trace_parseable",
+      "kind":"run_expect_trace_parseable",
+      "program": "tests/gate/programs/g03_trace_parseable.fard"
+    },
+    { "id": "G04_std_list_sort_int", "name": "G04_std_list_sort_int",
+      "kind": "run_expect_result",
+      "program": "tests/gate/programs/g03_std_list_sort_int.fard",
+      "expect_result": [1, 1, 2, 3]
+    },
+    { "id": "G05_std_list_dedupe_sorted_int", "name": "G05_std_list_dedupe_sorted_int",
+      "kind": "run_expect_result",
+      "program": "tests/gate/programs/g04_std_list_dedupe_sorted_int.fard",
+      "expect_result": [1, 2, 3, 5]
+    },
+    { "id": "G06_std_list_hist_int", "name": "G06_std_list_hist_int",
+      "kind": "run_expect_result",
+      "program": "tests/gate/programs/g05_std_list_hist_int.fard",
+      "expect_result": [
+        {"v": 0, "count": 1},
+        {"v": 5, "count": 2},
+        {"v": 10, "count": 3}
+      ]
+    },
+    { "id": "G07_std_grow_unfold", "name": "G07_std_grow_unfold",
+      "kind": "run_expect_result",
+      "program": "tests/gate/programs/g06_std_grow_unfold.fard",
+      "expect_result": [0,1,2,3,4,5,6,7,8,9]
+    },
+    { "id": "G08_determinism_trace_bytes", "name": "G08_determinism_trace_bytes",
+      "kind":"determinism_trace",
+      "program": "tests/gate/programs/g07_determinism_twice_same_trace.fard"
+    },
+    { "id": "G09_import_cycle_rejected", "name": "G09_import_cycle_rejected",
+      
+"kind":"run_expect_failure_regex","expect_exit_nonzero":true,
+      "program": "tests/gate/programs/g08_import_cycle/main.fard",
+      "expect_stderr_regex":["(?i)(cycle|import_cycle|circular)"]
+    },
+    { "id": "G10_lock_mismatch_rejected", "name": "G10_lock_mismatch_rejected",
+      
+"kind":"run_expect_failure_regex","expect_exit_nonzero":true,
+      "program": "tests/gate/programs/g09_lock_mismatch/main.fard",
+      "lockfile": "tests/gate/programs/g09_lock_mismatch/fard.lock.json",
+      "expect_stderr_regex":["(?i)(lock_mismatch|lock mismatch|LOCK_MISMATCH)"]
+    }
+  ]
+}

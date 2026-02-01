@@ -1,0 +1,6 @@
+import("std/grow") as Grow
+
+fn step(s) {
+{ seed: { i: s.i + 1 }, value: s.i }}
+
+let xs = Grow.unfold({ i: 0 }, 10, step)let _ = emit({stage: "unfold", len: 10})xs

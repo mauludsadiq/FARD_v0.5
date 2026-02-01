@@ -1,0 +1,10 @@
+config_version = "0.5"
+
+[runner]
+cmd = ["cargo","run","--quiet","--bin","fardrun","--"]
+args = []
+
+[artifacts]
+lock_relpath = "lock.json"
+trace_relpath = "trace.ndjson"
+result_relpath = "result.json"

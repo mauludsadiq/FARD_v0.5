@@ -1,0 +1,6 @@
+import("lib/math") as M
+
+let a = M.pi * M.square(5) in
+let _ = emit({stage: "modules", a: a}) in
+
+a

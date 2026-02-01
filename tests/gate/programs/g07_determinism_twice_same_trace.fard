@@ -1,0 +1,4 @@
+import("std/list") as List
+
+let xs = [9, 1, 9, 2, 8, 2]let ys = List.sort_int(xs)let zs = List.dedupe_sorted_int(ys)let _ = emit({stage: "determinism", xs: xs, ys: ys, zs: zs})
+{ ys: ys, zs: zs }

@@ -1,0 +1,6 @@
+import("std/list") as List
+
+let xs = [3, 1, 2, 1] in
+let ys = List.sort_int(xs) in
+let _ = emit({stage: "sort_int", in: xs, out: ys}) in
+ys

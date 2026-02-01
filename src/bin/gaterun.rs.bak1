@@ -1,0 +1,249 @@
+use anyhow::{bail, Context, Result};
+use clap::Parser;
+use serde::Deserialize;
+use serde_json::Value;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use fard_v0_5_language_gate::{
+    extract_result_from_trace, extract_result_value, load_config, matches_any_regex,
+    parse_ndjson_lines, run_fard, sha256_file_hex,
+};
+
+#[derive(Parser, Debug)]
+#[command(about = "Run the FARD v0.5 language-gate suite (pass/fail)")]
+struct Args {
+    /// Path to fard_gate.toml
+    #[arg(long, default_value = "fard_gate.toml")]
+    config: PathBuf,
+
+    /// Path to gates.json
+    #[arg(long, default_value = "tests/gate/gates.json")]
+    gates: PathBuf,
+
+    /// Directory for per-gate run outputs
+    #[arg(long, default_value = "out/gates")]
+    out_dir: PathBuf,
+
+    /// If set, keep prior outputs; otherwise they are cleared each run.
+    #[arg(long)]
+    keep: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct GateFile {
+    schema: String,
+    gates: Vec<Gate>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct Gate {
+    id: String,
+    kind: String,
+    program: String,
+
+    #[serde(default)]
+    expect_result: Option<Value>,
+
+    #[serde(default)]
+    expect_exit_nonzero: Option<bool>,
+
+    #[serde(default)]
+    expect_stderr_regex: Vec<String>,
+
+    #[serde(default)]
+    lockfile: Option<String>,
+}
+
+fn main() -> Result<()> {
+    let args = Args::parse();
+    let cfg = load_config(&args.config)?;
+
+    let gates_text = fs::read_to_string(&args.gates)
+        .with_context(|| format!("read gates file {:?}", &args.gates))?;
+    let gatefile: GateFile = serde_json::from_str(&gates_text)
+        .with_context(|| format!("parse JSON {:?}", &args.gates))?;
+
+    if gatefile.schema != "fard_language_gate_v0_5" {
+        bail!("unexpected gates schema: {}", gatefile.schema);
+    }
+
+    if !args.keep {
+        let _ = fs::remove_dir_all(&args.out_dir);
+    }
+    fs::create_dir_all(&args.out_dir)?;
+
+    let mut passed = 0usize;
+    let mut failed = 0usize;
+
+    for gate in gatefile.gates {
+        let ok = run_gate(&cfg, &gate, &args.out_dir)?;
+        if ok {
+            passed += 1;
+        } else {
+            failed += 1;
+        }
+    }
+
+    println!("\nGATE_SUMMARY passed={} failed={}", passed, failed);
+    if failed > 0 {
+        bail!("LANGUAGE_GATE_FAILED");
+    }
+    println!("LANGUAGE_GATE_PASSED");
+    Ok(())
+}
+
+fn run_gate(cfg: &fard_v0_5_language_gate::Config, gate: &Gate, out_root: &Path) -> Result<bool> {
+    println!("\n=== {} ===", gate.id);
+
+    let program_path = PathBuf::from(&gate.program);
+    let out_dir = out_root.join(&gate.id);
+    fs::create_dir_all(&out_dir)?;
+
+    match gate.kind.as_str() {
+        "trace_parse" => {
+            let r = run_once(cfg, &program_path, &out_dir, gate.lockfile.as_deref())?;
+            if r.status_code != 0 {
+                println!("FAIL: exit code {}", r.status_code);
+                println!("stderr:\n{}", r.stderr);
+                return Ok(false);
+            }
+            if cfg.gates.require_trace_file {
+                let trace_path = out_dir.join(&cfg.artifacts.trace_relpath);
+                if !trace_path.exists() {
+                    println!("FAIL: missing trace file {:?}", trace_path);
+                    return Ok(false);
+                }
+                let _events = parse_ndjson_lines(&trace_path)?;
+            }
+            println!("PASS");
+            Ok(true)
+        }
+
+        "run_expect_result" => {
+            let r = run_once(cfg, &program_path, &out_dir, gate.lockfile.as_deref())?;
+            if r.status_code != 0 {
+                println!("FAIL: exit code {}", r.status_code);
+                println!("stderr:\n{}", r.stderr);
+                return Ok(false);
+            }
+            let expected = gate
+                .expect_result
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("expect_result required"))?;
+
+            let got = read_result(cfg, &out_dir)?;
+            if got != expected {
+                println!(
+                    "FAIL: result mismatch\nexpected={:?}\n     got={:?}",
+                    expected, got
+                );
+                return Ok(false);
+            }
+            println!("PASS");
+            Ok(true)
+        }
+
+        "determinism_trace" => {
+            let run1_dir = out_dir.join("run1");
+            let run2_dir = out_dir.join("run2");
+            fs::create_dir_all(&run1_dir)?;
+            fs::create_dir_all(&run2_dir)?;
+
+            let r1 = run_once(cfg, &program_path, &run1_dir, gate.lockfile.as_deref())?;
+            let r2 = run_once(cfg, &program_path, &run2_dir, gate.lockfile.as_deref())?;
+
+            if r1.status_code != 0 || r2.status_code != 0 {
+                println!(
+                    "FAIL: nonzero status (run1={}, run2={})",
+                    r1.status_code, r2.status_code
+                );
+                println!("stderr run1:\n{}", r1.stderr);
+                println!("stderr run2:\n{}", r2.stderr);
+                return Ok(false);
+            }
+
+            let t1 = run1_dir.join(&cfg.artifacts.trace_relpath);
+            let t2 = run2_dir.join(&cfg.artifacts.trace_relpath);
+            if !t1.exists() || !t2.exists() {
+                println!("FAIL: missing trace file(s)");
+                return Ok(false);
+            }
+
+            let h1 = sha256_file_hex(&t1)?;
+            let h2 = sha256_file_hex(&t2)?;
+            if h1 != h2 {
+                println!("FAIL: trace bytes differ\nrun1_sha256={h1}\nrun2_sha256={h2}");
+                return Ok(false);
+            }
+            println!("PASS");
+            Ok(true)
+        }
+
+        "run_expect_failure_regex" => {
+            let expect_nonzero = gate.expect_exit_nonzero.unwrap_or(true);
+            let r = run_once(cfg, &program_path, &out_dir, gate.lockfile.as_deref())?;
+            let nonzero = r.status_code != 0;
+            if expect_nonzero && !nonzero {
+                println!("FAIL: expected nonzero exit but got 0");
+                println!("stdout:\n{}", r.stdout);
+                return Ok(false);
+            }
+            if !gate.expect_stderr_regex.is_empty() {
+                if matches_any_regex(&r.stderr, &gate.expect_stderr_regex).is_err() {
+                    println!("FAIL: stderr did not match any regex");
+                    println!("stderr:\n{}", r.stderr);
+                    return Ok(false);
+                }
+            }
+            println!("PASS");
+            Ok(true)
+        }
+
+        other => {
+            println!("FAIL: unknown gate kind: {other}");
+            Ok(false)
+        }
+    }
+}
+
+struct RunOut {
+    status_code: i32,
+    stdout: String,
+    stderr: String,
+}
+
+fn run_once(
+    cfg: &fard_v0_5_language_gate::Config,
+    program_path: &Path,
+    out_dir: &Path,
+    lockfile: Option<&str>,
+) -> Result<RunOut> {
+    let lock_opt = lockfile.map(PathBuf::from);
+    let out = run_fard(cfg, program_path, out_dir, lock_opt.as_deref())?;
+    Ok(RunOut {
+        status_code: out.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&out.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&out.stderr).to_string(),
+    })
+}
+
+fn read_result(cfg: &fard_v0_5_language_gate::Config, out_dir: &Path) -> Result<Value> {
+    // Preferred: result.json
+    let result_path = out_dir.join(&cfg.artifacts.result_relpath);
+    if result_path.exists() {
+        let v = fard_v0_5_language_gate::read_json_value(&result_path)?;
+        return Ok(extract_result_value(&v));
+    }
+
+    // Fallback: parse trace and look for a result event.
+    let trace_path = out_dir.join(&cfg.artifacts.trace_relpath);
+    if trace_path.exists() {
+        let events = parse_ndjson_lines(&trace_path)?;
+        if let Some(v) = extract_result_from_trace(&events) {
+            return Ok(v);
+        }
+    }
+
+    bail!("no result.json and could not infer result from trace");
+}

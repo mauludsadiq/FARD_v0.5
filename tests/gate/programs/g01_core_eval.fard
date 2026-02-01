@@ -1,0 +1,8 @@
+
+let add_one = fn(x) { x + 1 }let double = fn(x) { x * 2 }let square = fn(x) { x * x }
+let v0 = 5let v1 = add_one(v0)let v2 = double(v1)let v3 = square(v2)
+let rec = { stage: "core_eval", value: v3 }let _ = emit(rec)
+let xs = [1, 2, 3]let _ = emit({ stage: "list_literal", len: len(xs) })
+if rec.value == 144 then rec.value else 0
+
+if rec.value == 144 then rec.value else 0

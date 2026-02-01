@@ -1,0 +1,24 @@
+# Gate G01: Core language surface works (let/fn/call/if/records/lists/dot-get)
+
+let add_one = fn(x) { x + 1 } in
+let double = fn(x) { x * 2 } in
+let square = fn(x) { x * x } in
+
+let v0 = 5 in
+let v1 = add_one(v0) in
+let v2 = double(v1) in
+let v3 = square(v2) in
+
+# record + dot-get (implemented as get(x,"k") at eval level)
+let rec = { stage: "core_eval", value: v3 } in
+let _ = emit(rec) in
+
+# list literal
+let xs = [1, 2, 3] in
+let _ = emit({ stage: "list_literal", len: len(xs) }) in
+
+# if/then/else
+if rec.value == 144 then rec.value else 0
+
+# if/then/else
+if rec.value == 144 then rec.value else 0

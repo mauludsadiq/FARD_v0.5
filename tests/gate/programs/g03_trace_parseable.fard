@@ -1,0 +1,2 @@
+
+let _ = emit({stage: "trace", ok: true})1

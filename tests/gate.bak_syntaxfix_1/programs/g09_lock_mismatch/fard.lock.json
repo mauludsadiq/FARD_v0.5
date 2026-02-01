@@ -1,0 +1,7 @@
+{
+  "lock_version": "fard_lock_v0_5",
+  "root": "tests/gate/programs/g09_lock_mismatch/main.fard",
+  "modules": {
+    "std/list": { "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000" }
+  }
+}
