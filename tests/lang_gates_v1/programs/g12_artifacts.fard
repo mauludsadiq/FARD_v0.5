@@ -1,0 +1,3 @@
+let bytes = import_artifact("tests/lang_gates_v1/data/sample.bin")
+emit_artifact("output.bin", bytes)
+"OK"

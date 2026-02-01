@@ -1,0 +1,2 @@
+import("std/list") as List
+if true then 0 else List.get([1], 10)

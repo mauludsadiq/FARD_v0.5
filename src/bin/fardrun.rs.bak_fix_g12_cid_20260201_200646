@@ -139,14 +139,7 @@ impl Tracer {
     fn artifact_out(&mut self, name: &str, cid: &str, bytes: &[u8]) -> Result<()> {
         let outp = self.out_dir.join("artifacts").join(name);
         fs::write(&outp, bytes)?;
-        {
-        let cid_path = if let Some(ext) = outp.extension().and_then(|e| e.to_str()) {
-            outp.with_extension(format!("{ext}.cid"))
-        } else {
-            outp.with_extension("cid")
-        };
-        fs::write(&cid_path, format!("{}\n", cid))?;
-    }
+        fs::write(outp.with_extension(format!("{}cid", if outp.extension().is_some() { "." } else { "" })), format!("{}\n", cid))?;
         let mut m = Map::new();
         m.insert("t".to_string(), J::String("artifact_out".to_string()));
         m.insert("name".to_string(), J::String(name.to_string()));

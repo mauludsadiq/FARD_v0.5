@@ -1,0 +1,4 @@
+import("std/list") as List
+let xs = [5,4,3,2,1,5,4,3,2,1]
+let ys = List.sort_int(xs)
+List.hist_int(ys)

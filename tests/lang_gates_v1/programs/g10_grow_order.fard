@@ -1,0 +1,7 @@
+import("std/grow") as Grow
+Grow.unfold_tree({n:0}, {depth:2}, fn(s){
+  if s.n == 0 then [{n:1},{n:2}] else
+  if s.n == 1 then [{n:2},{n:3}] else
+  if s.n == 2 then [{n:3},{n:4}] else
+  []
+})

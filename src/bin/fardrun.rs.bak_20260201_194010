@@ -139,14 +139,7 @@ impl Tracer {
     fn artifact_out(&mut self, name: &str, cid: &str, bytes: &[u8]) -> Result<()> {
         let outp = self.out_dir.join("artifacts").join(name);
         fs::write(&outp, bytes)?;
-        {
-        let cid_path = if let Some(ext) = outp.extension().and_then(|e| e.to_str()) {
-            outp.with_extension(format!("{ext}.cid"))
-        } else {
-            outp.with_extension("cid")
-        };
-        fs::write(&cid_path, format!("{}\n", cid))?;
-    }
+        fs::write(outp.with_extension(format!("{}cid", if outp.extension().is_some() { "." } else { "" })), format!("{}\n", cid))?;
         let mut m = Map::new();
         m.insert("t".to_string(), J::String("artifact_out".to_string()));
         m.insert("name".to_string(), J::String(name.to_string()));
@@ -1241,8 +1234,6 @@ impl ModuleLoader {
         match name {
             "std/list" => {
                 let mut m = BTreeMap::new();
-                m.insert("get".to_string(), Val::Builtin(Builtin::ListGet));
-                m.insert("sort_by_int_key".to_string(), Val::Builtin(Builtin::ListSortByIntKey));
                 m.insert("sort_int".to_string(), Val::Builtin(Builtin::SortInt));
                 m.insert(
                     "dedupe_sorted_int".to_string(),
@@ -1272,17 +1263,7 @@ fn base_env() -> Env {
     let mut e = Env::new();
     e.set("emit".to_string(), Val::Builtin(Builtin::Emit));
     e.set("len".to_string(), Val::Builtin(Builtin::Len));
-    e.set("import_artifact".to_string(), Val::Builtin(Builtin::ImportArtifact));
-    e.set("emit_artifact".to_string(), Val::Builtin(Builtin::EmitArtifact));
-    e.set("import_artifact".to_string(), Val::Builtin(Builtin::ImportArtifact));
-    e.set("emit_artifact".to_string(), Val::Builtin(Builtin::EmitArtifact));
     e
-}
-
-fn sha256_bytes(bytes: &[u8]) -> String {
-    let mut h = Sha256::new();
-    h.update(bytes);
-    format!("sha256:{}", hex::encode(h.finalize()))
 }
 
 fn file_digest(p: &Path) -> Result<String> {
