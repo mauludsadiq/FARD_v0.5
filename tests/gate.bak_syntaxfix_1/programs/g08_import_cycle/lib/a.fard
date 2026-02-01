@@ -1,3 +1,0 @@
-import("lib/b") as B
-let a = 1
-export { a }

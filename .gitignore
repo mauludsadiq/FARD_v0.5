@@ -1,22 +1,12 @@
-# --- Rust / Cargo ---
-/target/
-**/target/
-**/*.rs.bk
+# test outputs
+tests/**/out/
+tests/**/out/**
 
-# Cargo.lock:
-# - Keep for binaries
-# - Ignore for libs
-# Comment out ONE of the next two lines depending on your policy
-#Cargo.lock
-!Cargo.lock
-
-# --- OS / editor ---
-.DS_Store
-.AppleDouble
-.LSOverride
-*.swp
-*.swo
+# local backups / scratch
+*.bak
+*.bak_*
 *.tmp
-*~
-.idea/
-.vscode/
+*.swp
+
+# mac junk
+.DS_Store

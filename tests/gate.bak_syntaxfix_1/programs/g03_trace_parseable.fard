@@ -1,4 +1,0 @@
-# Gate G03: trace.ndjson exists and each line is valid JSON
-
-let _ = emit({stage: "trace", ok: true}) in
-1

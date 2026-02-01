@@ -1,7 +1,0 @@
-import("std/grow") as Grow
-
-fn step(s) {
-  if s.i <= 9 then { seed: { i: s.i + 1 }, value: s.i } else null
-}
-
-let xs = Grow.unfold({ i: 0 }, 100, step)let _ = emit({stage: "unfold", len: 10})xs

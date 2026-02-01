@@ -1,6 +1,0 @@
-import("std/list") as List
-
-let xs = [5, 5, 10, 0, 10, 10] in
-let h = List.hist_int(xs) in
-let _ = emit({stage: "hist_int", hist: h}) in
-h

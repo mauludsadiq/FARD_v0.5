@@ -1,7 +1,0 @@
-import("std/list") as List
-
-let xs = [3, 1, 2, 1, 2, 5, 5] in
-let ys = List.sort_int(xs) in
-let zs = List.dedupe_sorted_int(ys) in
-let _ = emit({stage: "dedupe_sorted_int", sorted: ys, uniq: zs}) in
-zs

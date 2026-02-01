@@ -1,6 +1,0 @@
-# Gate G02: local module export/import + namespace access
-
-let pi = 3 in
-fn square(x) { x * x }
-
-export { pi, square }
