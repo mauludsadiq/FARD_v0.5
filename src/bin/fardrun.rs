@@ -1281,8 +1281,8 @@ impl Lockfile {
             }
         };
         let v: J = serde_json::from_slice(&bytes)?;
-        let mut modules = HashMap::new();
-        let mut modules = HashMap::new();
+        let mut modules: HashMap<String, String> = HashMap::new();
+        let mut modules: HashMap<String, String> = HashMap::new();
         if let Some(ms) = v.get("modules").and_then(|x| x.as_object()) {
             for (k, vv) in ms {
                 let dig = vv
