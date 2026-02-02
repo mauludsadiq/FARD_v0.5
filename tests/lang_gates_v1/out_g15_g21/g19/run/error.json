@@ -1,0 +1,5 @@
+{
+  "code": "ERROR_BUNDLE_VERIFY",
+  "message": "entry missing in manifest",
+  "ok": false
+}

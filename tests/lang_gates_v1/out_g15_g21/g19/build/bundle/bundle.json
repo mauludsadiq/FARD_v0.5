@@ -1,0 +1,17 @@
+{
+  "bundle_digest": "sha256:6e1eca6a1fa7b837e1d1379ce27326cb599e73336603a7343ce61130bfff17bc",
+  "entry":"src/missing.fard",
+  "files": [
+    {
+      "len": 23,
+      "path": "lib/util.fard",
+      "sha256": "sha256:f89f201deb504318127c79516c7c1e53fbf2417f2a1352f5b8974889196de9ec"
+    },
+    {
+      "len": 3,
+      "path": "src/main.fard",
+      "sha256": "sha256:084c799cd551dd1d8d5c5f9a5d593b2e931f5e36122ee5c793c1d08a19839cc0"
+    }
+  ],
+  "schema": "fard.bundle.v0_1"
+}
