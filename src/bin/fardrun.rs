@@ -7,13 +7,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 fn main() -> Result<()> {
-  let args: Vec<String> = std::env::args().collect();
-  if args.len() >= 2 && (args[1] == "--version" || args[1] == "-V") {
-    println!("fard_runtime_version={}", env!("CARGO_PKG_VERSION"));
-    println!("trace_format_version=0.1.0");
-    println!("stdlib_root_cid=sha256:dev");
-    return Ok(());
-  }
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() >= 2 && (args[1] == "--version" || args[1] == "-V") {
+        println!("fard_runtime_version={}", env!("CARGO_PKG_VERSION"));
+        println!("trace_format_version=0.1.0");
+        println!("stdlib_root_cid=sha256:dev");
+        return Ok(());
+    }
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(|s| s.as_str()) == Some("run") {
         args.remove(0);
@@ -72,19 +72,30 @@ fn main() -> Result<()> {
     }
 
     let v = match loader.eval_main(&program, &mut tracer) {
-            Ok(v) => v,
-            Err(e) => {
-                let msg0 = format!("{}", e);
-                let code = msg0.split_whitespace().find(|w| w.starts_with("ERROR_" )).unwrap_or("ERROR_RUNTIME").to_string();
-                let msg = if msg0.contains("ERROR_") { msg0 } else { format!("ERROR_RUNTIME {}", msg0) };
-                let mut em = Map::new();
-                em.insert("code".to_string(), J::String(code.clone()));
-                em.insert("message".to_string(), J::String(msg.clone()));
-                fs::write(out_dir.join("error.json"), serde_json::to_vec(&J::Object(em))?)?;
-                tracer.error_event(&code, &msg).ok();
-                bail!(msg);
-            }
-        };
+        Ok(v) => v,
+        Err(e) => {
+            let msg0 = format!("{}", e);
+            let code = msg0
+                .split_whitespace()
+                .find(|w| w.starts_with("ERROR_"))
+                .unwrap_or("ERROR_RUNTIME")
+                .to_string();
+            let msg = if msg0.contains("ERROR_") {
+                msg0
+            } else {
+                format!("ERROR_RUNTIME {}", msg0)
+            };
+            let mut em = Map::new();
+            em.insert("code".to_string(), J::String(code.clone()));
+            em.insert("message".to_string(), J::String(msg.clone()));
+            fs::write(
+                out_dir.join("error.json"),
+                serde_json::to_vec(&J::Object(em))?,
+            )?;
+            tracer.error_event(&code, &msg).ok();
+            bail!(msg);
+        }
+    };
     let j = v.to_json().context("final result must be jsonable")?;
     let mut root = Map::new();
     root.insert("result".to_string(), j);
@@ -101,7 +112,10 @@ impl Tracer {
         fs::create_dir_all(out_dir).ok();
         fs::create_dir_all(out_dir.join("artifacts")).ok();
         let w = fs::File::create(path)?;
-        Ok(Self { w, out_dir: out_dir.to_path_buf() })
+        Ok(Self {
+            w,
+            out_dir: out_dir.to_path_buf(),
+        })
     }
 
     fn emit(&mut self, v: &J) -> Result<()> {
@@ -140,13 +154,13 @@ impl Tracer {
         let outp = self.out_dir.join("artifacts").join(name);
         fs::write(&outp, bytes)?;
         {
-        let cid_path = if let Some(ext) = outp.extension().and_then(|e| e.to_str()) {
-            outp.with_extension(format!("{ext}.cid"))
-        } else {
-            outp.with_extension("cid")
-        };
-        fs::write(&cid_path, format!("{}\n", cid))?;
-    }
+            let cid_path = if let Some(ext) = outp.extension().and_then(|e| e.to_str()) {
+                outp.with_extension(format!("{ext}.cid"))
+            } else {
+                outp.with_extension("cid")
+            };
+            fs::write(&cid_path, format!("{}\n", cid))?;
+        }
         let mut m = Map::new();
         m.insert("t".to_string(), J::String("artifact_out".to_string()));
         m.insert("name".to_string(), J::String(name.to_string()));
@@ -886,16 +900,19 @@ fn call_builtin(
     loader: &mut ModuleLoader,
 ) -> Result<Val> {
     match b {
-
         Builtin::ResultOk => {
-            if args.len() != 1 { bail!("ERROR_BADARG result.ok expects 1 arg"); }
+            if args.len() != 1 {
+                bail!("ERROR_BADARG result.ok expects 1 arg");
+            }
             let mut m = BTreeMap::new();
             m.insert("ok".to_string(), args[0].clone());
             Ok(Val::Rec(m))
         }
 
         Builtin::ResultAndThen => {
-            if args.len() != 2 { bail!("ERROR_BADARG result.andThen expects 2 args"); }
+            if args.len() != 2 {
+                bail!("ERROR_BADARG result.andThen expects 2 args");
+            }
             let r = args[0].clone();
             let f = args[1].clone();
 
@@ -927,59 +944,103 @@ fn call_builtin(
         }
 
         Builtin::ListGet => {
-            if args.len() != 2 { bail!("ERROR_BADARG list.get expects 2 args"); }
-            let xs = match &args[0] { Val::List(v) => v.clone(), _ => bail!("ERROR_BADARG list.get arg0 must be list") };
-            let i = match &args[1] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG list.get arg1 must be int") };
-            if i < 0 { bail!("ERROR_OOB list index out of bounds"); }
+            if args.len() != 2 {
+                bail!("ERROR_BADARG list.get expects 2 args");
+            }
+            let xs = match &args[0] {
+                Val::List(v) => v.clone(),
+                _ => bail!("ERROR_BADARG list.get arg0 must be list"),
+            };
+            let i = match &args[1] {
+                Val::Int(n) => *n,
+                _ => bail!("ERROR_BADARG list.get arg1 must be int"),
+            };
+            if i < 0 {
+                bail!("ERROR_OOB list index out of bounds");
+            }
             let iu = i as usize;
-            if iu >= xs.len() { bail!("ERROR_OOB list index out of bounds"); }
+            if iu >= xs.len() {
+                bail!("ERROR_OOB list index out of bounds");
+            }
             return Ok(xs[iu].clone());
         }
 
         Builtin::ListSortByIntKey => {
-            if args.len() != 2 { bail!("ERROR_BADARG sort_by_int_key expects 2 args"); }
-            let xs = match &args[0] { Val::List(v) => v.clone(), _ => bail!("ERROR_BADARG sort_by_int_key arg0 must be list") };
+            if args.len() != 2 {
+                bail!("ERROR_BADARG sort_by_int_key expects 2 args");
+            }
+            let xs = match &args[0] {
+                Val::List(v) => v.clone(),
+                _ => bail!("ERROR_BADARG sort_by_int_key arg0 must be list"),
+            };
             let mut keyed: Vec<(i64, usize, Val)> = Vec::new();
             for (idx, it) in xs.into_iter().enumerate() {
                 let k = match &it {
-                    Val::Rec(m) => match m.get("k") { Some(Val::Int(n)) => *n, _ => bail!("ERROR_BADARG sort_by_int_key expects rec.k int") },
-                    _ => bail!("ERROR_BADARG sort_by_int_key expects records")
+                    Val::Rec(m) => match m.get("k") {
+                        Some(Val::Int(n)) => *n,
+                        _ => bail!("ERROR_BADARG sort_by_int_key expects rec.k int"),
+                    },
+                    _ => bail!("ERROR_BADARG sort_by_int_key expects records"),
                 };
                 keyed.push((k, idx, it));
             }
-            keyed.sort_by(|a,b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+            keyed.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
             let out: Vec<Val> = keyed.into_iter().map(|t| t.2).collect();
             return Ok(Val::List(out));
         }
 
         Builtin::GrowUnfoldTree => {
-            if args.len() < 2 { bail!("ERROR_BADARG unfold_tree expects at least 2 args"); }
+            if args.len() < 2 {
+                bail!("ERROR_BADARG unfold_tree expects at least 2 args");
+            }
             let seed = args[0].clone();
             let depth = match &args[1] {
-                Val::Rec(m) => match m.get("depth") { Some(Val::Int(n)) => *n, _ => 2 },
-                _ => 2
+                Val::Rec(m) => match m.get("depth") {
+                    Some(Val::Int(n)) => *n,
+                    _ => 2,
+                },
+                _ => 2,
             };
-            let mut q: std::collections::VecDeque<(Val,i64)> = std::collections::VecDeque::new();
+            let mut q: std::collections::VecDeque<(Val, i64)> = std::collections::VecDeque::new();
             q.push_back((seed.clone(), 0));
             while let Some((node, d)) = q.pop_front() {
                 tracer.grow_node(&node)?;
-                if d >= depth { continue; }
+                if d >= depth {
+                    continue;
+                }
                 let n = match &node {
-                    Val::Rec(m) => match m.get("n") { Some(Val::Int(x)) => *x, _ => 0 },
-                    _ => 0
+                    Val::Rec(m) => match m.get("n") {
+                        Some(Val::Int(x)) => *x,
+                        _ => 0,
+                    },
+                    _ => 0,
                 };
-                let c1 = Val::Rec({ let mut m = BTreeMap::new(); m.insert("n".to_string(), Val::Int(n+1)); m });
-                let c2 = Val::Rec({ let mut m = BTreeMap::new(); m.insert("n".to_string(), Val::Int(n+2)); m });
-                q.push_back((c1, d+1));
-                q.push_back((c2, d+1));
+                let c1 = Val::Rec({
+                    let mut m = BTreeMap::new();
+                    m.insert("n".to_string(), Val::Int(n + 1));
+                    m
+                });
+                let c2 = Val::Rec({
+                    let mut m = BTreeMap::new();
+                    m.insert("n".to_string(), Val::Int(n + 2));
+                    m
+                });
+                q.push_back((c1, d + 1));
+                q.push_back((c2, d + 1));
             }
             return Ok(Val::Null);
         }
 
         Builtin::ImportArtifact => {
-            if args.len() != 1 { bail!("ERROR_BADARG import_artifact expects 1 arg"); }
-            let p = match &args[0] { Val::Str(s) => s.clone(), _ => bail!("ERROR_BADARG import_artifact arg must be string") };
-            let bytes = fs::read(&p).with_context(|| format!("ERROR_IO cannot read artifact: {p}"))?;
+            if args.len() != 1 {
+                bail!("ERROR_BADARG import_artifact expects 1 arg");
+            }
+            let p = match &args[0] {
+                Val::Str(s) => s.clone(),
+                _ => bail!("ERROR_BADARG import_artifact arg must be string"),
+            };
+            let bytes =
+                fs::read(&p).with_context(|| format!("ERROR_IO cannot read artifact: {p}"))?;
             let cid = sha256_bytes(&bytes);
             tracer.artifact_in(&p, &cid)?;
             let out: Vec<Val> = bytes.into_iter().map(|b| Val::Int(b as i64)).collect();
@@ -987,13 +1048,26 @@ fn call_builtin(
         }
 
         Builtin::EmitArtifact => {
-            if args.len() != 2 { bail!("ERROR_BADARG emit_artifact expects 2 args"); }
-            let name = match &args[0] { Val::Str(s) => s.clone(), _ => bail!("ERROR_BADARG emit_artifact name must be string") };
-            let xs = match &args[1] { Val::List(v) => v.clone(), _ => bail!("ERROR_BADARG emit_artifact bytes must be list") };
+            if args.len() != 2 {
+                bail!("ERROR_BADARG emit_artifact expects 2 args");
+            }
+            let name = match &args[0] {
+                Val::Str(s) => s.clone(),
+                _ => bail!("ERROR_BADARG emit_artifact name must be string"),
+            };
+            let xs = match &args[1] {
+                Val::List(v) => v.clone(),
+                _ => bail!("ERROR_BADARG emit_artifact bytes must be list"),
+            };
             let mut bytes: Vec<u8> = Vec::with_capacity(xs.len());
             for v in xs {
-                let n = match v { Val::Int(i) => i, _ => bail!("ERROR_BADARG emit_artifact bytes must be ints") };
-                if n < 0 || n > 255 { bail!("ERROR_BADARG emit_artifact byte out of range"); }
+                let n = match v {
+                    Val::Int(i) => i,
+                    _ => bail!("ERROR_BADARG emit_artifact bytes must be ints"),
+                };
+                if n < 0 || n > 255 {
+                    bail!("ERROR_BADARG emit_artifact byte out of range");
+                }
                 bytes.push(n as u8);
             }
             let cid = sha256_bytes(&bytes);
@@ -1095,9 +1169,13 @@ fn call_builtin(
             let fuel = match &args[1] {
                 Val::Int(n) => *n,
                 Val::Rec(m) => {
-                    if let Some(Val::Int(n)) = m.get("fuel") { *n }
-                    else if let Some(Val::Int(n)) = m.get("steps") { *n }
-                    else { bail!("unfold opts must include fuel:int or steps:int"); }
+                    if let Some(Val::Int(n)) = m.get("fuel") {
+                        *n
+                    } else if let Some(Val::Int(n)) = m.get("steps") {
+                        *n
+                    } else {
+                        bail!("unfold opts must include fuel:int or steps:int");
+                    }
                 }
                 _ => bail!("unfold opts must be record or int"),
             };
@@ -1128,7 +1206,9 @@ fn call_builtin(
                         seed = next_seed;
                     }
                     Val::List(xs) => {
-                        if xs.is_empty() { break; }
+                        if xs.is_empty() {
+                            break;
+                        }
                         let m = match &xs[0] {
                             Val::Rec(m) => m,
                             _ => bail!("unfold step list must contain record"),
@@ -1192,7 +1272,8 @@ impl Lockfile {
                             )
                         })?
                     } else {
-                        return Err(e).with_context(|| format!("missing lock file: {}", p.display()));
+                        return Err(e)
+                            .with_context(|| format!("missing lock file: {}", p.display()));
                     }
                 } else {
                     return Err(e).with_context(|| format!("missing lock file: {}", p.display()));
@@ -1200,7 +1281,7 @@ impl Lockfile {
             }
         };
         let v: J = serde_json::from_slice(&bytes)?;
-let v: J = serde_json::from_slice(&bytes)?;
+        let v: J = serde_json::from_slice(&bytes)?;
         let mut modules = HashMap::new();
         if let Some(ms) = v.get("modules").and_then(|x| x.as_object()) {
             for (k, vv) in ms {
@@ -1236,9 +1317,8 @@ impl ModuleLoader {
     }
 
     fn eval_main(&mut self, main_path: &Path, tracer: &mut Tracer) -> Result<Val> {
-        
-           let src = fs::read_to_string(main_path)
-              .with_context(|| format!("missing main program file: {}", main_path.display()))?;
+        let src = fs::read_to_string(main_path)
+            .with_context(|| format!("missing main program file: {}", main_path.display()))?;
         let mut p = Parser::from_src(&src)?;
         let items = p.parse_module()?;
         let mut env = base_env();
@@ -1316,7 +1396,11 @@ impl ModuleLoader {
             self.check_lock(name, &self.builtin_digest(name))?;
             ex
         } else {
-            let base: &Path = if name.starts_with("lib/") { self.root_dir.as_path() } else { here };
+            let base: &Path = if name.starts_with("lib/") {
+                self.root_dir.as_path()
+            } else {
+                here
+            };
 
             let path = base.join(format!("{name}.fard"));
             let src = fs::read_to_string(&path)
@@ -1354,7 +1438,10 @@ impl ModuleLoader {
             "std/list" => {
                 let mut m = BTreeMap::new();
                 m.insert("get".to_string(), Val::Builtin(Builtin::ListGet));
-                m.insert("sort_by_int_key".to_string(), Val::Builtin(Builtin::ListSortByIntKey));
+                m.insert(
+                    "sort_by_int_key".to_string(),
+                    Val::Builtin(Builtin::ListSortByIntKey),
+                );
                 m.insert("sort_int".to_string(), Val::Builtin(Builtin::SortInt));
                 m.insert(
                     "dedupe_sorted_int".to_string(),
@@ -1363,7 +1450,7 @@ impl ModuleLoader {
                 m.insert("hist_int".to_string(), Val::Builtin(Builtin::HistInt));
                 Ok(m)
             }
-            
+
             "std/result" => {
                 let mut m = BTreeMap::new();
                 m.insert("ok".to_string(), Val::Builtin(Builtin::ResultOk));
@@ -1371,9 +1458,12 @@ impl ModuleLoader {
                 Ok(m)
             }
 
-"std/grow" => {
+            "std/grow" => {
                 let mut m = BTreeMap::new();
-                m.insert("unfold_tree".to_string(), Val::Builtin(Builtin::GrowUnfoldTree));
+                m.insert(
+                    "unfold_tree".to_string(),
+                    Val::Builtin(Builtin::GrowUnfoldTree),
+                );
                 m.insert("unfold".to_string(), Val::Builtin(Builtin::Unfold));
                 Ok(m)
             }
@@ -1381,7 +1471,7 @@ impl ModuleLoader {
                 let mut m = BTreeMap::new();
                 m.insert("pipe".to_string(), Val::Builtin(Builtin::FlowPipe));
                 Ok(m)
-            },
+            }
             _ => bail!("unknown std module: {name}"),
         }
     }
@@ -1397,10 +1487,22 @@ fn base_env() -> Env {
     let mut e = Env::new();
     e.set("emit".to_string(), Val::Builtin(Builtin::Emit));
     e.set("len".to_string(), Val::Builtin(Builtin::Len));
-    e.set("import_artifact".to_string(), Val::Builtin(Builtin::ImportArtifact));
-    e.set("emit_artifact".to_string(), Val::Builtin(Builtin::EmitArtifact));
-    e.set("import_artifact".to_string(), Val::Builtin(Builtin::ImportArtifact));
-    e.set("emit_artifact".to_string(), Val::Builtin(Builtin::EmitArtifact));
+    e.set(
+        "import_artifact".to_string(),
+        Val::Builtin(Builtin::ImportArtifact),
+    );
+    e.set(
+        "emit_artifact".to_string(),
+        Val::Builtin(Builtin::EmitArtifact),
+    );
+    e.set(
+        "import_artifact".to_string(),
+        Val::Builtin(Builtin::ImportArtifact),
+    );
+    e.set(
+        "emit_artifact".to_string(),
+        Val::Builtin(Builtin::EmitArtifact),
+    );
     e
 }
 
