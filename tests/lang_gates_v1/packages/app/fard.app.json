@@ -1,0 +1,6 @@
+{
+  "schema": "fard.app.v0_1",
+  "name": "app",
+  "version": "0.0.1",
+  "entry": "src/main.fard"
+}

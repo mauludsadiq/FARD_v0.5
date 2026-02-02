@@ -1,0 +1,7 @@
+{
+  "modules": {
+    "std/math": "sha256:d57f77e18690d6f6896f3929a5fe4e4c0b7d510d35af7f27a7496c0be76304db"
+  },
+  "package": "libmath@0.1.0",
+  "schema": "fard.pkg_digests.v0_1"
+}

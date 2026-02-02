@@ -1,0 +1,11 @@
+{
+  "schema": "fard.package.v0_1",
+  "name": "libmath",
+  "version": "0.1.0",
+  "entrypoints": {
+    "std/math": "src/math.fard"
+  },
+  "exports": {
+    "std/math": ["add", "mul", "pi"]
+  }
+}

@@ -1,0 +1,8 @@
+let pi = 314159 in
+
+let add = fn(a,b){ a + b } in
+let mul = fn(a,b){ a * b } in
+
+let _hidden = 7 in
+
+export { pi, add, mul }

@@ -11,3 +11,7 @@ tests/**/out/**
 # mac junk
 .DS_Store
 target/
+
+# Ignore local outputs
+out/
+tests/lang_gates_v1/out_tranche_a/
