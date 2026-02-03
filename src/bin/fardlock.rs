@@ -56,7 +56,7 @@ fn main() -> Result<()> {
                 i += 1;
                 registry = Some(PathBuf::from(
                     args.get(i)
-                        .ok_or_else(|| anyhow!("missing --registry value"))?,
+                        .ok_or_else(|| anyhow!("unused --registry value"))?,
                 ));
             }
             "--out" => {
@@ -71,11 +71,11 @@ fn main() -> Result<()> {
     }
 
     let root = root.ok_or_else(|| anyhow!("missing --root"))?;
-    let registry = registry.ok_or_else(|| anyhow!("missing --registry"))?;
     let out = out.ok_or_else(|| anyhow!("missing --out"))?;
 
     fs::remove_dir_all(&out).ok();
     fs::create_dir_all(&out)?;
+    let registry_dir = registry.unwrap_or_else(|| root.join("registry"));
 
     let appm = read_json(&root.join("fard.app.json"))?;
     let app_pkg = appm
@@ -111,9 +111,10 @@ fn main() -> Result<()> {
     for cap in re.captures_iter(&src) {
         let name = cap.get(1).unwrap().as_str();
         let ver = cap.get(2).unwrap().as_str();
-        let mod_id = cap.get(3).unwrap().as_str(); // e.g. std/math
+        let mod_id = cap.get(3).unwrap().as_str();
 
-        let base = registry.join("pkgs").join(name).join(ver);
+        let base = registry_dir.join("pkgs").join(name).join(ver);
+        // e.g. std/math        let base = root.join("pkgs").join("pkgs").join(name).join(ver);
         let pkg_record = read_json(&base.join("package.json"))
             .with_context(|| format!("missing package record for {name}@{ver}"))?;
         let pkg_digest = pkg_record

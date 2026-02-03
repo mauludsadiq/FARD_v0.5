@@ -292,3 +292,5 @@ pub fn matches_any_regex(text: &str, patterns: &[String]) -> Result<bool> {
     }
     Ok(false)
 }
+
+pub mod cli;

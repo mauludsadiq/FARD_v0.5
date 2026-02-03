@@ -35,7 +35,7 @@ pub struct RunArgs {
 
 impl Cli {
     pub fn parse_compat() -> (RunArgs, bool) {
-        let mut raw: Vec<String> = std::env::args().collect();
+        let raw: Vec<String> = std::env::args().collect();
         let cli = Cli::parse_from(raw);
 
         if cli.version {
