@@ -10,7 +10,7 @@
     ]
   },
   "name": "libmath",
-  "package_digest": "sha256:e3d56dca948ac20fbfa5e10d6f1ef083b86e407e135654b36ba4fec670acfcbc",
+  "package_digest": "sha256:1ca52915da60d66035afeeeaaa7f6ffcf3f475d0b1ddc0619b5fd0c543c2543f",
   "schema": "fard.package_record.v0_1",
   "version": "0.1.0"
 }

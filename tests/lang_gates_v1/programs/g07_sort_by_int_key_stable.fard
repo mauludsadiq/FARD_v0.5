@@ -1,3 +1,6 @@
 import("std/list") as List
-let xs = [{k:2,id:"a"},{k:1,id:"b"},{k:1,id:"c"}] in
-List.sort_by_int_key(xs, fn(x){ x.k })
+
+let xs = [{k:2,id:"a"},{k:1,id:"b"},{k:1,id:"c"}]
+let ys = List.sort_by_int_key(xs, "k")
+
+ys

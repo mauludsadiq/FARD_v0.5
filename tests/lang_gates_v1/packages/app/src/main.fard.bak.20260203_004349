@@ -2,6 +2,6 @@ import("pkg:libmath@0.1.0/std/math") as M
 import("pkg:libutil@0.1.0/std/util") as U
 
 let p = M.pi
-let c = U.square(U.inc(5)) - 1
+let ok = U.square(U.inc(5)) - 1
 
-{ c: c, p: p }
+{ ok: ok, p: p }

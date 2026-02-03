@@ -1,0 +1,7 @@
+{
+  "modules": {
+    "std/util": "sha256:f5bfb59a985a4753e5a094d6279d77afc0a134a44be2d3c7411a5951826bbfa2"
+  },
+  "package": "libutil@0.1.0",
+  "schema": "fard.pkg_digests.v0_1"
+}

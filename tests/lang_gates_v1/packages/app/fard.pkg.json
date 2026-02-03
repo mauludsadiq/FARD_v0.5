@@ -1,12 +1,15 @@
 {
-  "schema": "fard.pkg.v0_1",
+  "schema": "fard.package.v0_1",
   "name": "app",
   "version": "0.1.0",
-  "exports": {
+  "entrypoints": {
     "app/main": "src/main.fard"
   },
+  "exports": {
+    "app/main": []
+  },
   "deps": {
-    "libutil": "0.1.0",
-    "libmath": "0.1.0"
+    "libmath": "0.1.0",
+    "libutil": "0.1.0"
   }
 }

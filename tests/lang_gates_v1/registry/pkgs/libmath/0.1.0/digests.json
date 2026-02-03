@@ -1,6 +1,6 @@
 {
   "modules": {
-    "std/math": "sha256:d57f77e18690d6f6896f3929a5fe4e4c0b7d510d35af7f27a7496c0be76304db"
+    "std/math": "sha256:1d729b269548585d935a64462acba3b2ccc441bc1f6db248831d0071041d5da5"
   },
   "package": "libmath@0.1.0",
   "schema": "fard.pkg_digests.v0_1"

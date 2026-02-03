@@ -1,0 +1,11 @@
+{
+  "schema": "fard.pkg.v0_1",
+  "name": "libutil",
+  "version": "0.1.0",
+  "exports": {
+    "std/util": "src/util.fard"
+  },
+  "deps": {
+    "libmath": "0.1.0"
+  }
+}

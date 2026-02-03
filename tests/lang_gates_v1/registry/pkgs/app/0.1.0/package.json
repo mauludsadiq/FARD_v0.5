@@ -1,0 +1,12 @@
+{
+  "entrypoints": {
+    "app/main": "src/main.fard"
+  },
+  "exports": {
+    "app/main": []
+  },
+  "name": "app",
+  "package_digest": "sha256:aca94bbbd4d0d8a4beecb946f7413e51b4ae3112b4eb422a4b6ac67c922893e8",
+  "schema": "fard.package_record.v0_1",
+  "version": "0.1.0"
+}

@@ -1,0 +1,15 @@
+{
+  "entrypoints": {
+    "std/util": "src/util.fard"
+  },
+  "exports": {
+    "std/util": [
+      "inc",
+      "square"
+    ]
+  },
+  "name": "libutil",
+  "package_digest": "sha256:57542efa676bbd2120018331866d43e30f03ab957effb448e576d477889eb298",
+  "schema": "fard.package_record.v0_1",
+  "version": "0.1.0"
+}

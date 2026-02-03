@@ -1,0 +1,6 @@
+import("pkg:libmath@0.1.0/std/math") as M
+
+fn inc(x) { M.add(x, 1) }
+fn square(x) { M.mul(x, x) }
+
+export { inc, square }

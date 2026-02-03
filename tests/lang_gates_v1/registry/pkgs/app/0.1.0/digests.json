@@ -1,0 +1,7 @@
+{
+  "modules": {
+    "app/main": "sha256:aff989104dc4410f60ae20ca5aac1d6c2ef359c2c28498a426f966933fe381f8"
+  },
+  "package": "app@0.1.0",
+  "schema": "fard.pkg_digests.v0_1"
+}

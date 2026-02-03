@@ -78,6 +78,20 @@ fn main() -> Result<()> {
     fs::create_dir_all(&out)?;
 
     let appm = read_json(&root.join("fard.app.json"))?;
+    let app_pkg = appm
+        .get("package")
+        .and_then(|x| x.as_object())
+        .ok_or_else(|| anyhow!("ERROR_LOCK missing package"))?;
+    let app_pkg_name = app_pkg
+        .get("name")
+        .and_then(|x| x.as_str())
+        .ok_or_else(|| anyhow!("ERROR_LOCK missing package.name"))?
+        .to_string();
+    let app_pkg_ver = app_pkg
+        .get("version")
+        .and_then(|x| x.as_str())
+        .ok_or_else(|| anyhow!("ERROR_LOCK missing package.version"))?
+        .to_string();
     if appm.get("schema").and_then(|x| x.as_str()) != Some("fard.app.v0_1") {
         bail!("ERROR_LOCK bad schema in fard.app.json");
     }
@@ -91,7 +105,7 @@ fn main() -> Result<()> {
 
     // parse imports of the form: import("pkg:name@ver/mod") as X
     let re = Regex::new(r#"import\("pkg:([a-zA-Z0-9_\-]+)@([0-9]+\.[0-9]+\.[0-9]+)/([^"]+)"\)"#)?;
-    let mut modules: BTreeMap<String, String> = BTreeMap::new();
+    let mut modules: BTreeMap<String, J> = BTreeMap::new();
     let mut packages: BTreeMap<String, String> = BTreeMap::new();
 
     for cap in re.captures_iter(&src) {
@@ -123,7 +137,10 @@ fn main() -> Result<()> {
             bail!("ERROR_LOCK missing digest for module {mod_id} in {name}@{ver}");
         }
 
-        modules.insert(format!("pkg:{name}@{ver}/{mod_id}"), want.to_string());
+        modules.insert(
+            format!("pkg:{name}@{ver}/{mod_id}"),
+            json!({ "digest": want }),
+        );
     }
 
     // registry root digest (commit to the digests map deterministically)
@@ -134,12 +151,19 @@ fn main() -> Result<()> {
         &out.join("fard.lock.json"),
         &json!({
             "schema": "fard.lock.v0_1",
+              "package": { "name": app_pkg_name, "version": app_pkg_ver },
             "app_entry": entry,
             "registry_root_digest": reg_digest,
             "packages": reg_commit.get("packages").cloned().unwrap_or(json!({})),
             "modules": modules
         }),
     )?;
+    // emit CID file for lock bytes
+    let lock_path = out.join("fard.lock.json");
+    let lock_bytes = fs::read(&lock_path)
+        .with_context(|| format!("missing lock file after write: {}", lock_path.display()))?;
+    let lock_cid = sha256_bytes(&lock_bytes);
+    fs::write(out.join("fard.lock.json.cid"), format!("{}\n", lock_cid))?;
 
     Ok(())
 }

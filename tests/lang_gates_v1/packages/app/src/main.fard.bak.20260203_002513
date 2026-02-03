@@ -1,0 +1,2 @@
+import("pkg:libmath@0.1.0/std/math") as M
+{ ok: M.add(2,3), p: M.pi }

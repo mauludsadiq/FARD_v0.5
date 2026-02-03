@@ -79,9 +79,9 @@ gate_G22_publish_writes_registry() {
   run_publish "$PKG/libutil" "$out/pub_util" || return 1
   run_publish "$PKG/app"    "$out/pub_app"  || return 1
 
-  test -d "$REG/libmath/0.1.0" || return 1
-  test -d "$REG/libutil/0.1.0" || return 1
-  test -d "$REG/app/0.1.0" || return 1
+  test -d "$REG/pkgs/libmath/0.1.0" || return 1
+  test -d "$REG/pkgs/libutil/0.1.0" || return 1
+  test -d "$REG/pkgs/app/0.1.0" || return 1
 
   pass G22_publish_writes_registry
 }

@@ -78,7 +78,8 @@ fn main() -> Result<()> {
 
     let manifest_path = root.join("fard.pkg.json");
     let m = read_json(&manifest_path)?;
-    if m.get("schema").and_then(|x| x.as_str()) != Some("fard.package.v0_1") {
+    let schema = m.get("schema").and_then(|x| x.as_str()).unwrap_or("");
+    if schema != "fard.package.v0_1" && schema != "fard.pkg.v0_1" {
         bail!("ERROR_PKG bad schema in fard.pkg.json");
     }
     let name = m

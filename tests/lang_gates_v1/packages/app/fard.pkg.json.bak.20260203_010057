@@ -1,0 +1,12 @@
+{
+  "schema": "fard.pkg.v0_1",
+  "name": "app",
+  "version": "0.1.0",
+  "exports": {
+    "app/main": "src/main.fard"
+  },
+  "deps": {
+    "libutil": "0.1.0",
+    "libmath": "0.1.0"
+  }
+}

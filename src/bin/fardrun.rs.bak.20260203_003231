@@ -814,7 +814,7 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                 Val::Rec(m) => m
                     .get(k)
                     .cloned()
-                    .ok_or_else(|| anyhow!("EXPORT_MISSING missing field {k}")),
+                    .ok_or_else(|| anyhow!("missing field {k}")),
                 _ => bail!("field access on non-record"),
             }
         }
