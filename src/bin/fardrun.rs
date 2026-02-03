@@ -275,7 +275,7 @@ impl Lex {
             None
         };
 
-        for op in ["==", "<=", ">=", "&&", "||"] {
+        for op in ["==", "<=", ">=", "&&", "||", "->"] {
             if two.as_deref() == Some(op) {
                 self.i += 2;
                 return Ok(Tok::Sym(op.to_string()));
@@ -290,6 +290,20 @@ impl Lex {
         };
         Ok(Tok::Sym(sym))
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Type {
+    Int,
+    String,
+    Bool,
+    Unit,
+    List(Box<Type>),
+    Rec(Vec<(String, Type)>),
+    Func(Vec<Type>, Box<Type>),
+    Var(String),
+    Named(String, Vec<Type>),
+    Dynamic,
 }
 
 #[derive(Clone, Debug)]
@@ -314,7 +328,7 @@ enum Expr {
 enum Item {
     Import(String, String),
     Let(String, Expr),
-    Fn(String, Vec<String>, Expr),
+    Fn(String, Vec<(String, Option<Type>)>, Option<Type>, Expr),
     Export(Vec<String>),
     Expr(Expr),
 }
@@ -382,6 +396,113 @@ impl Parser {
         }
     }
 
+    fn parse_type(&mut self) -> Result<Type> {
+        match self.peek() {
+            Tok::Kw(x) | Tok::Ident(x) if x == "Int" => {
+                self.i += 1;
+                Ok(Type::Int)
+            }
+            Tok::Kw(x) | Tok::Ident(x) if x == "String" => {
+                self.i += 1;
+                Ok(Type::String)
+            }
+            Tok::Kw(x) | Tok::Ident(x) if x == "Bool" => {
+                self.i += 1;
+                Ok(Type::Bool)
+            }
+            Tok::Kw(x) | Tok::Ident(x) if x == "Unit" => {
+                self.i += 1;
+                Ok(Type::Unit)
+            }
+            Tok::Kw(x) | Tok::Ident(x) if x == "Dynamic" => {
+                self.i += 1;
+                Ok(Type::Dynamic)
+            }
+
+            Tok::Kw(name) | Tok::Ident(name) => {
+                let name = name.clone();
+                self.i += 1;
+
+                if name == "List" {
+                    self.expect_sym("<")?;
+                    let inner = self.parse_type()?;
+                    self.expect_sym(">")?;
+                    return Ok(Type::List(Box::new(inner)));
+                }
+
+                if name == "Rec" {
+                    self.expect_sym("{")?;
+                    let mut fields: Vec<(String, Type)> = Vec::new();
+                    if !self.eat_sym("}") {
+                        loop {
+                            let k = self.expect_ident()?;
+                            self.expect_sym(":")?;
+                            let t = self.parse_type()?;
+                            fields.push((k, t));
+                            if self.eat_sym("}") {
+                                break;
+                            }
+                            self.expect_sym(",")?;
+                        }
+                    }
+                    return Ok(Type::Rec(fields));
+                }
+
+                if name == "Func" {
+                    self.expect_sym("(")?;
+                    let mut args: Vec<Type> = Vec::new();
+                    if !self.eat_sym(")") {
+                        loop {
+                            let a = self.parse_type()?;
+                            args.push(a);
+                            if self.eat_sym(")") {
+                                break;
+                            }
+                            self.expect_sym(",")?;
+                        }
+                    }
+                    self.expect_sym("->")?;
+                    let ret = self.parse_type()?;
+                    return Ok(Type::Func(args, Box::new(ret)));
+                }
+
+                if self.eat_sym("<") {
+                    let mut args: Vec<Type> = Vec::new();
+                    if !self.eat_sym(">") {
+                        loop {
+                            let a = self.parse_type()?;
+                            args.push(a);
+                            if self.eat_sym(">") {
+                                break;
+                            }
+                            self.expect_sym(",")?;
+                        }
+                    }
+                    return Ok(Type::Named(name, args));
+                }
+
+                Ok(Type::Named(name, Vec::new()))
+            }
+
+            Tok::Sym(s) if s == "(" => {
+                self.i += 1;
+                let t = self.parse_type()?;
+                self.expect_sym(")")?;
+                Ok(t)
+            }
+
+            _ => bail!("expected type"),
+        }
+    }
+
+    fn parse_type_annotation(&mut self) -> Result<Option<Type>> {
+        if self.eat_sym(":") {
+            Ok(Some(self.parse_type()?))
+        } else {
+            Ok(None)
+        }
+    }
+
     fn parse_module(&mut self) -> Result<Vec<Item>> {
         let mut items = Vec::new();
         while !matches!(self.peek(), Tok::Eof) {
@@ -417,24 +538,31 @@ impl Parser {
             if self.eat_kw("fn") {
                 let name = self.expect_ident()?;
                 self.expect_sym("(")?;
-                let mut params = Vec::new();
+                let mut params: Vec<(String, Option<Type>)> = Vec::new();
                 if !self.eat_sym(")") {
                     loop {
                         let p = self.expect_ident()?;
-                        params.push(p);
+                        let ann = if self.eat_sym(":") {
+                            Some(self.parse_type()?)
+                        } else {
+                            None
+                        };
+                        params.push((p, ann));
                         if self.eat_sym(")") {
                             break;
                         }
                         self.expect_sym(",")?;
-                        if self.eat_sym(")") {
-                            break;
-                        }
                     }
                 }
+                let ret: Option<Type> = if self.eat_sym("->") {
+                    Some(self.parse_type()?)
+                } else {
+                    None
+                };
                 self.expect_sym("{")?;
                 let body = self.parse_expr()?;
                 self.expect_sym("}")?;
-                items.push(Item::Fn(name, params, body));
+                items.push(Item::Fn(name, params, ret, body));
                 continue;
             }
 
@@ -1338,9 +1466,9 @@ impl ModuleLoader {
                     let v = eval(&rhs, env, tracer, self)?;
                     env.set(name, v);
                 }
-                Item::Fn(name, params, body) => {
+                Item::Fn(name, params, _ret, body) => {
                     let f = Val::Func(Func {
-                        params,
+                        params: params.into_iter().map(|(n, _)| n).collect(),
                         body,
                         env: env.clone(),
                     });
