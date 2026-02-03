@@ -7,66 +7,18 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 fn main() -> Result<()> {
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() >= 2 && (args[1] == "--version" || args[1] == "-V") {
+    let (run, want_version) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
+    if want_version {
         println!("fard_runtime_version={}", env!("CARGO_PKG_VERSION"));
         println!("trace_format_version=0.1.0");
         println!("stdlib_root_cid=sha256:dev");
         return Ok(());
     }
-    let mut args: Vec<String> = std::env::args().skip(1).collect();
-    if args.first().map(|s| s.as_str()) == Some("run") {
-        args.remove(0);
-    }
 
-    let mut program: Option<PathBuf> = None;
-    let mut out_dir: Option<PathBuf> = None;
-    let mut lockfile: Option<PathBuf> = None;
-    let mut registry_dir: Option<PathBuf> = None;
-
-    let mut i = 0usize;
-    while i < args.len() {
-        let a = args[i].clone();
-        if a == "--program" {
-            i += 1;
-            if i >= args.len() {
-                bail!("--program missing value");
-            }
-            program = Some(PathBuf::from(&args[i]));
-        } else if let Some(v) = a.strip_prefix("--program=") {
-            program = Some(PathBuf::from(v));
-        } else if a == "--out" {
-            i += 1;
-            if i >= args.len() {
-                bail!("--out missing value");
-            }
-            out_dir = Some(PathBuf::from(&args[i]));
-        } else if let Some(v) = a.strip_prefix("--out=") {
-            out_dir = Some(PathBuf::from(v));
-        } else if a == "--lockfile" || a == "--lock" {
-            i += 1;
-            if i >= args.len() {
-                bail!("--lockfile missing value");
-            }
-            lockfile = Some(PathBuf::from(&args[i]));
-        } else if let Some(v) = a.strip_prefix("--lockfile=") {
-            lockfile = Some(PathBuf::from(v));
-        } else if a == "--registry" {
-            i += 1;
-            if i >= args.len() {
-                bail!("--registry missing value");
-            }
-            registry_dir = Some(PathBuf::from(&args[i]));
-        } else if let Some(v) = a.strip_prefix("--registry=") {
-            registry_dir = Some(PathBuf::from(v));
-        } else if !a.starts_with("-") && program.is_none() {
-            program = Some(PathBuf::from(&a));
-        }
-        i += 1;
-    }
-
-    let program = program.context("missing --program")?;
-    let out_dir = out_dir.context("missing --out")?;
+    let program = run.program;
+    let out_dir = run.out;
+    let lockfile = run.lockfile;
+    let registry_dir = run.registry;
 
     fs::create_dir_all(&out_dir).ok();
 
@@ -332,9 +284,8 @@ impl Lex {
 
         let one = self.bump().unwrap();
         let sym = match one {
-            '(' | ')' | '{' | '}' | '[' | ']' | ',' | ':' | '.' | '+' | '-' | '*' | '/' | '=' => {
-                one.to_string()
-            }
+            '(' | ')' | '{' | '}' | '[' | ']' | ',' | ':' | '.' | '+' | '-' | '*' | '/' | '='
+            | '<' | '>' => one.to_string(),
             _ => bail!("unexpected char: {one}"),
         };
         Ok(Tok::Sym(sym))
@@ -547,9 +498,16 @@ impl Parser {
     }
     fn parse_eq(&mut self) -> Result<Expr> {
         let mut e = self.parse_add()?;
-        while self.eat_sym("==") {
+        loop {
+            let op = match self.peek() {
+                Tok::Sym(x) if x == "==" || x == "<" || x == ">" || x == "<=" || x == ">=" => {
+                    x.clone()
+                }
+                _ => break,
+            };
+            self.bump();
             let r = self.parse_add()?;
-            e = Expr::Bin("==".to_string(), Box::new(e), Box::new(r));
+            e = Expr::Bin(op, Box::new(e), Box::new(r));
         }
         Ok(e)
     }
@@ -855,6 +813,10 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                 ("==", l, r) => Ok(Val::Bool(val_eq(&l, &r))),
                 ("&&", Val::Bool(l), Val::Bool(r)) => Ok(Val::Bool(l && r)),
                 ("||", Val::Bool(l), Val::Bool(r)) => Ok(Val::Bool(l || r)),
+                ("<", Val::Int(l), Val::Int(r)) => Ok(Val::Bool(l < r)),
+                (">", Val::Int(l), Val::Int(r)) => Ok(Val::Bool(l > r)),
+                ("<=", Val::Int(l), Val::Int(r)) => Ok(Val::Bool(l <= r)),
+                (">=", Val::Int(l), Val::Int(r)) => Ok(Val::Bool(l >= r)),
                 _ => bail!("bad binop {op}"),
             }
         }
