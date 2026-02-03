@@ -1,0 +1,68 @@
+set -euo pipefail
+
+mode="print"
+file=""
+
+if test "${1:-}" = "--help" || test "${1:-}" = "-h"; then
+  printf '%s\n' "usage:"
+  printf '%s\n' "  tools/fardfmt --check <file>"
+  printf '%s\n' "  tools/fardfmt --write <file>"
+  printf '%s\n' "  tools/fardfmt <file>        (prints canonical to stdout)"
+  printf '%s\n' "  cat <file> | tools/fardfmt  (prints canonical to stdout)"
+  exit 0
+fi
+
+if test "${1:-}" = "--check"; then
+  mode="check"
+  shift
+elif test "${1:-}" = "--write"; then
+  mode="write"
+  shift
+fi
+
+if test $# -ge 1; then
+  file="$1"
+fi
+
+canon() {
+  tr -d '\r' | awk '
+    {
+      sub(/[[:space:]]+$/, "", $0)
+      print
+    }
+  '
+}
+
+tmp="$(mktemp "/tmp/fardfmt.$$.$(date +%s).XXXX")"
+trap 'rm -f "$tmp"' EXIT
+
+if test -n "${file:-}" && test "$file" != "-"; then
+  test -f "$file" || { echo "FAIL FMT NO_SUCH_FILE $file"; exit 1; }
+  cat "$file" | canon > "$tmp"
+else
+  cat | canon > "$tmp"
+fi
+
+if test "$mode" = "print"; then
+  cat "$tmp"
+  exit 0
+fi
+
+test -n "${file:-}" || { echo "FAIL FMT NEED_FILE_FOR_$mode"; exit 1; }
+test -f "$file" || { echo "FAIL FMT NO_SUCH_FILE $file"; exit 1; }
+
+if cmp -s "$tmp" "$file"; then
+  exit 0
+fi
+
+if test "$mode" = "check"; then
+  exit 1
+fi
+
+if test "$mode" = "write"; then
+  cp -f "$tmp" "$file"
+  exit 0
+fi
+
+echo "FAIL FMT UNKNOWN_MODE $mode"
+exit 1

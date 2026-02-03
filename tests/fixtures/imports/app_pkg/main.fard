@@ -1,0 +1,2 @@
+import("pkg/demo@0.1.0/mod") as M
+M.answer()

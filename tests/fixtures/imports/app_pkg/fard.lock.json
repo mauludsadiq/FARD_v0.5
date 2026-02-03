@@ -1,0 +1,12 @@
+{
+  "schema": "fard.lock.v0_1",
+  "package": { "name": "app_pkg", "version": "0.1.0" },
+  "registry": { "root": "registry" },
+  "modules": [
+    {
+      "spec": "pkg/demo@0.1.0/mod",
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "path": "pkgs/demo/0.1.0/files/mod.fard"
+    }
+  ]
+}

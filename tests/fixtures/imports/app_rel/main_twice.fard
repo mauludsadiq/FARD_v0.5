@@ -1,0 +1,3 @@
+import("./lib") as L
+import("./lib") as L2
+L.inc(1) + L2.inc(1)
