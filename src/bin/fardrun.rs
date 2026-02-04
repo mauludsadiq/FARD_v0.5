@@ -188,13 +188,13 @@ enum Tok {
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 struct SpanPos {
     byte_start: usize,
     byte_end: usize,
     line: usize,
     col: usize,
 }
-
 
 fn is_ident_start(c: char) -> bool {
     c.is_ascii_alphabetic() || c == '_'
@@ -244,7 +244,6 @@ fn line_col_at(src: &str, byte_pos: usize) -> (usize, usize) {
     (line, col)
 }
 
-
 struct Lex {
     s: Vec<char>,
     i: usize,
@@ -268,7 +267,9 @@ impl Lex {
         while let Some(c) = self.peek() {
             if c == "#".chars().next().unwrap() {
                 while let Some(d) = self.bump() {
-                    if d == "\n".chars().next().unwrap() { break; }
+                    if d == "\n".chars().next().unwrap() {
+                        break;
+                    }
                 }
                 continue;
             }
@@ -388,6 +389,7 @@ enum Type {
     List(Box<Type>),
     Rec(Vec<(String, Type)>),
     Func(Vec<Type>, Box<Type>),
+    #[allow(dead_code)]
     Var(String),
     Named(String, Vec<Type>),
     Dynamic,
@@ -467,11 +469,7 @@ impl Parser {
         // (e.g. via bump / expect_*). Use the previous token span when possible.
         let idx = if self.i > 0 { self.i - 1 } else { 0 };
 
-        let (byte_start, byte_end) = self
-            .spans
-            .get(idx)
-            .cloned()
-            .unwrap_or((0usize, 0usize));
+        let (byte_start, byte_end) = self.spans.get(idx).cloned().unwrap_or((0usize, 0usize));
 
         let (line, col) = line_col_at(&self.src, byte_start);
 
@@ -620,6 +618,7 @@ impl Parser {
         }
     }
 
+    #[allow(dead_code)]
     fn parse_type_annotation(&mut self) -> Result<Option<Type>> {
         if self.eat_sym(":") {
             Ok(Some(self.parse_type()?))
@@ -911,7 +910,7 @@ impl Parser {
                     span: self.cur_span(),
                     message: format!("ERROR_PARSE unexpected token: {other:?}"),
                 }));
-            },
+            }
         }
     }
 }
@@ -950,12 +949,12 @@ enum Builtin {
     HistInt,
     Unfold,
     FlowPipe,
-      StrLen,
-      StrConcat,
-      MapGet,
-      MapSet,
-      JsonEncode,
-      JsonDecode,
+    StrLen,
+    StrConcat,
+    MapGet,
+    MapSet,
+    JsonEncode,
+    JsonDecode,
 }
 
 #[derive(Clone, Debug)]
@@ -1014,7 +1013,9 @@ fn val_from_json(j: &J) -> Result<Val> {
         J::Null => Ok(Val::Null),
         J::Bool(b) => Ok(Val::Bool(*b)),
         J::Number(n) => {
-            let i = n.as_i64().ok_or_else(|| anyhow!("ERROR_RUNTIME json number not i64"))?;
+            let i = n
+                .as_i64()
+                .ok_or_else(|| anyhow!("ERROR_RUNTIME json number not i64"))?;
             Ok(Val::Int(i))
         }
         J::String(s) => Ok(Val::Str(s.clone())),
@@ -1207,7 +1208,9 @@ fn call_builtin(
             Ok(acc)
         }
         Builtin::StrLen => {
-            if args.len() != 1 { bail!("ERROR_RUNTIME arity"); }
+            if args.len() != 1 {
+                bail!("ERROR_RUNTIME arity");
+            }
             match &args[0] {
                 Val::Str(s) => Ok(Val::Int(s.len() as i64)),
                 _ => bail!("ERROR_RUNTIME type"),
@@ -1215,23 +1218,47 @@ fn call_builtin(
         }
 
         Builtin::StrConcat => {
-            if args.len() != 2 { bail!("ERROR_RUNTIME arity"); }
-            let a = match &args[0] { Val::Str(s) => s, _ => bail!("ERROR_RUNTIME type"), };
-            let b = match &args[1] { Val::Str(s) => s, _ => bail!("ERROR_RUNTIME type"), };
+            if args.len() != 2 {
+                bail!("ERROR_RUNTIME arity");
+            }
+            let a = match &args[0] {
+                Val::Str(s) => s,
+                _ => bail!("ERROR_RUNTIME type"),
+            };
+            let b = match &args[1] {
+                Val::Str(s) => s,
+                _ => bail!("ERROR_RUNTIME type"),
+            };
             Ok(Val::Str(format!("{}{}", a, b)))
         }
 
         Builtin::MapGet => {
-            if args.len() != 2 { bail!("ERROR_RUNTIME arity"); }
-            let m = match &args[0] { Val::Rec(mm) => mm, _ => bail!("ERROR_RUNTIME type"), };
-            let k = match &args[1] { Val::Str(s) => s, _ => bail!("ERROR_RUNTIME type"), };
+            if args.len() != 2 {
+                bail!("ERROR_RUNTIME arity");
+            }
+            let m = match &args[0] {
+                Val::Rec(mm) => mm,
+                _ => bail!("ERROR_RUNTIME type"),
+            };
+            let k = match &args[1] {
+                Val::Str(s) => s,
+                _ => bail!("ERROR_RUNTIME type"),
+            };
             Ok(m.get(k).cloned().unwrap_or(Val::Null))
         }
 
         Builtin::MapSet => {
-            if args.len() != 3 { bail!("ERROR_RUNTIME arity"); }
-            let m = match &args[0] { Val::Rec(mm) => mm, _ => bail!("ERROR_RUNTIME type"), };
-            let k = match &args[1] { Val::Str(s) => s, _ => bail!("ERROR_RUNTIME type"), };
+            if args.len() != 3 {
+                bail!("ERROR_RUNTIME arity");
+            }
+            let m = match &args[0] {
+                Val::Rec(mm) => mm,
+                _ => bail!("ERROR_RUNTIME type"),
+            };
+            let k = match &args[1] {
+                Val::Str(s) => s,
+                _ => bail!("ERROR_RUNTIME type"),
+            };
             let v = args[2].clone();
             let mut out = m.clone();
             out.insert(k.clone(), v);
@@ -1239,14 +1266,23 @@ fn call_builtin(
         }
 
         Builtin::JsonEncode => {
-            if args.len() != 1 { bail!("ERROR_RUNTIME arity"); }
-            let j = args[0].to_json().ok_or_else(|| anyhow!("ERROR_RUNTIME json encode non-jsonable"))?;
+            if args.len() != 1 {
+                bail!("ERROR_RUNTIME arity");
+            }
+            let j = args[0]
+                .to_json()
+                .ok_or_else(|| anyhow!("ERROR_RUNTIME json encode non-jsonable"))?;
             Ok(Val::Str(serde_json::to_string(&j)?))
         }
 
         Builtin::JsonDecode => {
-            if args.len() != 1 { bail!("ERROR_RUNTIME arity"); }
-            let s = match &args[0] { Val::Str(ss) => ss, _ => bail!("ERROR_RUNTIME type"), };
+            if args.len() != 1 {
+                bail!("ERROR_RUNTIME arity");
+            }
+            let s = match &args[0] {
+                Val::Str(ss) => ss,
+                _ => bail!("ERROR_RUNTIME type"),
+            };
             let j: J = serde_json::from_str(s)?;
             val_from_json(&j)
         }
@@ -1640,12 +1676,133 @@ impl Lockfile {
     }
 }
 
+#[derive(Clone, Debug)]
+enum ModKind {
+    Std,
+    Pkg,
+    Rel,
+}
+
+#[derive(Clone, Debug)]
+struct ModNode {
+    id: usize,
+    spec: String,
+    kind: ModKind,
+    path: Option<String>,
+    digest: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+struct ModEdge {
+    from: usize,
+    to: usize,
+    kind: String,
+}
+
+#[derive(Clone, Debug)]
+struct ModuleGraph {
+    nodes: Vec<ModNode>,
+    edges: Vec<ModEdge>,
+    index: HashMap<String, usize>,
+}
+
+impl ModuleGraph {
+    fn new() -> Self {
+        Self {
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            index: HashMap::new(),
+        }
+    }
+
+    fn intern_node(
+        &mut self,
+        spec: &str,
+        kind: ModKind,
+        path: Option<String>,
+        digest: Option<String>,
+    ) -> usize {
+        if let Some(id) = self.index.get(spec) {
+            let i = *id;
+            if self.nodes[i].path.is_none() {
+                self.nodes[i].path = path;
+            }
+            if self.nodes[i].digest.is_none() {
+                self.nodes[i].digest = digest;
+            }
+            return i;
+        }
+        let id = self.nodes.len();
+        self.index.insert(spec.to_string(), id);
+        self.nodes.push(ModNode {
+            id,
+            spec: spec.to_string(),
+            kind,
+            path,
+            digest,
+        });
+        id
+    }
+
+    fn add_edge(&mut self, from: usize, to: usize) {
+        self.edges.push(ModEdge {
+            from,
+            to,
+            kind: "import".to_string(),
+        });
+    }
+
+    fn to_json(&self) -> J {
+        let mut root = Map::new();
+
+        let mut ns: Vec<J> = Vec::new();
+        for n in &self.nodes {
+            let mut m = Map::new();
+            m.insert("id".to_string(), J::Number((n.id as u64).into()));
+            m.insert("spec".to_string(), J::String(n.spec.clone()));
+            m.insert(
+                "kind".to_string(),
+                J::String(
+                    match n.kind {
+                        ModKind::Std => "std",
+                        ModKind::Pkg => "pkg",
+                        ModKind::Rel => "rel",
+                    }
+                    .to_string(),
+                ),
+            );
+            if let Some(p) = &n.path {
+                m.insert("path".to_string(), J::String(p.clone()));
+            }
+            if let Some(d) = &n.digest {
+                m.insert("digest".to_string(), J::String(d.clone()));
+            }
+            ns.push(J::Object(m));
+        }
+
+        let mut es: Vec<J> = Vec::new();
+        for e in &self.edges {
+            let mut m = Map::new();
+            m.insert("from".to_string(), J::Number((e.from as u64).into()));
+            m.insert("to".to_string(), J::Number((e.to as u64).into()));
+            m.insert("kind".to_string(), J::String(e.kind.clone()));
+            es.push(J::Object(m));
+        }
+
+        root.insert("nodes".to_string(), J::Array(ns));
+        root.insert("edges".to_string(), J::Array(es));
+        J::Object(root)
+    }
+}
+
 struct ModuleLoader {
     root_dir: PathBuf,
     registry_dir: Option<PathBuf>,
     cache: HashMap<String, BTreeMap<String, Val>>,
     stack: Vec<String>,
     lock: Option<Lockfile>,
+    graph: ModuleGraph,
+    current: Option<usize>,
 }
 impl ModuleLoader {
     fn new(root: &Path) -> Self {
@@ -1655,31 +1812,58 @@ impl ModuleLoader {
             cache: HashMap::new(),
             stack: Vec::new(),
             lock: None,
+            graph: ModuleGraph::new(),
+            current: None,
         }
+    }
+
+    fn graph_note_import(
+        &mut self,
+        callee_spec: &str,
+        callee_kind: ModKind,
+        callee_path: Option<String>,
+        callee_digest: Option<String>,
+    ) -> usize {
+        let callee_id =
+            self.graph
+                .intern_node(callee_spec, callee_kind, callee_path, callee_digest);
+        if let Some(from) = self.current {
+            self.graph.add_edge(from, callee_id);
+        }
+        callee_id
+    }
+
+    fn with_current<T>(&mut self, id: usize, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+        let prev = self.current;
+        self.current = Some(id);
+        let out = f(self);
+        self.current = prev;
+        out
     }
 
     fn eval_main(&mut self, main_path: &Path, tracer: &mut Tracer) -> Result<Val> {
         let src = fs::read_to_string(main_path)
             .with_context(|| format!("missing main program file: {}", main_path.display()))?;
-          let file = main_path.to_string_lossy().to_string();
-          let mut p = Parser::from_src(&src, &file)?;
+        let file = main_path.to_string_lossy().to_string();
+        let mut p = Parser::from_src(&src, &file)?;
         let items = p.parse_module()?;
         let mut env = base_env();
         let here_dir = main_path
             .parent()
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| self.root_dir.clone());
-          let v = self.eval_items(items, &mut env, tracer, &here_dir)?;
-          let mut mg = Map::new();
-          mg.insert(
-              "nodes".to_string(),
-              J::Array(vec![J::String(main_path.to_string_lossy().to_string())]),
-          );
-          fs::write(
-              tracer.out_dir.join("module_graph.json"),
-              serde_json::to_vec(&J::Object(mg))?,
-          )?;
-          Ok(v)
+        let main_spec = file.clone();
+        let main_id =
+            self.graph
+                .intern_node(&main_spec, ModKind::Rel, Some(main_spec.clone()), None);
+        let v = self.with_current(main_id, |slf| {
+            slf.eval_items(items, &mut env, tracer, &here_dir)
+        })?;
+        fs::write(
+            tracer.out_dir.join("module_graph.json"),
+            serde_json::to_vec(&self.graph.to_json())?,
+        )?;
+        Ok(v)
     }
 
     fn eval_items(
@@ -1744,120 +1928,142 @@ impl ModuleLoader {
         }
         self.stack.push(name.to_string());
 
-        let exports = if name.starts_with("std/") {
-            let ex = self.builtin_std(name)?;
-            self.check_lock(name, &self.builtin_digest(name))?;
-            ex
+        let (kind, digest0) = if name.starts_with("std/") {
+            (ModKind::Std, Some(self.builtin_digest(name)))
         } else if name.starts_with("pkg:") || name.starts_with("pkg/") {
-            // pkg imports require a lock (determinism), and require an explicit registry root.
-            if self.lock.is_none() {
-                eprintln!("IMPORT_PKG_REQUIRES_LOCK");
-                bail!("ERROR_LOCK missing lock for pkg import: {name}");
-            }
-
-            let reg = self
-                .registry_dir
-                .as_ref()
-                .ok_or_else(|| anyhow!("ERROR_REGISTRY missing --registry"))?;
-
-            let spec = if let Some(s) = name.strip_prefix("pkg:") {
-                s
-            } else if let Some(s) = name.strip_prefix("pkg/") {
-                s
-            } else {
-                name
-            };
-
-            let (pkg, rest) = spec
-                .split_once("@")
-                .ok_or_else(|| anyhow!("ERROR_RUNTIME bad pkg import: {name}"))?;
-            let (ver, mod_id) = rest
-                .split_once("/")
-                .ok_or_else(|| anyhow!("ERROR_RUNTIME bad pkg import: {name}"))?;
-
-            let base = reg.join("pkgs").join(pkg).join(ver);
-
-              let pkg_json_path = base.join("package.json");
-
-              // Prefer explicit entrypoints when package.json exists; otherwise fall back to "<mod_id>.fard".
-              let rel: String = if let Ok(pkg_json_bytes) = fs::read(&pkg_json_path) {
-                  let pkg_json: J = serde_json::from_slice(&pkg_json_bytes)
-                      .with_context(|| format!("bad json: {}", pkg_json_path.display()))?;
-
-                  let entrypoints = pkg_json
-                      .get("entrypoints")
-                      .and_then(|x| x.as_object())
-                      .ok_or_else(|| anyhow!("ERROR_RUNTIME package.json missing entrypoints"))?;
-
-                  entrypoints
-                      .get(mod_id)
-                      .and_then(|x| x.as_str())
-                      .ok_or_else(|| anyhow!("ERROR_RUNTIME missing entrypoint {mod_id} in package.json"))?
-                      .to_string()
-              } else {
-                  format!("{mod_id}.fard")
-              };
-
-              let path = base.join("files").join(&rel);
-            let src = fs::read_to_string(&path)
-                .with_context(|| format!("missing module file: {}", path.display()))?;
-
-            self.check_lock(name, &file_digest(&path)?)?;
-
-            let file = path.to_string_lossy().to_string();
-            let mut p = Parser::from_src(&src, &file)?;
-            let items = p.parse_module()?;
-            let mut env = base_env();
-            let v = self.eval_items(items, &mut env, tracer, path.parent().unwrap_or(here))?;
-            match v {
-                Val::Rec(m) => m,
-                _ => bail!("module must export a record"),
-            }
-        } else if name.starts_with("registry/") {
-            let reg = self
-                .registry_dir
-                .as_ref()
-                .ok_or_else(|| anyhow!("ERROR_REGISTRY missing --registry"))?;
-            let rest = name.strip_prefix("registry/").unwrap_or(name);
-
-            let path = reg.join(format!("{rest}.fard"));
-            let src = fs::read_to_string(&path)
-                .with_context(|| { if path.to_string_lossy().contains("/pkg/") { eprintln!("IMPORT_PKG_REQUIRES_LOCK"); } format!("missing module file: {}", path.display()) })?;
-
-            self.check_lock(name, &file_digest(&path)?)?;
-
-          let file = path.to_string_lossy().to_string();
-          let mut p = Parser::from_src(&src, &file)?;
-            let items = p.parse_module()?;
-            let mut env = base_env();
-            let v = self.eval_items(items, &mut env, tracer, path.parent().unwrap_or(here))?;
-            match v {
-                Val::Rec(m) => m,
-                _ => bail!("module must export a record"),
-            }
+            (ModKind::Pkg, None)
         } else {
-            let base: &Path = if name.starts_with("lib/") {
-                self.root_dir.as_path()
+            (ModKind::Rel, None)
+        };
+
+        let callee_id = self.graph_note_import(name, kind, None, digest0);
+
+        let exports = self.with_current(callee_id, |slf| {
+            let exports = if name.starts_with("std/") {
+                let ex = slf.builtin_std(name)?;
+                slf.check_lock(name, &slf.builtin_digest(name))?;
+                ex
+            } else if name.starts_with("pkg:") || name.starts_with("pkg/") {
+                if slf.lock.is_none() {
+                    eprintln!("IMPORT_PKG_REQUIRES_LOCK");
+                    bail!("ERROR_LOCK missing lock for pkg import: {name}");
+                }
+
+                let reg = slf
+                    .registry_dir
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("ERROR_REGISTRY missing --registry"))?;
+
+                let spec = if let Some(s) = name.strip_prefix("pkg:") {
+                    s
+                } else if let Some(s) = name.strip_prefix("pkg/") {
+                    s
+                } else {
+                    name
+                };
+
+                let (pkg, rest) = spec
+                    .split_once("@")
+                    .ok_or_else(|| anyhow!("ERROR_RUNTIME bad pkg import: {name}"))?;
+                let (ver, mod_id) = rest
+                    .split_once("/")
+                    .ok_or_else(|| anyhow!("ERROR_RUNTIME bad pkg import: {name}"))?;
+
+                let base = reg.join("pkgs").join(pkg).join(ver);
+
+                let pkg_json_path = base.join("package.json");
+
+                let rel: String = if let Ok(pkg_json_bytes) = fs::read(&pkg_json_path) {
+                    let pkg_json: J = serde_json::from_slice(&pkg_json_bytes)
+                        .with_context(|| format!("bad json: {}", pkg_json_path.display()))?;
+
+                    let entrypoints = pkg_json
+                        .get("entrypoints")
+                        .and_then(|x| x.as_object())
+                        .ok_or_else(|| anyhow!("ERROR_RUNTIME package.json missing entrypoints"))?;
+
+                    entrypoints
+                        .get(mod_id)
+                        .and_then(|x| x.as_str())
+                        .ok_or_else(|| {
+                            anyhow!("ERROR_RUNTIME missing entrypoint {mod_id} in package.json")
+                        })?
+                        .to_string()
+                } else {
+                    format!("{mod_id}.fard")
+                };
+
+                let path = base.join("files").join(&rel);
+                let src = fs::read_to_string(&path)
+                    .with_context(|| format!("missing module file: {}", path.display()))?;
+
+                slf.check_lock(name, &file_digest(&path)?)?;
+
+                let file = path.to_string_lossy().to_string();
+                let mut p = Parser::from_src(&src, &file)?;
+                let items = p.parse_module()?;
+                let mut env = base_env();
+                let v = slf.eval_items(items, &mut env, tracer, path.parent().unwrap_or(here))?;
+                match v {
+                    Val::Rec(m) => m,
+                    _ => bail!("module must export a record"),
+                }
+            } else if name.starts_with("registry/") {
+                let reg = slf
+                    .registry_dir
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("ERROR_REGISTRY missing --registry"))?;
+                let rest = name.strip_prefix("registry/").unwrap_or(name);
+
+                let path = reg.join(format!("{rest}.fard"));
+                let src = fs::read_to_string(&path).with_context(|| {
+                    if path.to_string_lossy().contains("/pkg/") {
+                        eprintln!("IMPORT_PKG_REQUIRES_LOCK");
+                    }
+                    format!("missing module file: {}", path.display())
+                })?;
+
+                slf.check_lock(name, &file_digest(&path)?)?;
+
+                let file = path.to_string_lossy().to_string();
+                let mut p = Parser::from_src(&src, &file)?;
+                let items = p.parse_module()?;
+                let mut env = base_env();
+                let v = slf.eval_items(items, &mut env, tracer, path.parent().unwrap_or(here))?;
+                match v {
+                    Val::Rec(m) => m,
+                    _ => bail!("module must export a record"),
+                }
             } else {
-                here
+                let base: &Path = if name.starts_with("lib/") {
+                    slf.root_dir.as_path()
+                } else {
+                    here
+                };
+
+                let path = base.join(format!("{name}.fard"));
+                let src = fs::read_to_string(&path).with_context(|| {
+                    if path.to_string_lossy().contains("/pkg/") {
+                        eprintln!("IMPORT_PKG_REQUIRES_LOCK");
+                    }
+                    format!("missing module file: {}", path.display())
+                })?;
+
+                slf.check_lock(name, &file_digest(&path)?)?;
+
+                let file = path.to_string_lossy().to_string();
+                let mut p = Parser::from_src(&src, &file)?;
+                let items = p.parse_module()?;
+                let mut env = base_env();
+                let v = slf.eval_items(items, &mut env, tracer, path.parent().unwrap_or(here))?;
+                match v {
+                    Val::Rec(m) => m,
+                    _ => bail!("module must export a record"),
+                }
             };
 
-            let path = base.join(format!("{name}.fard"));
-            let src = fs::read_to_string(&path)
-                .with_context(|| { if path.to_string_lossy().contains("/pkg/") { eprintln!("IMPORT_PKG_REQUIRES_LOCK"); } format!("missing module file: {}", path.display()) })?;
-
-            self.check_lock(name, &file_digest(&path)?)?;
-
-          let file = path.to_string_lossy().to_string();
-          let mut p = Parser::from_src(&src, &file)?;
-            let items = p.parse_module()?;
-            let mut env = base_env();
-            let v = self.eval_items(items, &mut env, tracer, path.parent().unwrap_or(here))?;
-            match v {
-                Val::Rec(m) => m,
-                _ => bail!("module must export a record"),
-            }
-        };
+            Ok(exports)
+        })?;
         self.stack.pop();
         self.cache.insert(name.to_string(), exports.clone());
         Ok(exports)
@@ -1866,7 +2072,8 @@ impl ModuleLoader {
     fn check_lock(&self, module: &str, got: &str) -> Result<()> {
         if let Some(lk) = &self.lock {
             if let Some(exp) = lk.expected(module) {
-                if exp == "sha256:0000000000000000000000000000000000000000000000000000000000000000" {
+                if exp == "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                {
                     // wildcard digest: lock is required, but digest is intentionally unset
                 } else if exp != got {
                     bail!("LOCK_MISMATCH lock mismatch for module {module}: expected {exp}, got {got}");
@@ -1910,32 +2117,32 @@ impl ModuleLoader {
                 m.insert("unfold".to_string(), Val::Builtin(Builtin::Unfold));
                 Ok(m)
             }
-              "std/flow" => {
-                  let mut m = BTreeMap::new();
-                  m.insert("pipe".to_string(), Val::Builtin(Builtin::FlowPipe));
-                  Ok(m)
-              }
+            "std/flow" => {
+                let mut m = BTreeMap::new();
+                m.insert("pipe".to_string(), Val::Builtin(Builtin::FlowPipe));
+                Ok(m)
+            }
 
-              "std/str" => {
-                  let mut m = BTreeMap::new();
-                  m.insert("len".to_string(), Val::Builtin(Builtin::StrLen));
-                  m.insert("concat".to_string(), Val::Builtin(Builtin::StrConcat));
-                  Ok(m)
-              }
+            "std/str" => {
+                let mut m = BTreeMap::new();
+                m.insert("len".to_string(), Val::Builtin(Builtin::StrLen));
+                m.insert("concat".to_string(), Val::Builtin(Builtin::StrConcat));
+                Ok(m)
+            }
 
-              "std/map" => {
-                  let mut m = BTreeMap::new();
-                  m.insert("get".to_string(), Val::Builtin(Builtin::MapGet));
-                  m.insert("set".to_string(), Val::Builtin(Builtin::MapSet));
-                  Ok(m)
-              }
+            "std/map" => {
+                let mut m = BTreeMap::new();
+                m.insert("get".to_string(), Val::Builtin(Builtin::MapGet));
+                m.insert("set".to_string(), Val::Builtin(Builtin::MapSet));
+                Ok(m)
+            }
 
-              "std/json" => {
-                  let mut m = BTreeMap::new();
-                  m.insert("encode".to_string(), Val::Builtin(Builtin::JsonEncode));
-                  m.insert("decode".to_string(), Val::Builtin(Builtin::JsonDecode));
-                  Ok(m)
-              }
+            "std/json" => {
+                let mut m = BTreeMap::new();
+                m.insert("encode".to_string(), Val::Builtin(Builtin::JsonEncode));
+                m.insert("decode".to_string(), Val::Builtin(Builtin::JsonDecode));
+                Ok(m)
+            }
             _ => bail!("unknown std module: {name}"),
         }
     }
