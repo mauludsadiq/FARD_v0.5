@@ -373,7 +373,7 @@ impl Lex {
         let one = self.bump().unwrap();
         let sym = match one {
             '(' | ')' | '{' | '}' | '[' | ']' | ',' | ':' | '.' | '+' | '-' | '*' | '/' | '='
-            | '<' | '>' => one.to_string(),
+            | '<' | '>' | '?' => one.to_string(),
             _ => bail!("unexpected char: {one}"),
         };
         Ok(Tok::Sym(sym))
