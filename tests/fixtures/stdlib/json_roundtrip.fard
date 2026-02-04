@@ -1,0 +1,4 @@
+import("std/json") as Json
+
+let v = { a: 1, b: [1,2,3], c: "x" } in
+Json.decode(Json.encode(v))

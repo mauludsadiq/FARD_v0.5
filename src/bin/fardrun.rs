@@ -950,6 +950,12 @@ enum Builtin {
     HistInt,
     Unfold,
     FlowPipe,
+      StrLen,
+      StrConcat,
+      MapGet,
+      MapSet,
+      JsonEncode,
+      JsonDecode,
 }
 
 #[derive(Clone, Debug)]
@@ -999,6 +1005,32 @@ impl Val {
                 Some(J::Object(obj))
             }
             Val::Func(_) | Val::Builtin(_) => None,
+        }
+    }
+}
+
+fn val_from_json(j: &J) -> Result<Val> {
+    match j {
+        J::Null => Ok(Val::Null),
+        J::Bool(b) => Ok(Val::Bool(*b)),
+        J::Number(n) => {
+            let i = n.as_i64().ok_or_else(|| anyhow!("ERROR_RUNTIME json number not i64"))?;
+            Ok(Val::Int(i))
+        }
+        J::String(s) => Ok(Val::Str(s.clone())),
+        J::Array(xs) => {
+            let mut out = Vec::new();
+            for x in xs {
+                out.push(val_from_json(x)?);
+            }
+            Ok(Val::List(out))
+        }
+        J::Object(m) => {
+            let mut out = BTreeMap::new();
+            for (k, v) in m.iter() {
+                out.insert(k.clone(), val_from_json(v)?);
+            }
+            Ok(Val::Rec(out))
         }
     }
 }
@@ -1173,6 +1205,50 @@ fn call_builtin(
                 acc = call(f, vec![acc], tracer, loader)?;
             }
             Ok(acc)
+        }
+        Builtin::StrLen => {
+            if args.len() != 1 { bail!("ERROR_RUNTIME arity"); }
+            match &args[0] {
+                Val::Str(s) => Ok(Val::Int(s.len() as i64)),
+                _ => bail!("ERROR_RUNTIME type"),
+            }
+        }
+
+        Builtin::StrConcat => {
+            if args.len() != 2 { bail!("ERROR_RUNTIME arity"); }
+            let a = match &args[0] { Val::Str(s) => s, _ => bail!("ERROR_RUNTIME type"), };
+            let b = match &args[1] { Val::Str(s) => s, _ => bail!("ERROR_RUNTIME type"), };
+            Ok(Val::Str(format!("{}{}", a, b)))
+        }
+
+        Builtin::MapGet => {
+            if args.len() != 2 { bail!("ERROR_RUNTIME arity"); }
+            let m = match &args[0] { Val::Rec(mm) => mm, _ => bail!("ERROR_RUNTIME type"), };
+            let k = match &args[1] { Val::Str(s) => s, _ => bail!("ERROR_RUNTIME type"), };
+            Ok(m.get(k).cloned().unwrap_or(Val::Null))
+        }
+
+        Builtin::MapSet => {
+            if args.len() != 3 { bail!("ERROR_RUNTIME arity"); }
+            let m = match &args[0] { Val::Rec(mm) => mm, _ => bail!("ERROR_RUNTIME type"), };
+            let k = match &args[1] { Val::Str(s) => s, _ => bail!("ERROR_RUNTIME type"), };
+            let v = args[2].clone();
+            let mut out = m.clone();
+            out.insert(k.clone(), v);
+            Ok(Val::Rec(out))
+        }
+
+        Builtin::JsonEncode => {
+            if args.len() != 1 { bail!("ERROR_RUNTIME arity"); }
+            let j = args[0].to_json().ok_or_else(|| anyhow!("ERROR_RUNTIME json encode non-jsonable"))?;
+            Ok(Val::Str(serde_json::to_string(&j)?))
+        }
+
+        Builtin::JsonDecode => {
+            if args.len() != 1 { bail!("ERROR_RUNTIME arity"); }
+            let s = match &args[0] { Val::Str(ss) => ss, _ => bail!("ERROR_RUNTIME type"), };
+            let j: J = serde_json::from_str(s)?;
+            val_from_json(&j)
         }
 
         Builtin::ListGet => {
@@ -1593,7 +1669,17 @@ impl ModuleLoader {
             .parent()
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| self.root_dir.clone());
-        self.eval_items(items, &mut env, tracer, &here_dir)
+          let v = self.eval_items(items, &mut env, tracer, &here_dir)?;
+          let mut mg = Map::new();
+          mg.insert(
+              "nodes".to_string(),
+              J::Array(vec![J::String(main_path.to_string_lossy().to_string())]),
+          );
+          fs::write(
+              tracer.out_dir.join("module_graph.json"),
+              serde_json::to_vec(&J::Object(mg))?,
+          )?;
+          Ok(v)
     }
 
     fn eval_items(
@@ -1824,11 +1910,32 @@ impl ModuleLoader {
                 m.insert("unfold".to_string(), Val::Builtin(Builtin::Unfold));
                 Ok(m)
             }
-            "std/flow" => {
-                let mut m = BTreeMap::new();
-                m.insert("pipe".to_string(), Val::Builtin(Builtin::FlowPipe));
-                Ok(m)
-            }
+              "std/flow" => {
+                  let mut m = BTreeMap::new();
+                  m.insert("pipe".to_string(), Val::Builtin(Builtin::FlowPipe));
+                  Ok(m)
+              }
+
+              "std/str" => {
+                  let mut m = BTreeMap::new();
+                  m.insert("len".to_string(), Val::Builtin(Builtin::StrLen));
+                  m.insert("concat".to_string(), Val::Builtin(Builtin::StrConcat));
+                  Ok(m)
+              }
+
+              "std/map" => {
+                  let mut m = BTreeMap::new();
+                  m.insert("get".to_string(), Val::Builtin(Builtin::MapGet));
+                  m.insert("set".to_string(), Val::Builtin(Builtin::MapSet));
+                  Ok(m)
+              }
+
+              "std/json" => {
+                  let mut m = BTreeMap::new();
+                  m.insert("encode".to_string(), Val::Builtin(Builtin::JsonEncode));
+                  m.insert("decode".to_string(), Val::Builtin(Builtin::JsonDecode));
+                  Ok(m)
+              }
             _ => bail!("unknown std module: {name}"),
         }
     }

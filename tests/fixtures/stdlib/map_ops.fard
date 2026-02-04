@@ -1,0 +1,5 @@
+import("std/map") as Map
+
+let m = { a: 1, b: 2 } in
+let m2 = Map.set(m, "c", 3) in
+Map.get(m2, "c")

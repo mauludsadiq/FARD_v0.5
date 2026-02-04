@@ -37,3 +37,8 @@ for g in "${GATES[@]}"; do
 done
 
 pass
+
+sh tools/repro_gate_g46_std_str_basic.sh
+sh tools/repro_gate_g47_std_str_len.sh
+sh tools/repro_gate_g48_std_map_ops.sh
+sh tools/repro_gate_g49_std_json_roundtrip.sh
