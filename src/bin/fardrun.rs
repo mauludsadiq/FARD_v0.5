@@ -448,6 +448,7 @@ struct MatchArm {
 #[allow(dead_code)]
 enum Expr {
     Let(String, Box<Expr>, Box<Expr>),
+    LetPat(Pat, Box<Expr>, Box<Expr>),
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     Fn(Vec<String>, Box<Expr>),
     Call(Box<Expr>, Vec<Expr>),
@@ -566,9 +567,10 @@ impl Parser {
         }
     }
     fn expect_ident(&mut self) -> Result<String> {
+        let t = self.peek().clone();
         match self.bump() {
             Tok::Ident(x) => Ok(x),
-            _ => bail!("ERROR_PARSE expected identifier"),
+            _ => bail!("ERROR_PARSE expected identifier; got {:?}", t),
         }
     }
 
@@ -766,6 +768,31 @@ impl Parser {
     }
 
     fn parse_pat(&mut self) -> Result<Pat> {
+    // PAT_LITERALS_V0_5
+    match self.peek() {
+        Tok::Num(n) => { let n = *n; self.i += 1; return Ok(Pat::LitInt(n)); }
+        Tok::Str(s) => { let s = s.clone(); self.i += 1; return Ok(Pat::LitStr(s)); }
+        Tok::Kw(s) if s == "true" => { self.i += 1; return Ok(Pat::LitBool(true)); }
+        Tok::Kw(s) if s == "false" => { self.i += 1; return Ok(Pat::LitBool(false)); }
+        Tok::Kw(s) if s == "null" => { self.i += 1; return Ok(Pat::LitNull); }
+        _ => {}
+    }
+
+// literal patterns: Tok::Num/Tok::Str/true/false/null
+        match self.peek() {
+            Tok::Num(_) => {
+                let n = match self.bump() { Tok::Num(x) => x, _ => unreachable!() };
+                return Ok(Pat::LitInt(n));
+            }
+            Tok::Str(_) => {
+                let s = match self.bump() { Tok::Str(x) => x, _ => unreachable!() };
+                return Ok(Pat::LitStr(s));
+            }
+            Tok::Kw(s) | Tok::Ident(s) if s == "true" => { self.bump(); return Ok(Pat::LitBool(true)); }
+            Tok::Kw(s) | Tok::Ident(s) if s == "false" => { self.bump(); return Ok(Pat::LitBool(false)); }
+            Tok::Kw(s) | Tok::Ident(s) if s == "null" => { self.bump(); return Ok(Pat::LitNull); }
+            _ => {}
+        }
 
         if self.eat_sym("[") {
 
@@ -985,14 +1012,17 @@ impl Parser {
 
         }
 
-        if self.eat_kw("let") {
-            let name = self.expect_ident()?;
-            self.expect_sym("=")?;
-            let e1 = self.parse_expr()?;
-            self.expect_kw("in")?;
-            let e2 = self.parse_expr()?;
-            return Ok(Expr::Let(name, Box::new(e1), Box::new(e2)));
-        }
+                if self.eat_kw("let") {
+                    let pat = self.parse_pat()?;
+                    self.expect_sym("=")?;
+                    let e1 = self.parse_expr()?;
+                    self.expect_kw("in")?;
+                    let e2 = self.parse_expr()?;
+                    match &pat {
+                        Pat::Bind(name) => return Ok(Expr::Let(name.clone(), Box::new(e1), Box::new(e2))),
+                        _ => return Ok(Expr::LetPat(pat, Box::new(e1), Box::new(e2))),
+                    }
+                }
         if self.eat_kw("if") {
             let c = self.parse_expr()?;
             self.expect_kw("then")?;
@@ -1397,13 +1427,23 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                 _ => bail!("field access on non-record"),
             }
         }
-        Expr::Let(name, e1, e2) => {
-            let v1 = eval(e1, env, tracer, loader)?;
-            let mut child = env.child();
-            child.set(name.clone(), v1);
-            eval(e2, &mut child, tracer, loader)
-        }
-        Expr::If(c, t, f) => {
+        
+Expr::Let(name, e1, e2) => {
+    let v1 = eval(e1, env, tracer, loader)?;
+    let mut child = env.child();
+    child.set(name.clone(), v1);
+    eval(e2, &mut child, tracer, loader)
+}
+Expr::LetPat(pat, e1, e2) => {
+    let v1 = eval(e1, env, tracer, loader)?;
+    let mut child = env.child();
+    if !fard_pat_match_v0_5(pat, &v1, &mut child)? {
+        bail!("ERROR_RUNTIME let pattern did not match");
+    }
+    eval(e2, &mut child, tracer, loader)
+}
+Expr::If
+(c, t, f) => {
             let cv = eval(c, env, tracer, loader)?;
             match cv {
                 Val::Bool(true) => eval(t, env, tracer, loader),
