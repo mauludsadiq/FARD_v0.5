@@ -450,7 +450,7 @@ enum Expr {
     Let(String, Box<Expr>, Box<Expr>),
     LetPat(Pat, Box<Expr>, Box<Expr>),
     If(Box<Expr>, Box<Expr>, Box<Expr>),
-    Fn(Vec<String>, Box<Expr>),
+    Fn(Vec<Pat>, Box<Expr>),
     Call(Box<Expr>, Vec<Expr>),
     Get(Box<Expr>, String),
     List(Vec<Expr>),
@@ -471,7 +471,8 @@ enum Expr {
 enum Item {
     Import(String, String),
     Let(String, Expr),
-    Fn(String, Vec<(String, Option<Type>)>, Option<Type>, Expr),
+    
+Fn(String, Vec<(Pat, Option<Type>)>, Option<Type>, Expr),
     Export(Vec<String>),
     Expr(Expr),
 }
@@ -717,10 +718,12 @@ impl Parser {
             if self.eat_kw("fn") {
                 let name = self.expect_ident()?;
                 self.expect_sym("(")?;
-                let mut params: Vec<(String, Option<Type>)> = Vec::new();
-                if !self.eat_sym(")") {
+                
+let mut params: Vec<(Pat, Option<Type>)> = Vec::new();
+
+if !self.eat_sym(")") {
                     loop {
-                        let p = self.expect_ident()?;
+                        let p = self.parse_pat()?;
                         let ann = if self.eat_sym(":") {
                             Some(self.parse_type()?)
                         } else {
@@ -1147,7 +1150,7 @@ impl Parser {
             let mut params = Vec::new();
             if !self.eat_sym(")") {
                 loop {
-                    let p = self.expect_ident()?;
+                    let p = self.parse_pat()?;
                     params.push(p);
                     if self.eat_sym(")") {
                         break;
@@ -1239,7 +1242,7 @@ enum Val {
 }
 #[derive(Clone, Debug)]
 struct Func {
-    params: Vec<String>,
+    params: Vec<Pat>,
     body: Expr,
     env: Env,
 }
@@ -1549,9 +1552,13 @@ fn call(f: Val, args: Vec<Val>, tracer: &mut Tracer, loader: &mut ModuleLoader) 
                 bail!("arity mismatch");
             }
             let mut e = fun.env.child();
-            for (p, a) in fun.params.iter().zip(args.into_iter()) {
-                e.set(p.clone(), a);
+            
+for (p, a) in fun.params.iter().zip(args.into_iter()) {
+                if !fard_pat_match_v0_5(p, &a, &mut e)? {
+                    bail!("ERROR_RUNTIME arg pattern did not match");
+                }
             }
+
             eval(&fun.body, &mut e, tracer, loader)
         }
         _ => bail!("call on non-function"),
@@ -2288,7 +2295,8 @@ impl ModuleLoader {
                 }
                 Item::Fn(name, params, _ret, body) => {
                     let f = Val::Func(Func {
-                        params: params.into_iter().map(|(n, _)| n).collect(),
+                        
+params: params.into_iter().map(|(p, _)| p).collect(),
                         body,
                         env: env.clone(),
                     });
