@@ -20,8 +20,8 @@ set -e
 test "$rc" -ne 0 || { echo "FAIL G39_ERROR_SPAN_CORRECT EXPECTED_FAIL"; exit 1; }
 test -f "$OUT/error.json" || { echo "FAIL G39_ERROR_SPAN_CORRECT MISSING_error.json"; exit 1; }
 
-BS="$(rg -n -o '"byte_start"[[:space:]]*:[[:space:]]*[0-9]+' "$OUT/error.json" | head -n 1 | rg -o '[0-9]+' | head -n 1 || true)"
-BE="$(rg -n -o '"byte_end"[[:space:]]*:[[:space:]]*[0-9]+'   "$OUT/error.json" | head -n 1 | rg -o '[0-9]+' | head -n 1 || true)"
+BS="$(jq -r '.span.byte_start' "$OUT/error.json" 2>/dev/null || true)"
+BE="$(jq -r '.span.byte_end'   "$OUT/error.json" 2>/dev/null || true)"
 
 test -n "${BS:-}" || { echo "FAIL G39_ERROR_SPAN_CORRECT NO_byte_start"; exit 1; }
 test -n "${BE:-}" || { echo "FAIL G39_ERROR_SPAN_CORRECT NO_byte_end"; exit 1; }

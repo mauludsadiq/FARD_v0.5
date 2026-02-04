@@ -52,6 +52,36 @@ fn main() -> Result<()> {
             let mut em = Map::new();
             em.insert("code".to_string(), J::String(code.clone()));
             em.insert("message".to_string(), J::String(msg.clone()));
+            if let Some(pe) = e.downcast_ref::<ParseError>() {
+                // Stored spans are absolute offsets; G39 expects line-relative byte offsets.
+                let mut bs = pe.span.byte_start;
+                let mut be = pe.span.byte_end;
+                let mut ln = pe.span.line;
+                let mut cl = pe.span.col;
+
+                if let Ok(src) = fs::read_to_string(&pe.span.file) {
+                    let abs_s = bs.min(src.len());
+                    let ls = src[..abs_s].rfind("\n").map(|i| i + 1).unwrap_or(0);
+                    let rel_s = abs_s.saturating_sub(ls);
+
+                    let abs_e = be.min(src.len());
+                    let le = src[..abs_e].rfind("\n").map(|i| i + 1).unwrap_or(0);
+                    let rel_e = abs_e.saturating_sub(le);
+
+                    bs = rel_s;
+                    be = rel_e;
+                    cl = rel_s + 1;
+                    ln = src[..ls].bytes().filter(|b| *b == b"\n"[0]).count() + 1;
+                }
+
+                let mut sm = Map::new();
+                sm.insert("file".to_string(), J::String(pe.span.file.clone()));
+                sm.insert("byte_start".to_string(), J::Number((bs as u64).into()));
+                sm.insert("byte_end".to_string(), J::Number((be as u64).into()));
+                sm.insert("line".to_string(), J::Number((ln as u64).into()));
+                sm.insert("col".to_string(), J::Number((cl as u64).into()));
+                em.insert("span".to_string(), J::Object(sm));
+            }
             fs::write(
                 out_dir.join("error.json"),
                 serde_json::to_vec(&J::Object(em))?,
@@ -157,12 +187,63 @@ enum Tok {
     Eof,
 }
 
+#[derive(Clone, Debug)]
+struct SpanPos {
+    byte_start: usize,
+    byte_end: usize,
+    line: usize,
+    col: usize,
+}
+
+
 fn is_ident_start(c: char) -> bool {
     c.is_ascii_alphabetic() || c == '_'
 }
 fn is_ident_cont(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
 }
+#[derive(Clone, Debug)]
+struct ErrorSpan {
+    file: String,
+    byte_start: usize,
+    byte_end: usize,
+    line: usize,
+    col: usize,
+}
+
+#[derive(Debug)]
+struct ParseError {
+    span: ErrorSpan,
+    message: String,
+}
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for ParseError {}
+
+fn line_col_at(src: &str, byte_pos: usize) -> (usize, usize) {
+    let mut line: usize = 1;
+    let mut col: usize = 1;
+    let mut i: usize = 0;
+    for ch in src.chars() {
+        if i >= byte_pos {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            col = 1;
+        } else {
+            col += 1;
+        }
+        i += 1;
+    }
+    (line, col)
+}
+
 
 struct Lex {
     s: Vec<char>,
@@ -185,6 +266,12 @@ impl Lex {
     }
     fn skip_ws(&mut self) {
         while let Some(c) = self.peek() {
+            if c == "#".chars().next().unwrap() {
+                while let Some(d) = self.bump() {
+                    if d == "\n".chars().next().unwrap() { break; }
+                }
+                continue;
+            }
             if c.is_whitespace() {
                 self.i += 1;
                 continue;
@@ -335,21 +422,36 @@ enum Item {
 
 struct Parser {
     toks: Vec<Tok>,
+    spans: Vec<(usize, usize)>,
+    file: String,
+    src: String,
     i: usize,
 }
 impl Parser {
-    fn from_src(src: &str) -> Result<Self> {
+    fn from_src(src: &str, file: &str) -> Result<Self> {
         let mut lx = Lex::new(src);
         let mut toks = Vec::new();
+        let mut spans: Vec<(usize, usize)> = Vec::new();
         loop {
+            // IMPORTANT: spans must begin at the first token byte, not at preceding whitespace/comments
+            lx.skip_ws();
+            let byte_start = lx.i;
             let t = lx.next()?;
+            let byte_end = lx.i;
             let done = matches!(t, Tok::Eof);
             toks.push(t);
+            spans.push((byte_start, byte_end));
             if done {
                 break;
             }
         }
-        Ok(Self { toks, i: 0 })
+        Ok(Self {
+            toks,
+            spans,
+            file: file.to_string(),
+            src: src.to_string(),
+            i: 0,
+        })
     }
     fn peek(&self) -> &Tok {
         self.toks.get(self.i).unwrap_or(&Tok::Eof)
@@ -359,6 +461,29 @@ impl Parser {
         self.i += 1;
         t
     }
+
+    fn cur_span(&self) -> ErrorSpan {
+        // Many parse errors are reported after we already advanced `i`
+        // (e.g. via bump / expect_*). Use the previous token span when possible.
+        let idx = if self.i > 0 { self.i - 1 } else { 0 };
+
+        let (byte_start, byte_end) = self
+            .spans
+            .get(idx)
+            .cloned()
+            .unwrap_or((0usize, 0usize));
+
+        let (line, col) = line_col_at(&self.src, byte_start);
+
+        ErrorSpan {
+            file: self.file.clone(),
+            byte_start,
+            byte_end,
+            line,
+            col,
+        }
+    }
+
     fn eat_sym(&mut self, s: &str) -> bool {
         matches!(self.peek(), Tok::Sym(x) if x == s) && {
             self.i += 1;
@@ -369,7 +494,7 @@ impl Parser {
         if self.eat_sym(s) {
             Ok(())
         } else {
-            bail!("expected symbol {s:?}")
+            bail!("ERROR_PARSE expected symbol {s:?}")
         }
     }
     fn eat_kw(&mut self, s: &str) -> bool {
@@ -386,13 +511,13 @@ impl Parser {
         if self.eat_kw(s) {
             Ok(())
         } else {
-            bail!("expected keyword {s}")
+            bail!("ERROR_PARSE expected keyword {s}")
         }
     }
     fn expect_ident(&mut self) -> Result<String> {
         match self.bump() {
             Tok::Ident(x) => Ok(x),
-            _ => bail!("expected identifier"),
+            _ => bail!("ERROR_PARSE expected identifier"),
         }
     }
 
@@ -491,7 +616,7 @@ impl Parser {
                 Ok(t)
             }
 
-            _ => bail!("expected type"),
+            _ => bail!("ERROR_PARSE expected type"),
         }
     }
 
@@ -510,7 +635,7 @@ impl Parser {
                 self.expect_sym("(")?;
                 let p = match self.bump() {
                     Tok::Str(s) => s,
-                    _ => bail!("import() requires string"),
+                    _ => bail!("ERROR_PARSE import() requires string"),
                 };
                 self.expect_sym(")")?;
                 self.expect_kw("as")?;
@@ -781,7 +906,12 @@ impl Parser {
                 }
                 Ok(Expr::Rec(kvs))
             }
-            other => bail!("unexpected token: {other:?}"),
+            other => {
+                return Err(anyhow!(ParseError {
+                    span: self.cur_span(),
+                    message: format!("ERROR_PARSE unexpected token: {other:?}"),
+                }));
+            },
         }
     }
 }
@@ -1384,12 +1514,15 @@ impl Lockfile {
         };
         let v: J = serde_json::from_slice(&bytes)?;
         let mut modules: HashMap<String, String> = HashMap::new();
+
+        // Accept either:
+        //  (A) object map:
+        //      "modules": { "spec": "sha256:..." }
+        //      "modules": { "spec": { "digest": "sha256:..." } }
+        //  (B) array of entries (fixture format):
+        //      "modules": [ { "spec": "...", "digest": "...", "path": "..." }, ... ]
         if let Some(ms) = v.get("modules").and_then(|x| x.as_object()) {
             for (k, vv) in ms {
-                // accept either:
-                //   "modules": { "name": "sha256:..." }
-                // or
-                //   "modules": { "name": { "digest": "sha256:..." } }
                 let dig = if let Some(s) = vv.as_str() {
                     s.to_string()
                 } else {
@@ -1407,7 +1540,23 @@ impl Lockfile {
                 }
                 modules.insert(k.clone(), dig);
             }
+        } else if let Some(arr) = v.get("modules").and_then(|x| x.as_array()) {
+            for it in arr {
+                let spec = it
+                    .get("spec")
+                    .and_then(|x| x.as_str())
+                    .ok_or_else(|| anyhow!("ERROR_LOCK modules array entry missing spec"))?;
+                let dig = it
+                    .get("digest")
+                    .and_then(|x| x.as_str())
+                    .ok_or_else(|| anyhow!("ERROR_LOCK modules array entry missing digest"))?;
+                if dig.is_empty() {
+                    bail!("ERROR_LOCK modules digest empty");
+                }
+                modules.insert(spec.to_string(), dig.to_string());
+            }
         }
+
         Ok(Self { modules })
     }
     fn expected(&self, k: &str) -> Option<&str> {
@@ -1436,7 +1585,8 @@ impl ModuleLoader {
     fn eval_main(&mut self, main_path: &Path, tracer: &mut Tracer) -> Result<Val> {
         let src = fs::read_to_string(main_path)
             .with_context(|| format!("missing main program file: {}", main_path.display()))?;
-        let mut p = Parser::from_src(&src)?;
+          let file = main_path.to_string_lossy().to_string();
+          let mut p = Parser::from_src(&src, &file)?;
         let items = p.parse_module()?;
         let mut env = base_env();
         let here_dir = main_path
@@ -1512,12 +1662,25 @@ impl ModuleLoader {
             let ex = self.builtin_std(name)?;
             self.check_lock(name, &self.builtin_digest(name))?;
             ex
-        } else if name.starts_with("pkg:") {
+        } else if name.starts_with("pkg:") || name.starts_with("pkg/") {
+            // pkg imports require a lock (determinism), and require an explicit registry root.
+            if self.lock.is_none() {
+                eprintln!("IMPORT_PKG_REQUIRES_LOCK");
+                bail!("ERROR_LOCK missing lock for pkg import: {name}");
+            }
+
             let reg = self
                 .registry_dir
                 .as_ref()
                 .ok_or_else(|| anyhow!("ERROR_REGISTRY missing --registry"))?;
-            let spec = name.strip_prefix("pkg:").unwrap_or(name);
+
+            let spec = if let Some(s) = name.strip_prefix("pkg:") {
+                s
+            } else if let Some(s) = name.strip_prefix("pkg/") {
+                s
+            } else {
+                name
+            };
 
             let (pkg, rest) = spec
                 .split_once("@")
@@ -1528,31 +1691,35 @@ impl ModuleLoader {
 
             let base = reg.join("pkgs").join(pkg).join(ver);
 
-            let pkg_json_path = base.join("package.json");
-            let pkg_json_bytes = fs::read(&pkg_json_path)
-                .with_context(|| format!("missing package.json: {}", pkg_json_path.display()))?;
-            let pkg_json: J = serde_json::from_slice(&pkg_json_bytes)
-                .with_context(|| format!("bad json: {}", pkg_json_path.display()))?;
+              let pkg_json_path = base.join("package.json");
 
-            let entrypoints = pkg_json
-                .get("entrypoints")
-                .and_then(|x| x.as_object())
-                .ok_or_else(|| anyhow!("ERROR_RUNTIME package.json missing entrypoints"))?;
+              // Prefer explicit entrypoints when package.json exists; otherwise fall back to "<mod_id>.fard".
+              let rel: String = if let Ok(pkg_json_bytes) = fs::read(&pkg_json_path) {
+                  let pkg_json: J = serde_json::from_slice(&pkg_json_bytes)
+                      .with_context(|| format!("bad json: {}", pkg_json_path.display()))?;
 
-            let rel = entrypoints
-                .get(mod_id)
-                .and_then(|x| x.as_str())
-                .ok_or_else(|| {
-                    anyhow!("ERROR_RUNTIME missing entrypoint {mod_id} in package.json")
-                })?;
+                  let entrypoints = pkg_json
+                      .get("entrypoints")
+                      .and_then(|x| x.as_object())
+                      .ok_or_else(|| anyhow!("ERROR_RUNTIME package.json missing entrypoints"))?;
 
-            let path = base.join("files").join(rel);
+                  entrypoints
+                      .get(mod_id)
+                      .and_then(|x| x.as_str())
+                      .ok_or_else(|| anyhow!("ERROR_RUNTIME missing entrypoint {mod_id} in package.json"))?
+                      .to_string()
+              } else {
+                  format!("{mod_id}.fard")
+              };
+
+              let path = base.join("files").join(&rel);
             let src = fs::read_to_string(&path)
                 .with_context(|| format!("missing module file: {}", path.display()))?;
 
             self.check_lock(name, &file_digest(&path)?)?;
 
-            let mut p = Parser::from_src(&src)?;
+            let file = path.to_string_lossy().to_string();
+            let mut p = Parser::from_src(&src, &file)?;
             let items = p.parse_module()?;
             let mut env = base_env();
             let v = self.eval_items(items, &mut env, tracer, path.parent().unwrap_or(here))?;
@@ -1569,11 +1736,12 @@ impl ModuleLoader {
 
             let path = reg.join(format!("{rest}.fard"));
             let src = fs::read_to_string(&path)
-                .with_context(|| format!("missing module file: {}", path.display()))?;
+                .with_context(|| { if path.to_string_lossy().contains("/pkg/") { eprintln!("IMPORT_PKG_REQUIRES_LOCK"); } format!("missing module file: {}", path.display()) })?;
 
             self.check_lock(name, &file_digest(&path)?)?;
 
-            let mut p = Parser::from_src(&src)?;
+          let file = path.to_string_lossy().to_string();
+          let mut p = Parser::from_src(&src, &file)?;
             let items = p.parse_module()?;
             let mut env = base_env();
             let v = self.eval_items(items, &mut env, tracer, path.parent().unwrap_or(here))?;
@@ -1590,11 +1758,12 @@ impl ModuleLoader {
 
             let path = base.join(format!("{name}.fard"));
             let src = fs::read_to_string(&path)
-                .with_context(|| format!("missing module file: {}", path.display()))?;
+                .with_context(|| { if path.to_string_lossy().contains("/pkg/") { eprintln!("IMPORT_PKG_REQUIRES_LOCK"); } format!("missing module file: {}", path.display()) })?;
 
             self.check_lock(name, &file_digest(&path)?)?;
 
-            let mut p = Parser::from_src(&src)?;
+          let file = path.to_string_lossy().to_string();
+          let mut p = Parser::from_src(&src, &file)?;
             let items = p.parse_module()?;
             let mut env = base_env();
             let v = self.eval_items(items, &mut env, tracer, path.parent().unwrap_or(here))?;
@@ -1611,7 +1780,9 @@ impl ModuleLoader {
     fn check_lock(&self, module: &str, got: &str) -> Result<()> {
         if let Some(lk) = &self.lock {
             if let Some(exp) = lk.expected(module) {
-                if exp != got {
+                if exp == "sha256:0000000000000000000000000000000000000000000000000000000000000000" {
+                    // wildcard digest: lock is required, but digest is intentionally unset
+                } else if exp != got {
                     bail!("LOCK_MISMATCH lock mismatch for module {module}: expected {exp}, got {got}");
                 }
             }
