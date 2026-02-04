@@ -353,6 +353,35 @@ impl Lex {
             }
             return Ok(Tok::Str(t));
         }
+        let three = if self.i + 2 < self.s.len() {
+
+            let mut t = String::new();
+
+            t.push(self.s[self.i]);
+
+            t.push(self.s[self.i + 1]);
+
+            t.push(self.s[self.i + 2]);
+
+            Some(t)
+
+        } else {
+
+            None
+
+        };
+
+        if three.as_deref() == Some("...") {
+
+            self.i += 3;
+
+            return Ok(Tok::Sym("...".to_string()));
+
+        }
+
+
+
+
 
         let two = if self.i + 1 < self.s.len() {
             let mut t = String::new();
@@ -363,7 +392,7 @@ impl Lex {
             None
         };
 
-        for op in ["...", "==", "<=", ">=", "&&", "||", "->", "=>"] {
+        for op in ["==", "<=", ">=", "&&", "||", "->", "=>"] {
             if two.as_deref() == Some(op) {
                 self.i += 2;
                 return Ok(Tok::Sym(op.to_string()));
@@ -373,7 +402,7 @@ impl Lex {
         let one = self.bump().unwrap();
         let sym = match one {
             '(' | ')' | '{' | '}' | '[' | ']' | ',' | ':' | '.' | '+' | '-' | '*' | '/' | '='
-            | '<' | '>' => one.to_string(),
+            | '<' | '>' | '?' => one.to_string(),
             _ => bail!("unexpected char: {one}"),
         };
         Ok(Tok::Sym(sym))
@@ -736,7 +765,226 @@ impl Parser {
         Ok(items)
     }
 
+    fn parse_pat(&mut self) -> Result<Pat> {
+
+        if self.eat_sym("[") {
+
+            let mut items: Vec<Pat> = Vec::new();
+
+            let mut rest: Option<String> = None;
+
+            if self.eat_sym("]") { return Ok(Pat::List { items, rest }); }
+
+            loop {
+
+                if self.eat_sym("...") {
+
+                    rest = match self.bump() {
+
+                        Tok::Ident(n) => Some(n),
+
+                        Tok::Kw(n) => Some(n),
+
+                        _ => None,
+
+                    };
+
+                    self.expect_sym("]")?;
+
+                    return Ok(Pat::List { items, rest });
+
+                }
+
+                items.push(self.parse_pat()?);
+
+                if self.eat_sym(",") {
+
+                    if self.eat_sym("]") { return Ok(Pat::List { items, rest }); }
+
+                    continue;
+
+                }
+
+                self.expect_sym("]")?;
+
+                return Ok(Pat::List { items, rest });
+
+            }
+
+        }
+
+        if self.eat_sym("{") {
+
+            let mut items: Vec<(String, Pat)> = Vec::new();
+
+            let mut rest: Option<String> = None;
+
+            if self.eat_sym("}") { return Ok(Pat::Obj { items, rest }); }
+
+            loop {
+
+                if self.eat_sym("...") {
+
+                    rest = match self.bump() {
+
+                        Tok::Ident(n) => Some(n),
+
+                        Tok::Kw(n) => Some(n),
+
+                        _ => None,
+
+                    };
+
+                    self.expect_sym("}")?;
+
+                    return Ok(Pat::Obj { items, rest });
+
+                }
+
+                let k = match self.bump() {
+
+                    Tok::Ident(x) => x,
+
+                    Tok::Kw(x) => x,
+
+                    Tok::Str(x) => x,
+
+                    _ => bail!("record key must be ident or string"),
+
+                };
+
+                self.expect_sym(":")?;
+
+                let p = self.parse_pat()?;
+
+                items.push((k, p));
+
+                if self.eat_sym(",") {
+
+                    if self.eat_sym("}") { return Ok(Pat::Obj { items, rest }); }
+
+                    continue;
+
+                }
+
+                self.expect_sym("}")?;
+
+                return Ok(Pat::Obj { items, rest });
+
+            }
+
+        }
+
+        match self.bump() {
+
+            Tok::Ident(n) => {
+
+                if n == "_" { Ok(Pat::Wild) } else { Ok(Pat::Bind(n)) }
+
+            }
+
+            Tok::Kw(n) => {
+
+                if n == "true" { Ok(Pat::LitBool(true)) }
+
+                else if n == "false" { Ok(Pat::LitBool(false)) }
+
+                else if n == "null" { Ok(Pat::LitNull) }
+
+                else if n == "_" { Ok(Pat::Wild) }
+
+                else { Ok(Pat::Bind(n)) }
+
+            }
+
+            Tok::Num(n) => Ok(Pat::LitInt(n)),
+
+            Tok::Str(s) => Ok(Pat::LitStr(s)),
+
+            other => bail!("ERROR_PARSE unexpected token: {other:?}"),
+
+        }
+
+    }
+
+
+
+    fn parse_match_arms(&mut self) -> Result<Vec<MatchArm>> {
+
+        self.expect_sym("{")?;
+
+        let mut arms: Vec<MatchArm> = Vec::new();
+
+        if self.eat_sym("}") { return Ok(arms); }
+
+        loop {
+
+            let pat = self.parse_pat()?;
+
+            let guard = if self.eat_kw("using") {
+
+                Some(self.parse_expr()?)
+
+            } else {
+
+                None
+
+            };
+
+            self.expect_sym("=>")?;
+
+            let body = self.parse_expr()?;
+
+            arms.push(MatchArm { pat, guard, body });
+
+            if self.eat_sym(",") {
+
+                if self.eat_sym("}") { break; }
+
+                continue;
+
+            }
+
+            self.expect_sym("}")?;
+
+            break;
+
+        }
+
+        Ok(arms)
+
+    }
+
+
+
     fn parse_expr(&mut self) -> Result<Expr> {
+
+        if self.eat_kw("using") {
+
+            let pat = self.parse_pat()?;
+
+            self.expect_sym("=")?;
+
+            let acquire = self.parse_expr()?;
+
+            self.expect_kw("in")?;
+
+            let body = self.parse_expr()?;
+
+            return Ok(Expr::Using(pat, Box::new(acquire), Box::new(body)));
+
+        }
+
+        if self.eat_kw("match") {
+
+            let scrut = self.parse_expr()?;
+
+            let arms = self.parse_match_arms()?;
+
+            return Ok(Expr::Match(Box::new(scrut), arms));
+
+        }
+
         if self.eat_kw("let") {
             let name = self.expect_ident()?;
             self.expect_sym("=")?;
@@ -827,6 +1075,15 @@ impl Parser {
     fn parse_postfix(&mut self) -> Result<Expr> {
         let mut e = self.parse_primary()?;
         loop {
+
+            if self.eat_sym("?") {
+
+                e = Expr::Try(Box::new(e));
+
+                continue;
+
+            }
+
             if self.eat_sym(".") {
                 let n = self.expect_ident()?;
                 e = Expr::Get(Box::new(e), n);
@@ -1060,6 +1317,55 @@ fn val_from_json(j: &J) -> Result<Val> {
     }
 }
 
+fn fard_pat_match_v0_5(p: &Pat, v: &Val, env: &mut Env) -> Result<bool> {
+    match p {
+        Pat::Wild => Ok(true),
+        Pat::Bind(n) => {
+            env.set(n.clone(), v.clone());
+            Ok(true)
+        }
+        Pat::LitInt(i) => Ok(matches!(v, Val::Int(j) if j == i)),
+        Pat::LitStr(s) => Ok(matches!(v, Val::Str(t) if t == s)),
+        Pat::LitBool(b) => Ok(matches!(v, Val::Bool(c) if c == b)),
+        Pat::LitNull => Ok(matches!(v, Val::Null)),
+        Pat::List { items, rest } => match v {
+            Val::List(xs) => {
+                if xs.len() < items.len() { return Ok(false); }
+                for (i, subp) in items.iter().enumerate() {
+                    if !fard_pat_match_v0_5(subp, &xs[i], env)? { return Ok(false); }
+                }
+                if let Some(rn) = rest {
+                    let k = items.len();
+                    env.set(rn.clone(), Val::List(xs[k..].to_vec()));
+                }
+                Ok(true)
+            }
+            _ => Ok(false),
+        },
+        Pat::Obj { items, rest } => match v {
+            Val::Rec(m) => {
+                for (k, subp) in items.iter() {
+                    let vv = match m.get(k) {
+                        Some(vv) => vv,
+                        None => return Ok(false),
+                    };
+                    if !fard_pat_match_v0_5(subp, vv, env)? { return Ok(false); }
+                }
+                if let Some(rn) = rest {
+                    let mut rm: BTreeMap<String, Val> = BTreeMap::new();
+                    for (k, vv) in m.iter() {
+                        if items.iter().any(|(kk, _)| kk == k) { continue; }
+                        rm.insert(k.clone(), vv.clone());
+                    }
+                    env.set(rn.clone(), Val::Rec(rm));
+                }
+                Ok(true)
+            }
+            _ => Ok(false),
+        },
+    }
+}
+
 fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader) -> Result<Val> {
     match e {
         Expr::Int(n) => Ok(Val::Int(*n)),
@@ -1148,13 +1454,30 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
             eval(x, env, tracer, loader)
         }
         Expr::Match(scrut, _arms) => {
-            // compile-first stub: ignore arms for now
-            eval(scrut, env, tracer, loader)
+            let sv = eval(scrut, env, tracer, loader)?;
+            for arm in _arms.into_iter() {
+                let mut env2 = env.child();
+                if fard_pat_match_v0_5(&arm.pat, &sv, &mut env2)? {
+                    if let Some(g) = &arm.guard {
+                        let gv = eval(g, &mut env2, tracer, loader)?;
+                        match gv {
+                            Val::Bool(true) => {}
+                            Val::Bool(false) => { continue; }
+                            _ => bail!("ERROR_RUNTIME match guard not bool"),
+                        }
+                    }
+                    return eval(&arm.body, &mut env2, tracer, loader);
+                }
+            }
+            bail!("ERROR_RUNTIME no match")
         }
         Expr::Using(_pat, acquire, body) => {
-            // compile-first stub: evaluate acquire (discard), then body
-            let _ = eval(acquire, env, tracer, loader)?;
-            eval(body, env, tracer, loader)
+            let av = eval(acquire, env, tracer, loader)?;
+            let mut env2 = env.child();
+            if !fard_pat_match_v0_5(_pat, &av, &mut env2)? {
+                bail!("ERROR_RUNTIME using pattern did not match")
+            }
+            eval(body, &mut env2, tracer, loader)
         }
     }
 }
