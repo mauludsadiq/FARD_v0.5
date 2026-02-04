@@ -308,7 +308,7 @@ impl Lex {
             {
                 let id = t;
                 let kws = [
-                    "let", "in", "fn", "if", "then", "else", "import", "as", "export", "true",
+                    "let", "in", "fn", "if", "then", "else", "import", "as", "export", "match", "using", "true",
                     "false", "null",
                 ];
                 if kws.contains(&id.as_str()) {
@@ -363,7 +363,7 @@ impl Lex {
             None
         };
 
-        for op in ["==", "<=", ">=", "&&", "||", "->"] {
+        for op in ["...", "==", "<=", ">=", "&&", "||", "->", "=>"] {
             if two.as_deref() == Some(op) {
                 self.i += 2;
                 return Ok(Tok::Sym(op.to_string()));
@@ -396,6 +396,27 @@ enum Type {
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
+enum Pat {
+    Wild,
+    Bind(String),
+    LitInt(i64),
+    LitStr(String),
+    LitBool(bool),
+    LitNull,
+    Obj { items: Vec<(String, Pat)>, rest: Option<String> },
+    List { items: Vec<Pat>, rest: Option<String> },
+}
+
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+struct MatchArm {
+    pat: Pat,
+    guard: Option<Expr>,
+    body: Expr,
+}
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
 enum Expr {
     Let(String, Box<Expr>, Box<Expr>),
     If(Box<Expr>, Box<Expr>, Box<Expr>),
@@ -411,6 +432,9 @@ enum Expr {
     Null,
     Bin(String, Box<Expr>, Box<Expr>),
     Unary(String, Box<Expr>),
+    Try(Box<Expr>),
+    Match(Box<Expr>, Vec<MatchArm>),
+    Using(Pat, Box<Expr>, Box<Expr>),
 }
 
 #[derive(Clone, Debug)]
@@ -1118,6 +1142,19 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                 av.push(eval(a, env, tracer, loader)?);
             }
             call(fv, av, tracer, loader)
+        }
+        Expr::Try(x) => {
+            // compile-first stub: evaluate inner expression
+            eval(x, env, tracer, loader)
+        }
+        Expr::Match(scrut, _arms) => {
+            // compile-first stub: ignore arms for now
+            eval(scrut, env, tracer, loader)
+        }
+        Expr::Using(_pat, acquire, body) => {
+            // compile-first stub: evaluate acquire (discard), then body
+            let _ = eval(acquire, env, tracer, loader)?;
+            eval(body, env, tracer, loader)
         }
     }
 }
