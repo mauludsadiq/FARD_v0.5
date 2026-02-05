@@ -1,4 +1,8 @@
 use anyhow::{anyhow, bail, Context, Result};
+
+const ERROR_PAT_MISMATCH: &str = "ERROR_PAT_MISMATCH";
+const ERROR_MATCH_NO_ARM: &str = "ERROR_MATCH_NO_ARM";
+
 use serde_json::{Map, Value as J};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
@@ -1441,7 +1445,7 @@ Expr::LetPat(pat, e1, e2) => {
     let v1 = eval(e1, env, tracer, loader)?;
     let mut child = env.child();
     if !fard_pat_match_v0_5(pat, &v1, &mut child)? {
-        bail!("ERROR_RUNTIME let pattern did not match");
+        bail!("{} let pattern did not match", ERROR_PAT_MISMATCH);
     }
     eval(e2, &mut child, tracer, loader)
 }
@@ -1512,13 +1516,13 @@ Expr::If
                     return eval(&arm.body, &mut env2, tracer, loader);
                 }
             }
-            bail!("ERROR_RUNTIME no match")
+            bail!("{} no match", ERROR_MATCH_NO_ARM)
         }
         Expr::Using(_pat, acquire, body) => {
             let av = eval(acquire, env, tracer, loader)?;
             let mut env2 = env.child();
             if !fard_pat_match_v0_5(_pat, &av, &mut env2)? {
-                bail!("ERROR_RUNTIME using pattern did not match")
+                bail!("{} using pattern did not match", ERROR_PAT_MISMATCH)
             }
             eval(body, &mut env2, tracer, loader)
         }
@@ -1555,7 +1559,7 @@ fn call(f: Val, args: Vec<Val>, tracer: &mut Tracer, loader: &mut ModuleLoader) 
             
 for (p, a) in fun.params.iter().zip(args.into_iter()) {
                 if !fard_pat_match_v0_5(p, &a, &mut e)? {
-                    bail!("ERROR_RUNTIME arg pattern did not match");
+                    bail!("{} arg pattern did not match", ERROR_PAT_MISMATCH);
                 }
             }
 
