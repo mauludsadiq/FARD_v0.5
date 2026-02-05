@@ -1,5 +1,16 @@
 use anyhow::{anyhow, bail, Context, Result};
 
+const QMARK_EXPECT_RESULT: &str = "QMARK_EXPECT_RESULT";
+const QMARK_PROPAGATE_ERR: &str = "QMARK_PROPAGATE_ERR";
+
+const RESULT_OK_TAG: &str = "ok";
+const RESULT_ERR_TAG: &str = "err";
+
+const RESULT_TAG_KEY: &str = "t";
+const RESULT_OK_VAL_KEY: &str = "v";
+const RESULT_ERR_VAL_KEY: &str = "e";
+
+
 const ERROR_PAT_MISMATCH: &str = "ERROR_PAT_MISMATCH";
 const ERROR_MATCH_NO_ARM: &str = "ERROR_MATCH_NO_ARM";
 
@@ -42,17 +53,63 @@ fn main() -> Result<()> {
     let v = match loader.eval_main(&program, &mut tracer) {
         Ok(v) => v,
         Err(e) => {
-            let msg0 = format!("{}", e);
-            let code = msg0
-                .split_whitespace()
-                .find(|w| w.starts_with("ERROR_"))
-                .unwrap_or("ERROR_RUNTIME")
-                .to_string();
-            let msg = if msg0.contains("ERROR_") {
-                msg0
-            } else {
-                format!("ERROR_RUNTIME {}", msg0)
+            let msg0 = format!("{}", e);            let code = {
+
+                const PINNED: &[&str] = &[
+
+                    QMARK_EXPECT_RESULT,
+
+                    QMARK_PROPAGATE_ERR,
+
+                    ERROR_PAT_MISMATCH,
+
+                    ERROR_MATCH_NO_ARM,
+
+                ];
+
+
+
+                msg0.split_whitespace()
+
+                    .find(|w| PINNED.contains(w))
+
+                    .or_else(|| msg0.split_whitespace().find(|w| w.starts_with("ERROR_") && *w != "ERROR_RUNTIME"))
+
+                    .or_else(|| msg0.split_whitespace().find(|w| w.starts_with("ERROR_")))
+
+                    .unwrap_or("ERROR_RUNTIME")
+
+                    .to_string()
+
             };
+let msg = {
+
+                let mut s = msg0.clone();
+
+                if let Some(rest) = s.strip_prefix("ERROR_RUNTIME ") {
+
+                    s = rest.to_string();
+
+                }
+
+                if code != "ERROR_RUNTIME" {
+
+                    if let Some(rest) = s.strip_prefix(&format!("{} ", code)) {
+
+                        s = rest.to_string();
+
+                    }
+
+                    format!("{} {}", code, s)
+
+                } else {
+
+                    s
+
+                }
+
+            };
+
             let mut em = Map::new();
             em.insert("code".to_string(), J::String(code.clone()));
             em.insert("message".to_string(), J::String(msg.clone()));
@@ -173,7 +230,12 @@ impl Tracer {
         let mut m = Map::new();
         m.insert("t".to_string(), J::String("error".to_string()));
         m.insert("code".to_string(), J::String(code.to_string()));
-        m.insert("message".to_string(), J::String(message.to_string()));
+        
+let mut s = message.to_string();
+if let Some(rest) = s.strip_prefix("ERROR_RUNTIME ") { s = rest.to_string(); }
+if let Some(rest) = s.strip_prefix(&format!("{} ", code)) { s = rest.to_string(); }
+m.insert("message".to_string(), J::String(format!("{} {}", code, s)));
+
         let line = serde_json::to_string(&J::Object(m))?;
         self.w.write_all(line.as_bytes())?;
         self.w.write_all(b"\n")?;
@@ -1244,6 +1306,19 @@ enum Val {
     Func(Func),
     Builtin(Builtin),
 }
+#[derive(Debug)]
+struct QMarkUnwind {
+    err: Val,
+}
+
+impl std::fmt::Display for QMarkUnwind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", QMARK_PROPAGATE_ERR)
+    }
+}
+impl std::error::Error for QMarkUnwind {}
+
+
 #[derive(Clone, Debug)]
 struct Func {
     params: Vec<Pat>,
@@ -1497,8 +1572,16 @@ Expr::If
             call(fv, av, tracer, loader)
         }
         Expr::Try(x) => {
-            // compile-first stub: evaluate inner expression
-            eval(x, env, tracer, loader)
+            let rv = eval(x, env, tracer, loader)?;
+            if !is_result_val(&rv) {
+                bail!("{} expected result", QMARK_EXPECT_RESULT);
+            }
+            if result_is_ok(&rv)? {
+                result_unwrap_ok(&rv)
+            } else {
+                let e = result_unwrap_err(&rv)?;
+                return Err(QMarkUnwind { err: e }.into());
+            }
         }
         Expr::Match(scrut, _arms) => {
             let sv = eval(scrut, env, tracer, loader)?;
@@ -1528,6 +1611,75 @@ Expr::If
         }
     }
 }
+
+fn is_result_val(v: &Val) -> bool {
+    match v {
+        Val::Rec(m) => {
+            match m.get(RESULT_TAG_KEY) {
+                Some(Val::Str(t)) if t == RESULT_OK_TAG => m.contains_key(RESULT_OK_VAL_KEY),
+                Some(Val::Str(t)) if t == RESULT_ERR_TAG => m.contains_key(RESULT_ERR_VAL_KEY),
+                _ => false,
+            }
+        }
+        _ => false,
+    }
+}
+
+fn result_is_ok(v: &Val) -> Result<bool> {
+    match v {
+        Val::Rec(m) => match m.get(RESULT_TAG_KEY) {
+            Some(Val::Str(t)) if t == RESULT_OK_TAG => Ok(true),
+            Some(Val::Str(t)) if t == RESULT_ERR_TAG => Ok(false),
+            _ => bail!("{} expected result tag", QMARK_EXPECT_RESULT),
+        },
+        _ => bail!("{} expected result", QMARK_EXPECT_RESULT),
+    }
+}
+
+fn result_unwrap_ok(v: &Val) -> Result<Val> {
+    match v {
+        Val::Rec(m) => {
+            match m.get(RESULT_TAG_KEY) {
+                Some(Val::Str(t)) if t == RESULT_OK_TAG => {
+                    m.get(RESULT_OK_VAL_KEY).cloned().ok_or_else(|| anyhow!("{} ok missing v", QMARK_EXPECT_RESULT))
+                }
+                Some(Val::Str(t)) if t == RESULT_ERR_TAG => bail!("{} tried unwrap ok on err", QMARK_EXPECT_RESULT),
+                _ => bail!("{} expected result tag", QMARK_EXPECT_RESULT),
+            }
+        }
+        _ => bail!("{} expected result", QMARK_EXPECT_RESULT),
+    }
+}
+
+fn result_unwrap_err(v: &Val) -> Result<Val> {
+    match v {
+        Val::Rec(m) => {
+            match m.get(RESULT_TAG_KEY) {
+                Some(Val::Str(t)) if t == RESULT_ERR_TAG => {
+                    m.get(RESULT_ERR_VAL_KEY).cloned().ok_or_else(|| anyhow!("{} err missing e", QMARK_EXPECT_RESULT))
+                }
+                Some(Val::Str(t)) if t == RESULT_OK_TAG => bail!("{} tried unwrap err on ok", QMARK_EXPECT_RESULT),
+                _ => bail!("{} expected result tag", QMARK_EXPECT_RESULT),
+            }
+        }
+        _ => bail!("{} expected result", QMARK_EXPECT_RESULT),
+    }
+}
+
+fn mk_result_ok(v: Val) -> Val {
+    let mut m = BTreeMap::new();
+    m.insert(RESULT_TAG_KEY.to_string(), Val::Str(RESULT_OK_TAG.to_string()));
+    m.insert(RESULT_OK_VAL_KEY.to_string(), v);
+    Val::Rec(m)
+}
+
+fn mk_result_err(e: Val) -> Val {
+    let mut m = BTreeMap::new();
+    m.insert(RESULT_TAG_KEY.to_string(), Val::Str(RESULT_ERR_TAG.to_string()));
+    m.insert(RESULT_ERR_VAL_KEY.to_string(), e);
+    Val::Rec(m)
+}
+
 
 fn val_eq(a: &Val, b: &Val) -> bool {
     match (a, b) {
@@ -1563,7 +1715,16 @@ for (p, a) in fun.params.iter().zip(args.into_iter()) {
                 }
             }
 
-            eval(&fun.body, &mut e, tracer, loader)
+            match eval(&fun.body, &mut e, tracer, loader) {
+                Ok(v) => Ok(v),
+                Err(err) => {
+                    if let Some(q) = err.downcast_ref::<QMarkUnwind>() {
+                        Ok(mk_result_err(q.err.clone()))
+                    } else {
+                        Err(err)
+                    }
+                }
+            }
         }
         _ => bail!("call on non-function"),
     }
