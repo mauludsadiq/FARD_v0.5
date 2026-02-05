@@ -6,10 +6,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static TMPCTR: AtomicUsize = AtomicUsize::new(0);
 
-
 fn tmpdir(prefix: &str) -> PathBuf {
     let mut d = std::env::temp_dir();
-    let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
     let c = TMPCTR.fetch_add(1, Ordering::SeqCst);
     d.push(format!("{}_{}_{}_{}", prefix, std::process::id(), t, c));
     let _ = fs::remove_dir_all(&d);
@@ -28,10 +30,16 @@ fn run_prog(src: &str) -> (i32, String, String, PathBuf) {
     // Keep it simple: cargo run is acceptable in CI if that’s how your other tests work.
     let mut cmd = Command::new("cargo");
     cmd.args([
-        "run", "-q", "--bin", "fardrun", "--",
         "run",
-        "--program", prog.to_str().unwrap(),
-        "--out", out.to_str().unwrap(),
+        "-q",
+        "--bin",
+        "fardrun",
+        "--",
+        "run",
+        "--program",
+        prog.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
     ]);
 
     let outp = cmd.output().unwrap();

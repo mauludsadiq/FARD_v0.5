@@ -10,7 +10,6 @@ const RESULT_TAG_KEY: &str = "t";
 const RESULT_OK_VAL_KEY: &str = "v";
 const RESULT_ERR_VAL_KEY: &str = "e";
 
-
 const ERROR_PAT_MISMATCH: &str = "ERROR_PAT_MISMATCH";
 const ERROR_MATCH_NO_ARM: &str = "ERROR_MATCH_NO_ARM";
 
@@ -53,61 +52,41 @@ fn main() -> Result<()> {
     let v = match loader.eval_main(&program, &mut tracer) {
         Ok(v) => v,
         Err(e) => {
-            let msg0 = format!("{}", e);            let code = {
-
+            let msg0 = format!("{}", e);
+            let code = {
                 const PINNED: &[&str] = &[
-
                     QMARK_EXPECT_RESULT,
-
                     QMARK_PROPAGATE_ERR,
-
                     ERROR_PAT_MISMATCH,
-
                     ERROR_MATCH_NO_ARM,
-
                 ];
 
-
-
                 msg0.split_whitespace()
-
                     .find(|w| PINNED.contains(w))
-
-                    .or_else(|| msg0.split_whitespace().find(|w| w.starts_with("ERROR_") && *w != "ERROR_RUNTIME"))
-
+                    .or_else(|| {
+                        msg0.split_whitespace()
+                            .find(|w| w.starts_with("ERROR_") && *w != "ERROR_RUNTIME")
+                    })
                     .or_else(|| msg0.split_whitespace().find(|w| w.starts_with("ERROR_")))
-
                     .unwrap_or("ERROR_RUNTIME")
-
                     .to_string()
-
             };
-let msg = {
-
+            let msg = {
                 let mut s = msg0.clone();
 
                 if let Some(rest) = s.strip_prefix("ERROR_RUNTIME ") {
-
                     s = rest.to_string();
-
                 }
 
                 if code != "ERROR_RUNTIME" {
-
                     if let Some(rest) = s.strip_prefix(&format!("{} ", code)) {
-
                         s = rest.to_string();
-
                     }
 
                     format!("{} {}", code, s)
-
                 } else {
-
                     s
-
                 }
-
             };
 
             let mut em = Map::new();
@@ -230,11 +209,15 @@ impl Tracer {
         let mut m = Map::new();
         m.insert("t".to_string(), J::String("error".to_string()));
         m.insert("code".to_string(), J::String(code.to_string()));
-        
-let mut s = message.to_string();
-if let Some(rest) = s.strip_prefix("ERROR_RUNTIME ") { s = rest.to_string(); }
-if let Some(rest) = s.strip_prefix(&format!("{} ", code)) { s = rest.to_string(); }
-m.insert("message".to_string(), J::String(format!("{} {}", code, s)));
+
+        let mut s = message.to_string();
+        if let Some(rest) = s.strip_prefix("ERROR_RUNTIME ") {
+            s = rest.to_string();
+        }
+        if let Some(rest) = s.strip_prefix(&format!("{} ", code)) {
+            s = rest.to_string();
+        }
+        m.insert("message".to_string(), J::String(format!("{} {}", code, s)));
 
         let line = serde_json::to_string(&J::Object(m))?;
         self.w.write_all(line.as_bytes())?;
@@ -374,8 +357,8 @@ impl Lex {
             {
                 let id = t;
                 let kws = [
-                    "let", "in", "fn", "if", "then", "else", "import", "as", "export", "match", "using", "true",
-                    "false", "null",
+                    "let", "in", "fn", "if", "then", "else", "import", "as", "export", "match",
+                    "using", "true", "false", "null",
                 ];
                 if kws.contains(&id.as_str()) {
                     return Ok(Tok::Kw(id));
@@ -420,7 +403,6 @@ impl Lex {
             return Ok(Tok::Str(t));
         }
         let three = if self.i + 2 < self.s.len() {
-
             let mut t = String::new();
 
             t.push(self.s[self.i]);
@@ -430,24 +412,15 @@ impl Lex {
             t.push(self.s[self.i + 2]);
 
             Some(t)
-
         } else {
-
             None
-
         };
 
         if three.as_deref() == Some("...") {
-
             self.i += 3;
 
             return Ok(Tok::Sym("...".to_string()));
-
         }
-
-
-
-
 
         let two = if self.i + 1 < self.s.len() {
             let mut t = String::new();
@@ -468,7 +441,7 @@ impl Lex {
         let one = self.bump().unwrap();
         let sym = match one {
             '(' | ')' | '{' | '}' | '[' | ']' | ',' | ':' | '.' | '+' | '-' | '*' | '/' | '='
-            | '<' | '>' | '?' => one.to_string(),
+            | '|' | '<' | '>' | '?' => one.to_string(),
             _ => bail!("unexpected char: {one}"),
         };
         Ok(Tok::Sym(sym))
@@ -499,8 +472,14 @@ enum Pat {
     LitStr(String),
     LitBool(bool),
     LitNull,
-    Obj { items: Vec<(String, Pat)>, rest: Option<String> },
-    List { items: Vec<Pat>, rest: Option<String> },
+    Obj {
+        items: Vec<(String, Pat)>,
+        rest: Option<String>,
+    },
+    List {
+        items: Vec<Pat>,
+        rest: Option<String>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -517,6 +496,7 @@ enum Expr {
     LetPat(Pat, Box<Expr>, Box<Expr>),
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     Fn(Vec<Pat>, Box<Expr>),
+    Lambda(Vec<Pat>, Box<Expr>),
     Call(Box<Expr>, Vec<Expr>),
     Get(Box<Expr>, String),
     List(Vec<Expr>),
@@ -537,8 +517,8 @@ enum Expr {
 enum Item {
     Import(String, String),
     Let(String, Expr),
-    
-Fn(String, Vec<(Pat, Option<Type>)>, Option<Type>, Expr),
+
+    Fn(String, Vec<(Pat, Option<Type>)>, Option<Type>, Expr),
     Export(Vec<String>),
     Expr(Expr),
 }
@@ -578,6 +558,9 @@ impl Parser {
     }
     fn peek(&self) -> &Tok {
         self.toks.get(self.i).unwrap_or(&Tok::Eof)
+    }
+    fn peek_n(&self, n: usize) -> &Tok {
+        self.toks.get(self.i + n).unwrap_or(&Tok::Eof)
     }
     fn bump(&mut self) -> Tok {
         let t = self.peek().clone();
@@ -784,10 +767,10 @@ impl Parser {
             if self.eat_kw("fn") {
                 let name = self.expect_ident()?;
                 self.expect_sym("(")?;
-                
-let mut params: Vec<(Pat, Option<Type>)> = Vec::new();
 
-if !self.eat_sym(")") {
+                let mut params: Vec<(Pat, Option<Type>)> = Vec::new();
+
+                if !self.eat_sym(")") {
                     loop {
                         let p = self.parse_pat()?;
                         let ann = if self.eat_sym(":") {
@@ -837,108 +820,129 @@ if !self.eat_sym(")") {
     }
 
     fn parse_pat(&mut self) -> Result<Pat> {
-    // PAT_LITERALS_V0_5
-    match self.peek() {
-        Tok::Num(n) => { let n = *n; self.i += 1; return Ok(Pat::LitInt(n)); }
-        Tok::Str(s) => { let s = s.clone(); self.i += 1; return Ok(Pat::LitStr(s)); }
-        Tok::Kw(s) if s == "true" => { self.i += 1; return Ok(Pat::LitBool(true)); }
-        Tok::Kw(s) if s == "false" => { self.i += 1; return Ok(Pat::LitBool(false)); }
-        Tok::Kw(s) if s == "null" => { self.i += 1; return Ok(Pat::LitNull); }
-        _ => {}
-    }
+        // PAT_LITERALS_V0_5
+        match self.peek() {
+            Tok::Num(n) => {
+                let n = *n;
+                self.i += 1;
+                return Ok(Pat::LitInt(n));
+            }
+            Tok::Str(s) => {
+                let s = s.clone();
+                self.i += 1;
+                return Ok(Pat::LitStr(s));
+            }
+            Tok::Kw(s) if s == "true" => {
+                self.i += 1;
+                return Ok(Pat::LitBool(true));
+            }
+            Tok::Kw(s) if s == "false" => {
+                self.i += 1;
+                return Ok(Pat::LitBool(false));
+            }
+            Tok::Kw(s) if s == "null" => {
+                self.i += 1;
+                return Ok(Pat::LitNull);
+            }
+            _ => {}
+        }
 
-// literal patterns: Tok::Num/Tok::Str/true/false/null
+        // literal patterns: Tok::Num/Tok::Str/true/false/null
         match self.peek() {
             Tok::Num(_) => {
-                let n = match self.bump() { Tok::Num(x) => x, _ => unreachable!() };
+                let n = match self.bump() {
+                    Tok::Num(x) => x,
+                    _ => unreachable!(),
+                };
                 return Ok(Pat::LitInt(n));
             }
             Tok::Str(_) => {
-                let s = match self.bump() { Tok::Str(x) => x, _ => unreachable!() };
+                let s = match self.bump() {
+                    Tok::Str(x) => x,
+                    _ => unreachable!(),
+                };
                 return Ok(Pat::LitStr(s));
             }
-            Tok::Kw(s) | Tok::Ident(s) if s == "true" => { self.bump(); return Ok(Pat::LitBool(true)); }
-            Tok::Kw(s) | Tok::Ident(s) if s == "false" => { self.bump(); return Ok(Pat::LitBool(false)); }
-            Tok::Kw(s) | Tok::Ident(s) if s == "null" => { self.bump(); return Ok(Pat::LitNull); }
+            Tok::Kw(s) | Tok::Ident(s) if s == "true" => {
+                self.bump();
+                return Ok(Pat::LitBool(true));
+            }
+            Tok::Kw(s) | Tok::Ident(s) if s == "false" => {
+                self.bump();
+                return Ok(Pat::LitBool(false));
+            }
+            Tok::Kw(s) | Tok::Ident(s) if s == "null" => {
+                self.bump();
+                return Ok(Pat::LitNull);
+            }
             _ => {}
         }
 
         if self.eat_sym("[") {
-
             let mut items: Vec<Pat> = Vec::new();
 
             let mut rest: Option<String> = None;
 
-            if self.eat_sym("]") { return Ok(Pat::List { items, rest }); }
+            if self.eat_sym("]") {
+                return Ok(Pat::List { items, rest });
+            }
 
             loop {
-
                 if self.eat_sym("...") {
-
                     rest = match self.bump() {
-
                         Tok::Ident(n) => Some(n),
 
                         Tok::Kw(n) => Some(n),
 
                         _ => None,
-
                     };
 
                     self.expect_sym("]")?;
 
                     return Ok(Pat::List { items, rest });
-
                 }
 
                 items.push(self.parse_pat()?);
 
                 if self.eat_sym(",") {
-
-                    if self.eat_sym("]") { return Ok(Pat::List { items, rest }); }
+                    if self.eat_sym("]") {
+                        return Ok(Pat::List { items, rest });
+                    }
 
                     continue;
-
                 }
 
                 self.expect_sym("]")?;
 
                 return Ok(Pat::List { items, rest });
-
             }
-
         }
 
         if self.eat_sym("{") {
-
             let mut items: Vec<(String, Pat)> = Vec::new();
 
             let mut rest: Option<String> = None;
 
-            if self.eat_sym("}") { return Ok(Pat::Obj { items, rest }); }
+            if self.eat_sym("}") {
+                return Ok(Pat::Obj { items, rest });
+            }
 
             loop {
-
                 if self.eat_sym("...") {
-
                     rest = match self.bump() {
-
                         Tok::Ident(n) => Some(n),
 
                         Tok::Kw(n) => Some(n),
 
                         _ => None,
-
                     };
 
                     self.expect_sym("}")?;
 
                     return Ok(Pat::Obj { items, rest });
-
                 }
 
                 let k = match self.bump() {
-
                     Tok::Ident(x) => x,
 
                     Tok::Kw(x) => x,
@@ -946,7 +950,6 @@ if !self.eat_sym(")") {
                     Tok::Str(x) => x,
 
                     _ => bail!("record key must be ident or string"),
-
                 };
 
                 self.expect_sym(":")?;
@@ -956,41 +959,40 @@ if !self.eat_sym(")") {
                 items.push((k, p));
 
                 if self.eat_sym(",") {
-
-                    if self.eat_sym("}") { return Ok(Pat::Obj { items, rest }); }
+                    if self.eat_sym("}") {
+                        return Ok(Pat::Obj { items, rest });
+                    }
 
                     continue;
-
                 }
 
                 self.expect_sym("}")?;
 
                 return Ok(Pat::Obj { items, rest });
-
             }
-
         }
 
         match self.bump() {
-
             Tok::Ident(n) => {
-
-                if n == "_" { Ok(Pat::Wild) } else { Ok(Pat::Bind(n)) }
-
+                if n == "_" {
+                    Ok(Pat::Wild)
+                } else {
+                    Ok(Pat::Bind(n))
+                }
             }
 
             Tok::Kw(n) => {
-
-                if n == "true" { Ok(Pat::LitBool(true)) }
-
-                else if n == "false" { Ok(Pat::LitBool(false)) }
-
-                else if n == "null" { Ok(Pat::LitNull) }
-
-                else if n == "_" { Ok(Pat::Wild) }
-
-                else { Ok(Pat::Bind(n)) }
-
+                if n == "true" {
+                    Ok(Pat::LitBool(true))
+                } else if n == "false" {
+                    Ok(Pat::LitBool(false))
+                } else if n == "null" {
+                    Ok(Pat::LitNull)
+                } else if n == "_" {
+                    Ok(Pat::Wild)
+                } else {
+                    Ok(Pat::Bind(n))
+                }
             }
 
             Tok::Num(n) => Ok(Pat::LitInt(n)),
@@ -998,33 +1000,25 @@ if !self.eat_sym(")") {
             Tok::Str(s) => Ok(Pat::LitStr(s)),
 
             other => bail!("ERROR_PARSE unexpected token: {other:?}"),
-
         }
-
     }
 
-
-
     fn parse_match_arms(&mut self) -> Result<Vec<MatchArm>> {
-
         self.expect_sym("{")?;
 
         let mut arms: Vec<MatchArm> = Vec::new();
 
-        if self.eat_sym("}") { return Ok(arms); }
+        if self.eat_sym("}") {
+            return Ok(arms);
+        }
 
         loop {
-
             let pat = self.parse_pat()?;
 
             let guard = if self.eat_kw("using") {
-
                 Some(self.parse_expr()?)
-
             } else {
-
                 None
-
             };
 
             self.expect_sym("=>")?;
@@ -1034,29 +1028,23 @@ if !self.eat_sym(")") {
             arms.push(MatchArm { pat, guard, body });
 
             if self.eat_sym(",") {
-
-                if self.eat_sym("}") { break; }
+                if self.eat_sym("}") {
+                    break;
+                }
 
                 continue;
-
             }
 
             self.expect_sym("}")?;
 
             break;
-
         }
 
         Ok(arms)
-
     }
 
-
-
     fn parse_expr(&mut self) -> Result<Expr> {
-
         if self.eat_kw("using") {
-
             let pat = self.parse_pat()?;
 
             self.expect_sym("=")?;
@@ -1068,30 +1056,27 @@ if !self.eat_sym(")") {
             let body = self.parse_expr()?;
 
             return Ok(Expr::Using(pat, Box::new(acquire), Box::new(body)));
-
         }
 
         if self.eat_kw("match") {
-
             let scrut = self.parse_expr()?;
 
             let arms = self.parse_match_arms()?;
 
             return Ok(Expr::Match(Box::new(scrut), arms));
-
         }
 
-                if self.eat_kw("let") {
-                    let pat = self.parse_pat()?;
-                    self.expect_sym("=")?;
-                    let e1 = self.parse_expr()?;
-                    self.expect_kw("in")?;
-                    let e2 = self.parse_expr()?;
-                    match &pat {
-                        Pat::Bind(name) => return Ok(Expr::Let(name.clone(), Box::new(e1), Box::new(e2))),
-                        _ => return Ok(Expr::LetPat(pat, Box::new(e1), Box::new(e2))),
-                    }
-                }
+        if self.eat_kw("let") {
+            let pat = self.parse_pat()?;
+            self.expect_sym("=")?;
+            let e1 = self.parse_expr()?;
+            self.expect_kw("in")?;
+            let e2 = self.parse_expr()?;
+            match &pat {
+                Pat::Bind(name) => return Ok(Expr::Let(name.clone(), Box::new(e1), Box::new(e2))),
+                _ => return Ok(Expr::LetPat(pat, Box::new(e1), Box::new(e2))),
+            }
+        }
         if self.eat_kw("if") {
             let c = self.parse_expr()?;
             self.expect_kw("then")?;
@@ -1169,18 +1154,33 @@ if !self.eat_sym(")") {
             let e = self.parse_unary()?;
             return Ok(Expr::Unary("-".to_string(), Box::new(e)));
         }
-        self.parse_postfix()
+        self.parse_pipe()
     }
+
+    fn parse_pipe(&mut self) -> Result<Expr> {
+        let mut e = self.parse_postfix()?;
+        while self.eat_sym("|") {
+            let rhs = self.parse_postfix()?;
+            e = match rhs {
+                Expr::Call(f, mut args) => {
+                    let mut new_args = Vec::new();
+                    new_args.push(e);
+                    new_args.append(&mut args);
+                    Expr::Call(f, new_args)
+                }
+                other => Expr::Call(Box::new(other), vec![e]),
+            };
+        }
+        Ok(e)
+    }
+
     fn parse_postfix(&mut self) -> Result<Expr> {
         let mut e = self.parse_primary()?;
         loop {
-
             if self.eat_sym("?") {
-
                 e = Expr::Try(Box::new(e));
 
                 continue;
-
             }
 
             if self.eat_sym(".") {
@@ -1211,6 +1211,57 @@ if !self.eat_sym(")") {
         Ok(e)
     }
     fn parse_primary(&mut self) -> Result<Expr> {
+        {
+            if let Tok::Ident(name) = self.peek().clone() {
+                if matches!(self.peek_n(1), Tok::Sym(s) if s == "=>") {
+                    self.bump();
+                    self.bump();
+                    let body = self.parse_expr()?;
+                    return Ok(Expr::Lambda(vec![Pat::Bind(name)], Box::new(body)));
+                }
+            }
+
+            if matches!(self.peek(), Tok::Sym(s) if s == "(") {
+                let save = self.i;
+                self.bump();
+
+                let mut ps: Vec<Pat> = Vec::new();
+
+                if matches!(self.peek(), Tok::Sym(s) if s == ")") {
+                    self.bump();
+                } else {
+                    loop {
+                        match self.bump() {
+                            Tok::Ident(s) => ps.push(Pat::Bind(s)),
+                            _ => {
+                                self.i = save;
+                                break;
+                            }
+                        }
+                        if matches!(self.peek(), Tok::Sym(s) if s == ",") {
+                            self.bump();
+                            continue;
+                        }
+                        if matches!(self.peek(), Tok::Sym(s) if s == ")") {
+                            self.bump();
+                            break;
+                        }
+                        self.i = save;
+                        break;
+                    }
+                }
+
+                if self.i != save {
+                    if matches!(self.peek(), Tok::Sym(s) if s == "=>") {
+                        self.bump();
+                        let body = self.parse_expr()?;
+                        return Ok(Expr::Lambda(ps, Box::new(body)));
+                    } else {
+                        self.i = save;
+                    }
+                }
+            }
+        }
         if self.eat_kw("fn") {
             self.expect_sym("(")?;
             let mut params = Vec::new();
@@ -1317,7 +1368,6 @@ impl std::fmt::Display for QMarkUnwind {
     }
 }
 impl std::error::Error for QMarkUnwind {}
-
 
 #[derive(Clone, Debug)]
 struct Func {
@@ -1442,9 +1492,13 @@ fn fard_pat_match_v0_5(p: &Pat, v: &Val, env: &mut Env) -> Result<bool> {
         Pat::LitNull => Ok(matches!(v, Val::Null)),
         Pat::List { items, rest } => match v {
             Val::List(xs) => {
-                if xs.len() < items.len() { return Ok(false); }
+                if xs.len() < items.len() {
+                    return Ok(false);
+                }
                 for (i, subp) in items.iter().enumerate() {
-                    if !fard_pat_match_v0_5(subp, &xs[i], env)? { return Ok(false); }
+                    if !fard_pat_match_v0_5(subp, &xs[i], env)? {
+                        return Ok(false);
+                    }
                 }
                 if let Some(rn) = rest {
                     let k = items.len();
@@ -1461,12 +1515,16 @@ fn fard_pat_match_v0_5(p: &Pat, v: &Val, env: &mut Env) -> Result<bool> {
                         Some(vv) => vv,
                         None => return Ok(false),
                     };
-                    if !fard_pat_match_v0_5(subp, vv, env)? { return Ok(false); }
+                    if !fard_pat_match_v0_5(subp, vv, env)? {
+                        return Ok(false);
+                    }
                 }
                 if let Some(rn) = rest {
                     let mut rm: BTreeMap<String, Val> = BTreeMap::new();
                     for (k, vv) in m.iter() {
-                        if items.iter().any(|(kk, _)| kk == k) { continue; }
+                        if items.iter().any(|(kk, _)| kk == k) {
+                            continue;
+                        }
                         rm.insert(k.clone(), vv.clone());
                     }
                     env.set(rn.clone(), Val::Rec(rm));
@@ -1509,23 +1567,22 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                 _ => bail!("field access on non-record"),
             }
         }
-        
-Expr::Let(name, e1, e2) => {
-    let v1 = eval(e1, env, tracer, loader)?;
-    let mut child = env.child();
-    child.set(name.clone(), v1);
-    eval(e2, &mut child, tracer, loader)
-}
-Expr::LetPat(pat, e1, e2) => {
-    let v1 = eval(e1, env, tracer, loader)?;
-    let mut child = env.child();
-    if !fard_pat_match_v0_5(pat, &v1, &mut child)? {
-        bail!("{} let pattern did not match", ERROR_PAT_MISMATCH);
-    }
-    eval(e2, &mut child, tracer, loader)
-}
-Expr::If
-(c, t, f) => {
+
+        Expr::Let(name, e1, e2) => {
+            let v1 = eval(e1, env, tracer, loader)?;
+            let mut child = env.child();
+            child.set(name.clone(), v1);
+            eval(e2, &mut child, tracer, loader)
+        }
+        Expr::LetPat(pat, e1, e2) => {
+            let v1 = eval(e1, env, tracer, loader)?;
+            let mut child = env.child();
+            if !fard_pat_match_v0_5(pat, &v1, &mut child)? {
+                bail!("{} let pattern did not match", ERROR_PAT_MISMATCH);
+            }
+            eval(e2, &mut child, tracer, loader)
+        }
+        Expr::If(c, t, f) => {
             let cv = eval(c, env, tracer, loader)?;
             match cv {
                 Val::Bool(true) => eval(t, env, tracer, loader),
@@ -1534,6 +1591,11 @@ Expr::If
             }
         }
         Expr::Fn(params, body) => Ok(Val::Func(Func {
+            params: params.clone(),
+            body: (*body.clone()),
+            env: env.clone(),
+        })),
+        Expr::Lambda(params, body) => Ok(Val::Func(Func {
             params: params.clone(),
             body: (*body.clone()),
             env: env.clone(),
@@ -1592,7 +1654,9 @@ Expr::If
                         let gv = eval(g, &mut env2, tracer, loader)?;
                         match gv {
                             Val::Bool(true) => {}
-                            Val::Bool(false) => { continue; }
+                            Val::Bool(false) => {
+                                continue;
+                            }
                             _ => bail!("ERROR_RUNTIME match guard not bool"),
                         }
                     }
@@ -1614,13 +1678,11 @@ Expr::If
 
 fn is_result_val(v: &Val) -> bool {
     match v {
-        Val::Rec(m) => {
-            match m.get(RESULT_TAG_KEY) {
-                Some(Val::Str(t)) if t == RESULT_OK_TAG => m.contains_key(RESULT_OK_VAL_KEY),
-                Some(Val::Str(t)) if t == RESULT_ERR_TAG => m.contains_key(RESULT_ERR_VAL_KEY),
-                _ => false,
-            }
-        }
+        Val::Rec(m) => match m.get(RESULT_TAG_KEY) {
+            Some(Val::Str(t)) if t == RESULT_OK_TAG => m.contains_key(RESULT_OK_VAL_KEY),
+            Some(Val::Str(t)) if t == RESULT_ERR_TAG => m.contains_key(RESULT_ERR_VAL_KEY),
+            _ => false,
+        },
         _ => false,
     }
 }
@@ -1638,48 +1700,55 @@ fn result_is_ok(v: &Val) -> Result<bool> {
 
 fn result_unwrap_ok(v: &Val) -> Result<Val> {
     match v {
-        Val::Rec(m) => {
-            match m.get(RESULT_TAG_KEY) {
-                Some(Val::Str(t)) if t == RESULT_OK_TAG => {
-                    m.get(RESULT_OK_VAL_KEY).cloned().ok_or_else(|| anyhow!("{} ok missing v", QMARK_EXPECT_RESULT))
-                }
-                Some(Val::Str(t)) if t == RESULT_ERR_TAG => bail!("{} tried unwrap ok on err", QMARK_EXPECT_RESULT),
-                _ => bail!("{} expected result tag", QMARK_EXPECT_RESULT),
+        Val::Rec(m) => match m.get(RESULT_TAG_KEY) {
+            Some(Val::Str(t)) if t == RESULT_OK_TAG => m
+                .get(RESULT_OK_VAL_KEY)
+                .cloned()
+                .ok_or_else(|| anyhow!("{} ok missing v", QMARK_EXPECT_RESULT)),
+            Some(Val::Str(t)) if t == RESULT_ERR_TAG => {
+                bail!("{} tried unwrap ok on err", QMARK_EXPECT_RESULT)
             }
-        }
+            _ => bail!("{} expected result tag", QMARK_EXPECT_RESULT),
+        },
         _ => bail!("{} expected result", QMARK_EXPECT_RESULT),
     }
 }
 
 fn result_unwrap_err(v: &Val) -> Result<Val> {
     match v {
-        Val::Rec(m) => {
-            match m.get(RESULT_TAG_KEY) {
-                Some(Val::Str(t)) if t == RESULT_ERR_TAG => {
-                    m.get(RESULT_ERR_VAL_KEY).cloned().ok_or_else(|| anyhow!("{} err missing e", QMARK_EXPECT_RESULT))
-                }
-                Some(Val::Str(t)) if t == RESULT_OK_TAG => bail!("{} tried unwrap err on ok", QMARK_EXPECT_RESULT),
-                _ => bail!("{} expected result tag", QMARK_EXPECT_RESULT),
+        Val::Rec(m) => match m.get(RESULT_TAG_KEY) {
+            Some(Val::Str(t)) if t == RESULT_ERR_TAG => m
+                .get(RESULT_ERR_VAL_KEY)
+                .cloned()
+                .ok_or_else(|| anyhow!("{} err missing e", QMARK_EXPECT_RESULT)),
+            Some(Val::Str(t)) if t == RESULT_OK_TAG => {
+                bail!("{} tried unwrap err on ok", QMARK_EXPECT_RESULT)
             }
-        }
+            _ => bail!("{} expected result tag", QMARK_EXPECT_RESULT),
+        },
         _ => bail!("{} expected result", QMARK_EXPECT_RESULT),
     }
 }
 
 fn mk_result_ok(v: Val) -> Val {
     let mut m = BTreeMap::new();
-    m.insert(RESULT_TAG_KEY.to_string(), Val::Str(RESULT_OK_TAG.to_string()));
+    m.insert(
+        RESULT_TAG_KEY.to_string(),
+        Val::Str(RESULT_OK_TAG.to_string()),
+    );
     m.insert(RESULT_OK_VAL_KEY.to_string(), v);
     Val::Rec(m)
 }
 
 fn mk_result_err(e: Val) -> Val {
     let mut m = BTreeMap::new();
-    m.insert(RESULT_TAG_KEY.to_string(), Val::Str(RESULT_ERR_TAG.to_string()));
+    m.insert(
+        RESULT_TAG_KEY.to_string(),
+        Val::Str(RESULT_ERR_TAG.to_string()),
+    );
     m.insert(RESULT_ERR_VAL_KEY.to_string(), e);
     Val::Rec(m)
 }
-
 
 fn val_eq(a: &Val, b: &Val) -> bool {
     match (a, b) {
@@ -1708,8 +1777,8 @@ fn call(f: Val, args: Vec<Val>, tracer: &mut Tracer, loader: &mut ModuleLoader) 
                 bail!("arity mismatch");
             }
             let mut e = fun.env.child();
-            
-for (p, a) in fun.params.iter().zip(args.into_iter()) {
+
+            for (p, a) in fun.params.iter().zip(args.into_iter()) {
                 if !fard_pat_match_v0_5(p, &a, &mut e)? {
                     bail!("{} arg pattern did not match", ERROR_PAT_MISMATCH);
                 }
@@ -2460,8 +2529,7 @@ impl ModuleLoader {
                 }
                 Item::Fn(name, params, _ret, body) => {
                     let f = Val::Func(Func {
-                        
-params: params.into_iter().map(|(p, _)| p).collect(),
+                        params: params.into_iter().map(|(p, _)| p).collect(),
                         body,
                         env: env.clone(),
                     });
