@@ -173,9 +173,12 @@ fn g51_match_guard_true_selects_arm() {
 
 #[test]
 fn g51_match_guard_not_bool_is_runtime_error() {
-    let (err, _stderr, _out) = assert_err_run("match 5 { _ if 123 => 1, _ => 2 }\n");
+    let (err, _stderr, _out) = assert_err_run("match 5 { x if x + 6 => 1, _ => 2 }\n");
     assert_err_code(&err, "ERROR_RUNTIME");
     assert_err_msg_contains(&err, "match guard not bool");
+    assert_err_span_text(&err, "x + 6");
+    assert_err_span_offsets(&err, 1, 15, 20);
+    assert_err_span_col(&err, 16);
 }
 
 #[test]
@@ -218,4 +221,48 @@ fn g53_lambda_multi_param_eval() {
 fn g53_lambda_closure_capture_eval() {
     let (res, _out) = assert_ok_run("let k = 10 in let f = (x => x + k) in f(5)\n");
     assert_result_eq(&res, serde_json::json!(15));
+}
+
+fn assert_err_span_offsets(
+    err: &serde_json::Value,
+    line: usize,
+    byte_start: usize,
+    byte_end: usize,
+) {
+    let sp = err.get("span").expect("error.span must exist");
+    let ln = sp.get("line").and_then(|v| v.as_u64()).unwrap() as usize;
+    let bs = sp.get("byte_start").and_then(|v| v.as_u64()).unwrap() as usize;
+    let be = sp.get("byte_end").and_then(|v| v.as_u64()).unwrap() as usize;
+    assert_eq!(ln, line, "span.line mismatch: got {ln} expected {line}");
+    assert_eq!(
+        bs, byte_start,
+        "span.byte_start mismatch: got {bs} expected {byte_start}"
+    );
+    assert_eq!(
+        be, byte_end,
+        "span.byte_end mismatch: got {be} expected {byte_end}"
+    );
+}
+
+fn assert_err_span_col(err: &serde_json::Value, col: usize) {
+    let sp = err.get("span").expect("error.span must exist");
+    let cl = sp.get("col").and_then(|v| v.as_u64()).unwrap() as usize;
+    assert_eq!(cl, col, "span.col mismatch: got {cl} expected {col}");
+}
+
+fn assert_err_span_text(err: &serde_json::Value, expected: &str) {
+    let sp = err.get("span").expect("error.span must exist");
+    let file = sp.get("file").and_then(|v| v.as_str()).unwrap();
+    let line = sp.get("line").and_then(|v| v.as_u64()).unwrap() as usize;
+    let bs = sp.get("byte_start").and_then(|v| v.as_u64()).unwrap() as usize;
+    let be = sp.get("byte_end").and_then(|v| v.as_u64()).unwrap() as usize;
+
+    let src = fs::read_to_string(file).unwrap();
+    let line_txt = src.lines().nth(line - 1).unwrap_or("");
+    let b = line_txt.as_bytes();
+    let s = std::str::from_utf8(&b[bs.min(b.len())..be.min(b.len())]).unwrap();
+    assert_eq!(
+        s, expected,
+        "span text mismatch: got {s:?} expected {expected:?}"
+    );
 }

@@ -92,7 +92,35 @@ fn main() -> Result<()> {
             let mut em = Map::new();
             em.insert("code".to_string(), J::String(code.clone()));
             em.insert("message".to_string(), J::String(msg.clone()));
-            if let Some(pe) = e.downcast_ref::<ParseError>() {
+            if let Some(se) = e.downcast_ref::<SpannedRuntimeError>() {
+                let mut bs = se.span.byte_start;
+                let mut be = se.span.byte_end;
+                let mut ln = se.span.line;
+                let mut cl = se.span.col;
+
+                if let Ok(src) = fs::read_to_string(&se.span.file) {
+                    let abs_s = bs.min(src.len());
+                    let ls = src[..abs_s].rfind("\n").map(|i| i + 1).unwrap_or(0);
+                    let rel_s = abs_s.saturating_sub(ls);
+
+                    let abs_e = be.min(src.len());
+                    let le = src[..abs_e].rfind("\n").map(|i| i + 1).unwrap_or(0);
+                    let rel_e = abs_e.saturating_sub(le);
+
+                    bs = rel_s;
+                    be = rel_e;
+                    cl = rel_s + 1;
+                    ln = src[..ls].bytes().filter(|b| *b == b"\n"[0]).count() + 1;
+                }
+
+                let mut sm = Map::new();
+                sm.insert("file".to_string(), J::String(se.span.file.clone()));
+                sm.insert("byte_start".to_string(), J::Number((bs as u64).into()));
+                sm.insert("byte_end".to_string(), J::Number((be as u64).into()));
+                sm.insert("line".to_string(), J::Number((ln as u64).into()));
+                sm.insert("col".to_string(), J::Number((cl as u64).into()));
+                em.insert("span".to_string(), J::Object(sm));
+            } else if let Some(pe) = e.downcast_ref::<ParseError>() {
                 // Stored spans are absolute offsets; G39 expects line-relative byte offsets.
                 let mut bs = pe.span.byte_start;
                 let mut be = pe.span.byte_end;
@@ -273,6 +301,20 @@ impl std::fmt::Display for ParseError {
 }
 
 impl std::error::Error for ParseError {}
+
+#[derive(Debug, Clone)]
+struct SpannedRuntimeError {
+    span: ErrorSpan,
+    message: String,
+}
+
+impl std::fmt::Display for SpannedRuntimeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for SpannedRuntimeError {}
 
 fn line_col_at(src: &str, byte_pos: usize) -> (usize, usize) {
     let mut line: usize = 1;
@@ -487,6 +529,7 @@ enum Pat {
 struct MatchArm {
     pat: Pat,
     guard: Option<Expr>, // match-arm guard: pat if <expr> => body
+    guard_span: Option<ErrorSpan>,
 
     body: Expr,
 }
@@ -584,6 +627,29 @@ impl Parser {
             byte_end,
             line,
             col,
+        }
+    }
+    fn tok_span(&self, idx: usize) -> ErrorSpan {
+        let (byte_start, byte_end) = self.spans.get(idx).cloned().unwrap_or((0usize, 0usize));
+        let (line, col) = line_col_at(&self.src, byte_start);
+        ErrorSpan {
+            file: self.file.clone(),
+            byte_start,
+            byte_end,
+            line,
+            col,
+        }
+    }
+
+    fn span_range(&self, lo_idx: usize, hi_idx: usize) -> ErrorSpan {
+        let lo = self.tok_span(lo_idx);
+        let hi = self.tok_span(hi_idx);
+        ErrorSpan {
+            file: lo.file,
+            byte_start: lo.byte_start,
+            byte_end: hi.byte_end,
+            line: lo.line,
+            col: lo.col,
         }
     }
 
@@ -1016,17 +1082,25 @@ impl Parser {
         loop {
             let pat = self.parse_pat()?;
 
-            let guard = if self.eat_kw("if") {
-                Some(self.parse_expr()?)
+            let (guard, guard_span) = if self.eat_kw("if") {
+                let lo_i = self.i;
+                let g = self.parse_expr()?;
+                let hi_i = if self.i > 0 { self.i - 1 } else { lo_i };
+                (Some(g), Some(self.span_range(lo_i, hi_i)))
             } else {
-                None
+                (None, None)
             };
 
             self.expect_sym("=>")?;
 
             let body = self.parse_expr()?;
 
-            arms.push(MatchArm { pat, guard, body });
+            arms.push(MatchArm {
+                pat,
+                guard,
+                guard_span,
+                body,
+            });
 
             if self.eat_sym(",") {
                 if self.eat_sym("}") {
@@ -1658,7 +1732,16 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                             Val::Bool(false) => {
                                 continue;
                             }
-                            _ => bail!("ERROR_RUNTIME match guard not bool"),
+                            _ => {
+                                let sp = arm
+                                    .guard_span
+                                    .clone()
+                                    .expect("guard_span must exist when guard exists");
+                                return Err(anyhow!(SpannedRuntimeError {
+                                    span: sp,
+                                    message: "ERROR_RUNTIME match guard not bool".to_string(),
+                                }));
+                            }
                         }
                     }
                     return eval(&arm.body, &mut env2, tracer, loader);
