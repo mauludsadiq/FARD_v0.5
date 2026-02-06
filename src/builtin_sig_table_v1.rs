@@ -111,7 +111,6 @@ pub fn builtin_sig_table_v1() -> BTreeMap<&'static str, BuiltinSig> {
     m.insert("std/rec::get", vf2);
     m.insert("std/rec::getOr", BuiltinSig { arity_min: 3, value_first: true });
     m.insert("std/rec::getOrErr", BuiltinSig { arity_min: 3, value_first: true });
-    m.insert("std/rec::require", BuiltinSig { arity_min: 3, value_first: true });
     m.insert("std/rec::set", BuiltinSig { arity_min: 3, value_first: true });
     m.insert("std/rec::remove", vf2);
     m.insert("std/rec::select", vf2);
