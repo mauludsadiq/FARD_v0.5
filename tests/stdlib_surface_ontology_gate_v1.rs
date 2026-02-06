@@ -273,7 +273,8 @@ fn stdlib_surface_ontology_gate_v1() {
     let bytes = fs::read(&path).expect("read stdlib ontology json");
     let s = String::from_utf8(bytes).expect("utf8");
 
-    let ont: Ontology = serde_json::from_str(&s).expect("parse ontology json");
+     
+    assert!(!s.contains("\"Yes\""), "ontology json must not contain pipe tag \"Yes\" anywhere");
 
     assert_eq!(ont.schema, "fard.stdlib.surface_tables.v1.0.ontology");
 
