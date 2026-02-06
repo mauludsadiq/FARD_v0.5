@@ -2248,7 +2248,7 @@ fn call_builtin(
             let mut out_list: Vec<Val> = Vec::new();
             for (v, c) in m {
                 let mut rec = BTreeMap::new();
-                rec.insert("v".to_string(), Val::Int(v));
+                rec.insert("k".to_string(), Val::Int(v));
                 rec.insert("count".to_string(), Val::Int(c));
                 out_list.push(Val::Rec(rec));
             }

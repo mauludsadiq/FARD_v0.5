@@ -206,6 +206,20 @@ fn g52_using_mismatch_is_error() {
 }
 
 #[test]
+fn g53_hist_int_emits_k_records() {
+    let src = r#"import("std/list") as list
+list.hist_int([2,2,1])"#;
+    let (res, _out) = assert_ok_run(src);
+    let arr = res["result"].as_array().unwrap();
+    assert!(arr.len() >= 1);
+    for it in arr {
+        assert!(it.get("k").is_some(), "hist_int element missing k: {it}");
+        assert!(it.get("count").is_some(), "hist_int element missing count: {it}");
+        assert!(it["k"].is_i64(), "hist_int k must be int: {it}");
+        assert!(it["count"].is_i64(), "hist_int count must be int: {it}");
+    }
+}
+#[test]
 fn g53_lambda_single_param_eval() {
     let (res, _out) = assert_ok_run("let f = (x => x + 1) in f(4)\n");
     assert_result_eq(&res, serde_json::json!(5));
