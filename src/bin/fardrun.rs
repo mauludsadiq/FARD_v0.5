@@ -486,7 +486,8 @@ enum Pat {
 #[allow(dead_code)]
 struct MatchArm {
     pat: Pat,
-    guard: Option<Expr>,
+    guard: Option<Expr>, // match-arm guard: pat if <expr> => body
+
     body: Expr,
 }
 #[derive(Clone, Debug)]
@@ -1015,7 +1016,7 @@ impl Parser {
         loop {
             let pat = self.parse_pat()?;
 
-            let guard = if self.eat_kw("using") {
+            let guard = if self.eat_kw("if") {
                 Some(self.parse_expr()?)
             } else {
                 None

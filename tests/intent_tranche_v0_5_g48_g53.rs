@@ -91,6 +91,14 @@ fn assert_err_code(err: &serde_json::Value, expected_code: &str) {
     assert_eq!(err["code"], serde_json::json!(expected_code));
 }
 
+fn assert_err_msg_contains(err: &serde_json::Value, needle: &str) {
+    let msg = err.get("message").and_then(|v| v.as_str()).unwrap_or("");
+    assert!(
+        msg.contains(needle),
+        "expected error.message to contain {needle:?}; got: {msg:?}"
+    );
+}
+
 #[test]
 fn g48_pipe_value_to_callable() {
     let (res, _out) = assert_ok_run("fn id(x) { x }\n1 | id\n");
@@ -152,9 +160,22 @@ fn g51_match_ordering_first_hit_wins() {
 }
 
 #[test]
-fn g51_match_guard_not_supported_parse_error() {
-    let (err, _stderr, _out) = assert_err_run("match 5 { x if x > 6 => 1, _ => 2 }\n");
-    assert_err_code(&err, "ERROR_PARSE");
+fn g51_match_guard_false_falls_through() {
+    let (res, _out) = assert_ok_run("match 5 { x if x > 6 => 1, _ => 2 }\n");
+    assert_result_eq(&res, serde_json::json!(2));
+}
+
+#[test]
+fn g51_match_guard_true_selects_arm() {
+    let (res, _out) = assert_ok_run("match 7 { x if x > 6 => 1, _ => 2 }\n");
+    assert_result_eq(&res, serde_json::json!(1));
+}
+
+#[test]
+fn g51_match_guard_not_bool_is_runtime_error() {
+    let (err, _stderr, _out) = assert_err_run("match 5 { _ if 123 => 1, _ => 2 }\n");
+    assert_err_code(&err, "ERROR_RUNTIME");
+    assert_err_msg_contains(&err, "match guard not bool");
 }
 
 #[test]
