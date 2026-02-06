@@ -276,7 +276,6 @@ fn stdlib_surface_ontology_gate_v1() {
     assert!(!s.contains("\"Yes\""), "ontology json must not contain pipe tag \"Yes\" anywhere");
 
     let ont: Ontology = serde_json::from_str(&s).expect("parse ontology json");
-assert!(!s.contains("\"Yes\""), "ontology json must not contain pipe tag \"Yes\" anywhere");
 
     assert_eq!(ont.schema, "fard.stdlib.surface_tables.v1.0.ontology");
 
