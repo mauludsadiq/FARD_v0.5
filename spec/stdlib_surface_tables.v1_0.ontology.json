@@ -2,10 +2,18 @@
   "schema": "fard.stdlib.surface_tables.v1.0.ontology",
   "generated_at": "2026-02-06",
   "annotations": {
-    "intent_class": ["construct", "transform", "query", "effect"],
-    "return_meaning": ["Value", "Option", "Result"],
+    "intent_class": [
+      "construct",
+      "transform",
+      "query",
+      "effect"
+    ],
+    "return_meaning": [
+      "Value",
+      "Option",
+      "Result"
+    ],
     "pipeline_eligibility": {
-      "Yes": "pipeline-friendly as x | f (single-arg stage)",
       "Stage": "pipeline-friendly as x | f(a,b,...) (value is first arg)",
       "No": "not intended as a pipeline stage"
     }
@@ -15,312 +23,1199 @@
       "name": "std/result",
       "family": "validity",
       "exports": [
-        { "name": "Ok", "intent": "construct", "return": "Value", "pipe": "No", "notes": "constructs a Result value" },
-        { "name": "Err", "intent": "construct", "return": "Value", "pipe": "No", "notes": "constructs a Result value" },
-        { "name": "isOk", "intent": "query", "return": "Value", "pipe": "Stage" },
-        { "name": "isErr", "intent": "query", "return": "Value", "pipe": "Stage" },
-        { "name": "map", "intent": "transform", "return": "Value", "pipe": "Stage", "notes": "apply f to ok branch" },
-        { "name": "mapErr", "intent": "transform", "return": "Value", "pipe": "Stage", "notes": "apply f to err branch" },
-        { "name": "andThen", "intent": "transform", "return": "Value", "pipe": "Stage", "notes": "bind; f: v -> Result" },
-        { "name": "orElse", "intent": "transform", "return": "Value", "pipe": "Stage", "notes": "recovery; f: e -> Result" },
-        { "name": "unwrapOr", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "unwrapOrElse", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "toOption", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "fromOption", "intent": "transform", "return": "Value", "pipe": "Stage" }
+        {
+          "name": "Ok",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No",
+          "notes": "constructs a Result value"
+        },
+        {
+          "name": "Err",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No",
+          "notes": "constructs a Result value"
+        },
+        {
+          "name": "isOk",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "isErr",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "map",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage",
+          "notes": "apply f to ok branch"
+        },
+        {
+          "name": "mapErr",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage",
+          "notes": "apply f to err branch"
+        },
+        {
+          "name": "andThen",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage",
+          "notes": "bind; f: v -> Result"
+        },
+        {
+          "name": "orElse",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage",
+          "notes": "recovery; f: e -> Result"
+        },
+        {
+          "name": "unwrapOr",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "unwrapOrElse",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "toOption",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "fromOption",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        }
       ]
     },
     {
       "name": "std/option",
       "family": "absence",
       "exports": [
-        { "name": "Some", "intent": "construct", "return": "Value", "pipe": "No" },
-        { "name": "None", "intent": "construct", "return": "Value", "pipe": "No" },
-        { "name": "isSome", "intent": "query", "return": "Value", "pipe": "Stage" },
-        { "name": "isNone", "intent": "query", "return": "Value", "pipe": "Stage" },
-        { "name": "map", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "andThen", "intent": "transform", "return": "Value", "pipe": "Stage", "notes": "bind; f: v -> Option" },
-        { "name": "unwrapOr", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "unwrapOrElse", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "toResult", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "fromNullable", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "toNullable", "intent": "transform", "return": "Value", "pipe": "Stage" }
+        {
+          "name": "Some",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "None",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "isSome",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "isNone",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "map",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "andThen",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage",
+          "notes": "bind; f: v -> Option"
+        },
+        {
+          "name": "unwrapOr",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "unwrapOrElse",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "toResult",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "fromNullable",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "toNullable",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        }
       ]
     },
     {
       "name": "std/null",
       "family": "null-bridges",
       "exports": [
-        { "name": "isNull", "intent": "query", "return": "Value", "pipe": "Stage" },
-        { "name": "coalesce", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "guardNotNull", "intent": "transform", "return": "Result", "pipe": "Stage", "notes": "null->Err(err), else->Ok(x)" }
+        {
+          "name": "isNull",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "coalesce",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "guardNotNull",
+          "intent": "transform",
+          "return": "Result",
+          "pipe": "Stage",
+          "notes": "null->Err(err), else->Ok(x)"
+        }
       ]
     },
     {
       "name": "std/bool",
       "family": "core",
       "exports": [
-        { "name": "not", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "and", "intent": "transform", "return": "Value", "pipe": "No" },
-        { "name": "or", "intent": "transform", "return": "Value", "pipe": "No" }
+        {
+          "name": "not",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "and",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "or",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "No"
+        }
       ]
     },
     {
       "name": "std/int",
       "family": "core",
       "exports": [
-        { "name": "abs", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "min", "intent": "transform", "return": "Value", "pipe": "No" },
-        { "name": "max", "intent": "transform", "return": "Value", "pipe": "No" },
-        { "name": "clamp", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "toString", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "parse", "intent": "transform", "return": "Result", "pipe": "Stage" }
+        {
+          "name": "abs",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "min",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "max",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "clamp",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "toString",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "parse",
+          "intent": "transform",
+          "return": "Result",
+          "pipe": "Stage"
+        }
       ]
     },
     {
       "name": "std/num",
       "family": "numeric",
       "exports": [
-        { "name": "round", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "floor", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "ceil", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "pow", "intent": "transform", "return": "Value", "pipe": "No" },
-        { "name": "sqrt", "intent": "transform", "return": "Result", "pipe": "Stage" },
-        { "name": "log", "intent": "transform", "return": "Result", "pipe": "Stage" },
-        { "name": "exp", "intent": "transform", "return": "Value", "pipe": "Stage" }
+        {
+          "name": "round",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "floor",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "ceil",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "pow",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "sqrt",
+          "intent": "transform",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "log",
+          "intent": "transform",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "exp",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        }
       ]
     },
     {
       "name": "std/str",
       "family": "text",
       "exports": [
-        { "name": "len", "intent": "query", "return": "Value", "pipe": "Stage" },
-        { "name": "trim", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "toLower", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "toUpper", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "split", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "join", "intent": "transform", "return": "Value", "pipe": "No" },
-        { "name": "replace", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "contains", "intent": "query", "return": "Value", "pipe": "Stage" },
-        { "name": "startsWith", "intent": "query", "return": "Value", "pipe": "Stage" },
-        { "name": "endsWith", "intent": "query", "return": "Value", "pipe": "Stage" },
-        { "name": "slice", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "padLeft", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "padRight", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "format", "intent": "transform", "return": "Value", "pipe": "No" }
+        {
+          "name": "len",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "trim",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "toLower",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "toUpper",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "split",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "join",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "replace",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "contains",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "startsWith",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "endsWith",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "slice",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "padLeft",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "padRight",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "format",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "No"
+        }
       ]
     },
     {
       "name": "std/regex",
       "family": "text",
       "exports": [
-        { "name": "compile", "intent": "construct", "return": "Result", "pipe": "No", "notes": "regex object" },
-        { "name": "isMatch", "intent": "query", "return": "Value", "pipe": "No" },
-        { "name": "match", "intent": "query", "return": "Option", "pipe": "No" },
-        { "name": "findAll", "intent": "query", "return": "Value", "pipe": "No" },
-        { "name": "replace", "intent": "transform", "return": "Value", "pipe": "No" },
-        { "name": "replaceAll", "intent": "transform", "return": "Value", "pipe": "No" }
+        {
+          "name": "compile",
+          "intent": "construct",
+          "return": "Result",
+          "pipe": "No",
+          "notes": "regex object"
+        },
+        {
+          "name": "isMatch",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "match",
+          "intent": "query",
+          "return": "Option",
+          "pipe": "No"
+        },
+        {
+          "name": "findAll",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "replace",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "replaceAll",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "No"
+        }
       ]
     },
     {
       "name": "std/list",
       "family": "sequence",
       "exports": [
-        { "name": "empty", "intent": "construct", "return": "Value", "pipe": "No" },
-        { "name": "len", "intent": "query", "return": "Value", "pipe": "Stage" },
-        { "name": "isEmpty", "intent": "query", "return": "Value", "pipe": "Stage" },
-        { "name": "push", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "concat", "intent": "transform", "return": "Value", "pipe": "No" },
-        { "name": "map", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "filter", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "flatMap", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "fold", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "sum", "intent": "query", "return": "Value", "pipe": "Stage" },
-        { "name": "min", "intent": "query", "return": "Option", "pipe": "Stage" },
-        { "name": "max", "intent": "query", "return": "Option", "pipe": "Stage" },
-        { "name": "take", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "drop", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "slice", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "enumerate", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "zip", "intent": "transform", "return": "Value", "pipe": "No" },
-        { "name": "groupBy", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "sort", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "sortBy", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "stableSortBy", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "unique", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "uniqueBy", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "chunk", "intent": "transform", "return": "Value", "pipe": "Stage" }
+        {
+          "name": "empty",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "len",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "isEmpty",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "push",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "concat",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "map",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "filter",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "flatMap",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "fold",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "sum",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "min",
+          "intent": "query",
+          "return": "Option",
+          "pipe": "Stage"
+        },
+        {
+          "name": "max",
+          "intent": "query",
+          "return": "Option",
+          "pipe": "Stage"
+        },
+        {
+          "name": "take",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "drop",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "slice",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "enumerate",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "zip",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "groupBy",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "sort",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "sortBy",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "stableSortBy",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "unique",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "uniqueBy",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "chunk",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        }
       ]
     },
     {
       "name": "std/rec",
       "family": "records",
       "exports": [
-        { "name": "empty", "intent": "construct", "return": "Value", "pipe": "No" },
-        { "name": "keys", "intent": "query", "return": "Value", "pipe": "Stage" },
-        { "name": "values", "intent": "query", "return": "Value", "pipe": "Stage" },
-        { "name": "has", "intent": "query", "return": "Value", "pipe": "Stage" },
-        { "name": "get", "intent": "query", "return": "Option", "pipe": "Stage" },
-        { "name": "getOr", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "require", "intent": "transform", "return": "Result", "pipe": "Stage" },
-        { "name": "set", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "remove", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "merge", "intent": "transform", "return": "Value", "pipe": "No" },
-        { "name": "select", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "rename", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "update", "intent": "transform", "return": "Value", "pipe": "Stage" }
+        {
+          "name": "empty",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "keys",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "values",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "has",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "get",
+          "intent": "query",
+          "return": "Option",
+          "pipe": "Stage"
+        },
+        {
+          "name": "getOr",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "getOrErr",
+          "intent": "transform",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "set",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "remove",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "merge",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "select",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "rename",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "update",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        }
       ]
     },
     {
       "name": "std/json",
       "family": "interchange",
       "exports": [
-        { "name": "decode", "intent": "transform", "return": "Result", "pipe": "Stage" },
-        { "name": "encode", "intent": "transform", "return": "Result", "pipe": "Stage" },
-        { "name": "parse", "intent": "transform", "return": "Result", "pipe": "Stage" },
-        { "name": "stringify", "intent": "transform", "return": "Result", "pipe": "Stage" },
-        { "name": "pretty", "intent": "transform", "return": "Result", "pipe": "Stage" },
-        { "name": "pathGet", "intent": "query", "return": "Option", "pipe": "Stage" },
-        { "name": "pathSet", "intent": "transform", "return": "Result", "pipe": "Stage" }
+        {
+          "name": "decode",
+          "intent": "transform",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "encode",
+          "intent": "transform",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "parse",
+          "intent": "transform",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "stringify",
+          "intent": "transform",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "pretty",
+          "intent": "transform",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "pathGet",
+          "intent": "query",
+          "return": "Option",
+          "pipe": "Stage"
+        },
+        {
+          "name": "pathSet",
+          "intent": "transform",
+          "return": "Result",
+          "pipe": "Stage"
+        }
       ]
     },
     {
       "name": "std/csv",
       "family": "interchange",
       "exports": [
-        { "name": "parse", "intent": "transform", "return": "Result", "pipe": "Stage" },
-        { "name": "encode", "intent": "transform", "return": "Result", "pipe": "Stage" },
-        { "name": "withHeader", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "toRecords", "intent": "transform", "return": "Result", "pipe": "Stage" }
+        {
+          "name": "parse",
+          "intent": "transform",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "encode",
+          "intent": "transform",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "withHeader",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "toRecords",
+          "intent": "transform",
+          "return": "Result",
+          "pipe": "Stage"
+        }
       ]
     },
     {
       "name": "std/bytes",
       "family": "binary",
       "exports": [
-        { "name": "empty", "intent": "construct", "return": "Value", "pipe": "No" },
-        { "name": "len", "intent": "query", "return": "Value", "pipe": "Stage" },
-        { "name": "concat", "intent": "transform", "return": "Value", "pipe": "No" },
-        { "name": "slice", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "toHex", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "fromHex", "intent": "transform", "return": "Result", "pipe": "Stage" },
-        { "name": "equals", "intent": "query", "return": "Value", "pipe": "No" }
+        {
+          "name": "empty",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "len",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "concat",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "slice",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "toHex",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "fromHex",
+          "intent": "transform",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "equals",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "No"
+        }
       ]
     },
     {
       "name": "std/hash",
       "family": "identity",
       "exports": [
-        { "name": "sha256", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "sha256Text", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "equals", "intent": "query", "return": "Value", "pipe": "No" },
-        { "name": "toHex", "intent": "transform", "return": "Value", "pipe": "Stage" }
+        {
+          "name": "sha256",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "sha256Text",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "equals",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "toHex",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        }
       ]
     },
     {
       "name": "std/path",
       "family": "paths",
       "exports": [
-        { "name": "join", "intent": "transform", "return": "Value", "pipe": "No" },
-        { "name": "normalize", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "dir", "intent": "query", "return": "Value", "pipe": "Stage" },
-        { "name": "base", "intent": "query", "return": "Value", "pipe": "Stage" },
-        { "name": "ext", "intent": "query", "return": "Value", "pipe": "Stage" },
-        { "name": "isAbs", "intent": "query", "return": "Value", "pipe": "Stage" }
+        {
+          "name": "join",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "normalize",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "dir",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "base",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "ext",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "isAbs",
+          "intent": "query",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "joinAll",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage",
+          "notes": "join path parts (value-first, pipeline-friendly)"
+        }
       ]
     },
     {
       "name": "std/fs",
       "family": "effects",
       "exports": [
-        { "name": "read", "intent": "effect", "return": "Result", "pipe": "Stage" },
-        { "name": "write", "intent": "effect", "return": "Result", "pipe": "No" },
-        { "name": "open", "intent": "effect", "return": "Result", "pipe": "Stage", "notes": "returns resource" },
-        { "name": "create", "intent": "effect", "return": "Result", "pipe": "Stage", "notes": "returns resource" },
-        { "name": "close", "intent": "effect", "return": "Result", "pipe": "Stage" },
-        { "name": "readAll", "intent": "effect", "return": "Result", "pipe": "Stage" },
-        { "name": "writeAll", "intent": "effect", "return": "Result", "pipe": "Stage" },
-        { "name": "exists", "intent": "effect", "return": "Result", "pipe": "Stage" },
-        { "name": "listDir", "intent": "effect", "return": "Result", "pipe": "Stage" }
+        {
+          "name": "read",
+          "intent": "effect",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "write",
+          "intent": "effect",
+          "return": "Result",
+          "pipe": "No"
+        },
+        {
+          "name": "open",
+          "intent": "effect",
+          "return": "Result",
+          "pipe": "Stage",
+          "notes": "returns resource"
+        },
+        {
+          "name": "create",
+          "intent": "effect",
+          "return": "Result",
+          "pipe": "Stage",
+          "notes": "returns resource"
+        },
+        {
+          "name": "close",
+          "intent": "effect",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "readAll",
+          "intent": "effect",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "writeAll",
+          "intent": "effect",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "exists",
+          "intent": "effect",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "listDir",
+          "intent": "effect",
+          "return": "Result",
+          "pipe": "Stage"
+        }
       ]
     },
     {
       "name": "std/http",
       "family": "effects",
       "exports": [
-        { "name": "get", "intent": "effect", "return": "Result", "pipe": "Stage" },
-        { "name": "post", "intent": "effect", "return": "Result", "pipe": "Stage" },
-        { "name": "request", "intent": "effect", "return": "Result", "pipe": "Stage" },
-        { "name": "Response.status", "intent": "query", "return": "Value", "pipe": "No" },
-        { "name": "Response.body", "intent": "query", "return": "Value", "pipe": "No" },
-        { "name": "okOr", "intent": "transform", "return": "Result", "pipe": "Stage", "notes": "Response->Result(Response) gate" }
+        {
+          "name": "get",
+          "intent": "effect",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "post",
+          "intent": "effect",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "request",
+          "intent": "effect",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "okOr",
+          "intent": "transform",
+          "return": "Result",
+          "pipe": "Stage",
+          "notes": "Response->Result(Response) gate"
+        }
       ]
     },
     {
       "name": "std/time",
       "family": "time",
       "exports": [
-        { "name": "Duration.ms", "intent": "construct", "return": "Value", "pipe": "No" },
-        { "name": "Duration.sec", "intent": "construct", "return": "Value", "pipe": "No" },
-        { "name": "Duration.min", "intent": "construct", "return": "Value", "pipe": "No" },
-        { "name": "parse", "intent": "transform", "return": "Result", "pipe": "Stage" },
-        { "name": "format", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "add", "intent": "transform", "return": "Value", "pipe": "Stage" },
-        { "name": "sub", "intent": "transform", "return": "Value", "pipe": "Stage" }
+        {
+          "name": "Duration.ms",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "Duration.sec",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "Duration.min",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "parse",
+          "intent": "transform",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "format",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "add",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "sub",
+          "intent": "transform",
+          "return": "Value",
+          "pipe": "Stage"
+        }
       ]
     },
     {
       "name": "std/random",
       "family": "effects",
       "exports": [
-        { "name": "seed", "intent": "construct", "return": "Value", "pipe": "No", "notes": "generator value" },
-        { "name": "int", "intent": "effect", "return": "Value", "pipe": "No" },
-        { "name": "uniform", "intent": "effect", "return": "Value", "pipe": "No" },
-        { "name": "shuffle", "intent": "effect", "return": "Value", "pipe": "No" },
-        { "name": "choice", "intent": "effect", "return": "Option", "pipe": "No" }
+        {
+          "name": "seed",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No",
+          "notes": "generator value"
+        },
+        {
+          "name": "int",
+          "intent": "effect",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "uniform",
+          "intent": "effect",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "shuffle",
+          "intent": "effect",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "choice",
+          "intent": "effect",
+          "return": "Option",
+          "pipe": "No"
+        }
       ]
     },
     {
       "name": "std/trace",
       "family": "observability",
       "exports": [
-        { "name": "emit", "intent": "effect", "return": "Value", "pipe": "No" },
-        { "name": "info", "intent": "effect", "return": "Value", "pipe": "Stage" },
-        { "name": "warn", "intent": "effect", "return": "Value", "pipe": "Stage" },
-        { "name": "error", "intent": "effect", "return": "Value", "pipe": "Stage" },
-        { "name": "span", "intent": "effect", "return": "Result", "pipe": "No" }
+        {
+          "name": "emit",
+          "intent": "effect",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "info",
+          "intent": "effect",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "warn",
+          "intent": "effect",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "error",
+          "intent": "effect",
+          "return": "Value",
+          "pipe": "Stage"
+        },
+        {
+          "name": "span",
+          "intent": "effect",
+          "return": "Result",
+          "pipe": "No"
+        }
       ]
     },
     {
       "name": "std/artifact",
       "family": "effects",
       "exports": [
-        { "name": "import", "intent": "effect", "return": "Result", "pipe": "Stage" },
-        { "name": "emit", "intent": "effect", "return": "Result", "pipe": "No" },
-        { "name": "derive", "intent": "effect", "return": "Result", "pipe": "No" },
-        { "name": "ref", "intent": "construct", "return": "Value", "pipe": "No" }
+        {
+          "name": "import",
+          "intent": "effect",
+          "return": "Result",
+          "pipe": "Stage"
+        },
+        {
+          "name": "emit",
+          "intent": "effect",
+          "return": "Result",
+          "pipe": "No"
+        },
+        {
+          "name": "derive",
+          "intent": "effect",
+          "return": "Result",
+          "pipe": "No"
+        },
+        {
+          "name": "ref",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No"
+        }
       ]
     },
     {
       "name": "std/schema",
       "family": "validation",
       "exports": [
-        { "name": "any", "intent": "construct", "return": "Value", "pipe": "No" },
-        { "name": "int", "intent": "construct", "return": "Value", "pipe": "No" },
-        { "name": "str", "intent": "construct", "return": "Value", "pipe": "No" },
-        { "name": "bool", "intent": "construct", "return": "Value", "pipe": "No" },
-        { "name": "null", "intent": "construct", "return": "Value", "pipe": "No" },
-        { "name": "list", "intent": "construct", "return": "Value", "pipe": "No" },
-        { "name": "obj", "intent": "construct", "return": "Value", "pipe": "No" },
-        { "name": "oneOf", "intent": "construct", "return": "Value", "pipe": "No" },
-        { "name": "optional", "intent": "construct", "return": "Value", "pipe": "No" },
-        { "name": "validate", "intent": "query", "return": "Result", "pipe": "No" },
-        { "name": "check", "intent": "query", "return": "Result", "pipe": "Stage" }
+        {
+          "name": "any",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "int",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "str",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "bool",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "null",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "list",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "obj",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "oneOf",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "optional",
+          "intent": "construct",
+          "return": "Value",
+          "pipe": "No"
+        },
+        {
+          "name": "validate",
+          "intent": "query",
+          "return": "Result",
+          "pipe": "No"
+        },
+        {
+          "name": "check",
+          "intent": "query",
+          "return": "Result",
+          "pipe": "Stage"
+        }
       ]
     }
   ],
   "vocabulary_guarantees": [
-    { "id": "V1", "text": "Any export marked pipe=Stage MUST accept the transformed value as its first argument in the conceptual signature." },
-    { "id": "V2", "text": "Return meaning is stable: Result = may fail; Option = may be absent; Value = total (within the ontology)." },
-    { "id": "V3", "text": "Pipe eligibility is a readability contract: pipe=Yes/Stage entries define canonical intent sentences." }
+    {
+      "id": "V1",
+      "text": "Any export marked pipe=Stage MUST accept the transformed value as its first argument in the conceptual signature."
+    },
+    {
+      "id": "V2",
+      "text": "Return meaning is stable: Result = may fail; Option = may be absent; Value = total (within the ontology)."
+    },
+    {
+      "id": "V3",
+      "text": "Pipe eligibility is a readability contract: pipe=Stage entries define canonical intent sentences."
+    }
   ]
 }
