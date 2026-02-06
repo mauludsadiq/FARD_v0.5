@@ -41,13 +41,13 @@
           "name": "isOk",
           "intent": "query",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "isErr",
           "intent": "query",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "map",
@@ -93,13 +93,13 @@
           "name": "toOption",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "fromOption",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         }
       ]
     },
@@ -123,13 +123,13 @@
           "name": "isSome",
           "intent": "query",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "isNone",
           "intent": "query",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "map",
@@ -166,13 +166,13 @@
           "name": "fromNullable",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "toNullable",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         }
       ]
     },
@@ -184,7 +184,7 @@
           "name": "isNull",
           "intent": "query",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "coalesce",
@@ -209,7 +209,7 @@
           "name": "not",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "and",
@@ -233,7 +233,7 @@
           "name": "abs",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "min",
@@ -257,13 +257,13 @@
           "name": "toString",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "parse",
           "intent": "transform",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         }
       ]
     },
@@ -275,19 +275,19 @@
           "name": "round",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "floor",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "ceil",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "pow",
@@ -299,19 +299,19 @@
           "name": "sqrt",
           "intent": "transform",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "log",
           "intent": "transform",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "exp",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         }
       ]
     },
@@ -323,25 +323,25 @@
           "name": "len",
           "intent": "query",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "trim",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "toLower",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "toUpper",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "split",
@@ -462,13 +462,13 @@
           "name": "len",
           "intent": "query",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "isEmpty",
           "intent": "query",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "push",
@@ -510,19 +510,19 @@
           "name": "sum",
           "intent": "query",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "min",
           "intent": "query",
           "return": "Option",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "max",
           "intent": "query",
           "return": "Option",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "take",
@@ -546,7 +546,7 @@
           "name": "enumerate",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "zip",
@@ -564,7 +564,7 @@
           "name": "sort",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "sortBy",
@@ -582,7 +582,7 @@
           "name": "unique",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "uniqueBy",
@@ -612,13 +612,13 @@
           "name": "keys",
           "intent": "query",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "values",
           "intent": "query",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "has",
@@ -690,31 +690,31 @@
           "name": "decode",
           "intent": "transform",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "encode",
           "intent": "transform",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "parse",
           "intent": "transform",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "stringify",
           "intent": "transform",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "pretty",
           "intent": "transform",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "pathGet",
@@ -738,25 +738,25 @@
           "name": "parse",
           "intent": "transform",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "encode",
           "intent": "transform",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "withHeader",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "toRecords",
           "intent": "transform",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         }
       ]
     },
@@ -774,7 +774,7 @@
           "name": "len",
           "intent": "query",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "concat",
@@ -786,19 +786,19 @@
           "name": "slice",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "toHex",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "fromHex",
           "intent": "transform",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "equals",
@@ -816,13 +816,13 @@
           "name": "sha256",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "sha256Text",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "equals",
@@ -834,7 +834,7 @@
           "name": "toHex",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         }
       ]
     },
@@ -852,31 +852,31 @@
           "name": "normalize",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "dir",
           "intent": "query",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "base",
           "intent": "query",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "ext",
           "intent": "query",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "isAbs",
           "intent": "query",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "joinAll",
@@ -895,7 +895,7 @@
           "name": "read",
           "intent": "effect",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "write",
@@ -907,27 +907,27 @@
           "name": "open",
           "intent": "effect",
           "return": "Result",
-          "pipe": "Stage",
+          "pipe": "No",
           "notes": "returns resource"
         },
         {
           "name": "create",
           "intent": "effect",
           "return": "Result",
-          "pipe": "Stage",
+          "pipe": "No",
           "notes": "returns resource"
         },
         {
           "name": "close",
           "intent": "effect",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "readAll",
           "intent": "effect",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "writeAll",
@@ -939,13 +939,13 @@
           "name": "exists",
           "intent": "effect",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "listDir",
           "intent": "effect",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         }
       ]
     },
@@ -957,7 +957,7 @@
           "name": "get",
           "intent": "effect",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "post",
@@ -969,7 +969,7 @@
           "name": "request",
           "intent": "effect",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "okOr",
@@ -1006,13 +1006,13 @@
           "name": "parse",
           "intent": "transform",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "format",
           "intent": "transform",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "add",
@@ -1079,19 +1079,19 @@
           "name": "info",
           "intent": "effect",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "warn",
           "intent": "effect",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "error",
           "intent": "effect",
           "return": "Value",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "span",
@@ -1109,7 +1109,7 @@
           "name": "import",
           "intent": "effect",
           "return": "Result",
-          "pipe": "Stage"
+          "pipe": "No"
         },
         {
           "name": "emit",
