@@ -1,3 +1,5 @@
+pub mod builtin_sig_table_v1;
+
 use anyhow::{anyhow, bail, Context, Result};
 use regex::Regex;
 use serde::Deserialize;
