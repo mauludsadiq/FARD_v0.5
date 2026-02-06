@@ -256,6 +256,11 @@ fn builtin_sig_table_v1() -> BTreeMap<&'static str, Sig> {
     // std/artifact
     // ----------------
     m.insert("std/artifact::import", vf1);
+    // ----------------
+    // std/schema
+    // ----------------
+    m.insert("std/schema::check", Sig { arity_min: 2, value_first: true }); // (value, schema)
+
 
     m
 }
