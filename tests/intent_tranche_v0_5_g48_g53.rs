@@ -266,3 +266,41 @@ fn assert_err_span_text(err: &serde_json::Value, expected: &str) {
         "span text mismatch: got {s:?} expected {expected:?}"
     );
 }
+
+#[test]
+fn g53_kitchen_sink_program_smoke() {
+    let prog = r#"
+fn pair(a,b){[a,b]}
+fn id(x){x}
+
+fn safe(x){
+  if x > 0 then {t:"ok", v:x} else {t:"err", e:"NEG"}
+}
+
+let xs = [5,1,7,2]
+
+let a =
+  xs
+  | id
+  | pair(9)
+
+let b =
+  match 7 {
+    x if x > 6 => "big",
+    _ => "small"
+  }
+
+fn main(){
+  let y = safe(3)?
+  {pipe:a, match:b, y:y}
+}
+
+main()
+"#;
+
+    let (res, _out) = assert_ok_run(prog);
+    assert_result_eq(
+        &res,
+        serde_json::json!({"pipe":[[5,1,7,2], 9], "match":"big", "y":3}),
+    );
+}

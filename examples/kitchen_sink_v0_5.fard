@@ -1,0 +1,26 @@
+fn pair(a,b){[a,b]}
+fn id(x){x}
+
+fn safe(x){
+  if x > 0 then {t:"ok", v:x} else {t:"err", e:"NEG"}
+}
+
+let xs = [5,1,7,2]
+
+let a =
+  xs
+  | id
+  | pair(9)
+
+let b =
+  match 7 {
+    x if x > 6 => "big",
+    _ => "small"
+  }
+
+fn main(){
+  let y = safe(3)?
+  {pipe:a, match:b, y:y}
+}
+
+main()

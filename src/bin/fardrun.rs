@@ -691,6 +691,25 @@ impl Parser {
         }
     }
 
+    fn parse_fn_block_body(&mut self) -> Result<Expr> {
+        let mut binds: Vec<(String, Expr)> = Vec::new();
+
+        while self.eat_kw("let") {
+            let name = self.expect_ident()?;
+            self.expect_sym("=")?;
+            let rhs = self.parse_expr()?;
+            binds.push((name, rhs));
+        }
+
+        let mut tail = self.parse_expr()?;
+        self.expect_sym("}")?;
+
+        for (name, rhs) in binds.into_iter().rev() {
+            tail = Expr::Let(name, Box::new(rhs), Box::new(tail));
+        }
+        Ok(tail)
+    }
+
     fn parse_type(&mut self) -> Result<Type> {
         match self.peek() {
             Tok::Kw(x) | Tok::Ident(x) if x == "Int" => {
@@ -858,8 +877,7 @@ impl Parser {
                     None
                 };
                 self.expect_sym("{")?;
-                let body = self.parse_expr()?;
-                self.expect_sym("}")?;
+                let body = self.parse_fn_block_body()?;
                 items.push(Item::Fn(name, params, ret, body));
                 continue;
             }
@@ -1454,6 +1472,7 @@ struct Func {
 enum Builtin {
     ResultOk,
     ResultAndThen,
+    ResultErr,
     ListGet,
     ListSortByIntKey,
     GrowUnfoldTree,
@@ -1894,9 +1913,7 @@ fn call_builtin(
             if args.len() != 1 {
                 bail!("ERROR_BADARG result.ok expects 1 arg");
             }
-            let mut m = BTreeMap::new();
-            m.insert("ok".to_string(), args[0].clone());
-            Ok(Val::Rec(m))
+            Ok(mk_result_ok(args[0].clone()))
         }
 
         Builtin::ResultAndThen => {
@@ -1916,6 +1933,13 @@ fn call_builtin(
             } else {
                 Ok(Val::Rec(m))
             }
+        }
+
+        Builtin::ResultErr => {
+            if args.len() != 1 {
+                bail!("ERROR_BADARG result.err expects 1 arg");
+            }
+            Ok(mk_result_err(args[0].clone()))
         }
 
         Builtin::FlowPipe => {
@@ -2830,6 +2854,7 @@ impl ModuleLoader {
                 let mut m = BTreeMap::new();
                 m.insert("ok".to_string(), Val::Builtin(Builtin::ResultOk));
                 m.insert("andThen".to_string(), Val::Builtin(Builtin::ResultAndThen));
+                m.insert("err".to_string(), Val::Builtin(Builtin::ResultErr));
                 Ok(m)
             }
 
@@ -2883,14 +2908,6 @@ fn base_env() -> Env {
     let mut e = Env::new();
     e.set("emit".to_string(), Val::Builtin(Builtin::Emit));
     e.set("len".to_string(), Val::Builtin(Builtin::Len));
-    e.set(
-        "import_artifact".to_string(),
-        Val::Builtin(Builtin::ImportArtifact),
-    );
-    e.set(
-        "emit_artifact".to_string(),
-        Val::Builtin(Builtin::EmitArtifact),
-    );
     e.set(
         "import_artifact".to_string(),
         Val::Builtin(Builtin::ImportArtifact),
