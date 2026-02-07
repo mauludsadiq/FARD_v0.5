@@ -1489,6 +1489,7 @@ enum Builtin {
     ListGet,
     ListSortByIntKey,
     GrowUnfoldTree,
+    GrowAppend,
     ImportArtifact,
     EmitArtifact,
 
@@ -1499,6 +1500,8 @@ enum Builtin {
     HistInt,
     Unfold,
     FlowPipe,
+    FlowId,
+    FlowTap,
     StrLen,
     StrConcat,
     MapGet,
@@ -1955,7 +1958,8 @@ fn call_builtin(
             Ok(mk_result_err(args[0].clone()))
         }
 
-        Builtin::FlowPipe => {
+        
+Builtin::FlowPipe => {
             if args.len() != 2 {
                 bail!("ERROR_BADARG flow.pipe expects 2 args");
             }
@@ -1968,7 +1972,36 @@ fn call_builtin(
                 acc = call(f, vec![acc], tracer, loader)?;
             }
             Ok(acc)
-        }
+        },
+        Builtin::FlowId => {
+            if args.len() != 1 {
+                bail!("ERROR_BADARG flow.id expects 1 arg");
+            }
+            Ok(args[0].clone())
+        },
+        Builtin::FlowTap => {
+            if args.len() != 2 {
+                bail!("ERROR_BADARG flow.tap expects 2 args");
+            }
+            let x = args[0].clone();
+            let f = args[1].clone();
+            let _ = call(f, vec![x.clone()], tracer, loader)?;
+            Ok(x)
+        },
+
+        Builtin::GrowAppend => {
+            if args.len() != 2 {
+                bail!("ERROR_BADARG grow.append expects 2 args");
+            }
+            let mut xs = match &args[0] {
+                Val::List(v) => v.clone(),
+                _ => bail!("ERROR_BADARG grow.append arg0 must be list"),
+            };
+            xs.push(args[1].clone());
+            Ok(Val::List(xs))
+        },
+
+
         Builtin::StrLen => {
             if args.len() != 1 {
                 bail!("ERROR_RUNTIME arity");
@@ -2214,7 +2247,8 @@ fn call_builtin(
 
 
 
-        Builtin::GrowUnfoldTree => {
+        
+Builtin::GrowUnfoldTree => {
             if args.len() < 2 {
                 bail!("ERROR_BADARG unfold_tree expects at least 2 args");
             }
@@ -2380,7 +2414,7 @@ fn call_builtin(
             let mut out_list: Vec<Val> = Vec::new();
             for (v, c) in m {
                 let mut rec = BTreeMap::new();
-                rec.insert("v".to_string(), Val::Int(v));
+                rec.insert("k".to_string(), Val::Int(v));
                 rec.insert("count".to_string(), Val::Int(c));
                 out_list.push(Val::Rec(rec));
             }
@@ -2965,6 +2999,8 @@ impl ModuleLoader {
         match name {
             "std/list" => {
                 let mut m = BTreeMap::new();
+                  m.insert("len".to_string(), Val::Builtin(Builtin::Len));
+                  m.insert("len".to_string(), Val::Builtin(Builtin::Len));
                 m.insert("get".to_string(), Val::Builtin(Builtin::ListGet));
                 m.insert(
                     "sort_by_int_key".to_string(),
@@ -2979,28 +3015,35 @@ impl ModuleLoader {
                 Ok(m)
             }
 
-            "std/result" => {
-                let mut m = BTreeMap::new();
-                m.insert("ok".to_string(), Val::Builtin(Builtin::ResultOk));
-                m.insert("andThen".to_string(), Val::Builtin(Builtin::ResultAndThen));
-                m.insert("err".to_string(), Val::Builtin(Builtin::ResultErr));
-                Ok(m)
-            }
+            
+"std/result" => {
+                  let mut m = BTreeMap::new();
+                  m.insert("Ok".to_string(), Val::Builtin(Builtin::ResultOk));
+                  m.insert("Err".to_string(), Val::Builtin(Builtin::ResultErr));
+                  m.insert("andThen".to_string(), Val::Builtin(Builtin::ResultAndThen));
+                  Ok(m)
+              }
 
-            "std/grow" => {
-                let mut m = BTreeMap::new();
-                m.insert(
-                    "unfold_tree".to_string(),
-                    Val::Builtin(Builtin::GrowUnfoldTree),
-                );
-                m.insert("unfold".to_string(), Val::Builtin(Builtin::Unfold));
-                Ok(m)
-            }
-            "std/flow" => {
-                let mut m = BTreeMap::new();
-                m.insert("pipe".to_string(), Val::Builtin(Builtin::FlowPipe));
-                Ok(m)
-            }
+            
+"std/grow" => {
+                  let mut m = BTreeMap::new();
+                  m.insert("append".to_string(), Val::Builtin(Builtin::GrowAppend));
+                  m.insert("merge".to_string(), Val::Builtin(Builtin::RecMerge));
+                  m.insert(
+                      "unfold_tree".to_string(),
+                      Val::Builtin(Builtin::GrowUnfoldTree),
+                  );
+                  m.insert("unfold".to_string(), Val::Builtin(Builtin::Unfold));
+                  Ok(m)
+              }
+            
+"std/flow" => {
+                  let mut m = BTreeMap::new();
+                  m.insert("id".to_string(), Val::Builtin(Builtin::FlowId));
+                  m.insert("pipe".to_string(), Val::Builtin(Builtin::FlowPipe));
+                  m.insert("tap".to_string(), Val::Builtin(Builtin::FlowTap));
+                  Ok(m)
+              }
 
             "std/str" => {
                 let mut m = BTreeMap::new();
@@ -3009,12 +3052,16 @@ impl ModuleLoader {
                 Ok(m)
             }
 
-            "std/map" => {
-                let mut m = BTreeMap::new();
-                m.insert("get".to_string(), Val::Builtin(Builtin::MapGet));
-                m.insert("set".to_string(), Val::Builtin(Builtin::MapSet));
-                Ok(m)
-            }
+            
+"std/map" => {
+                  let mut m = BTreeMap::new();
+                  m.insert("get".to_string(), Val::Builtin(Builtin::MapGet));
+                  m.insert("set".to_string(), Val::Builtin(Builtin::MapSet));
+                  m.insert("keys".to_string(), Val::Builtin(Builtin::RecKeys));
+                  m.insert("values".to_string(), Val::Builtin(Builtin::RecValues));
+                  m.insert("has".to_string(), Val::Builtin(Builtin::RecHas));
+                  Ok(m)
+              }
 
 
               "std/rec" => {

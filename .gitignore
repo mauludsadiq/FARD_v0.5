@@ -19,3 +19,5 @@ tests/lang_gates_v1/out_tranche_a/
 .clean
 *.bak.*
 .tmp*
+/target/
+**/*.rs.bk
