@@ -35,8 +35,19 @@ pub struct RunArgs {
 
 impl Cli {
     pub fn parse_compat() -> (RunArgs, bool) {
-        let raw: Vec<String> = std::env::args().collect();
-        let cli = Cli::parse_from(raw);
+            use std::ffi::OsString;
+    let mut argv: Vec<OsString> = std::env::args_os().collect();
+    if argv.len() >= 2 {
+        let has_legacy = argv.iter().any(|a| {
+            let s = a.to_string_lossy();
+            s == "--program" || s == "--lock" || s == "--lockfile" || s == "--registry" || s == "--out" || s == "--trace" || s == "--result" || s == "--stdin"
+        });
+        let first_is_flag = argv.get(1).map(|a| a.to_string_lossy().starts_with("-")).unwrap_or(false);
+        if has_legacy && first_is_flag {
+            argv.insert(1, OsString::from("run"));
+        }
+    }
+      let cli = Cli::parse_from(argv.clone());
 
         if cli.version {
             let dummy = RunArgs {
@@ -51,14 +62,7 @@ impl Cli {
         let run = match cli.cmd {
             Some(Command::Run(r)) => r,
             None => {
-                let mut raw2: Vec<String> = std::env::args().collect();
-                if raw2.len() >= 2 && raw2[1] != "run" && !raw2[1].starts_with("-") {
-                    let p = raw2.remove(1);
-                    raw2.insert(1, "run".to_string());
-                    raw2.insert(2, "--program".to_string());
-                    raw2.insert(3, p);
-                }
-                let cli2 = Cli::parse_from(raw2);
+                let cli2 = Cli::parse_from(argv);
                 match cli2.cmd {
                     Some(Command::Run(r)) => r,
                     _ => unreachable!(),
