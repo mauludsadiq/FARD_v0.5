@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[test]
 fn gate_spec_parses() {
@@ -13,15 +13,25 @@ fn gate_runner_smoke_optional() {
         eprintln!("SKIP: set RUN_FARD_GATES=1 to execute the real FARD language-gate suite");
         return;
     }
-    // If enabled, just spawn the gaterun binary (built by cargo) via std::process::Command.
-    let exe =
-        std::env::var("CARGO_BIN_EXE_gaterun").expect("CARGO_BIN_EXE_gaterun not set by cargo");
-    let status = std::process::Command::new(exe)
+
+    let exe: PathBuf = std::env::var_os("CARGO_BIN_EXE_gaterun")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("target")
+                .join("debug")
+                .join(if cfg!(windows) { "gaterun.exe" } else { "gaterun" })
+        });
+
+    assert!(exe.exists(), "gaterun missing at {}", exe.display());
+
+    let status = std::process::Command::new(&exe)
         .arg("--spec")
         .arg("tests/gate/gates.json")
         .arg("--config")
         .arg("fard_gate.toml")
         .status()
         .expect("run gaterun");
+
     assert!(status.success(), "gaterun failed");
 }
