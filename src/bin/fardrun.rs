@@ -2380,7 +2380,7 @@ fn call_builtin(
             let mut out_list: Vec<Val> = Vec::new();
             for (v, c) in m {
                 let mut rec = BTreeMap::new();
-                rec.insert("k".to_string(), Val::Int(v));
+                rec.insert("v".to_string(), Val::Int(v));
                 rec.insert("count".to_string(), Val::Int(c));
                 out_list.push(Val::Rec(rec));
             }
@@ -2953,10 +2953,7 @@ impl ModuleLoader {
     fn check_lock(&self, module: &str, got: &str) -> Result<()> {
         if let Some(lk) = &self.lock {
             if let Some(exp) = lk.expected(module) {
-                if exp == "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-                {
-                    // wildcard digest: lock is required, but digest is intentionally unset
-                } else if exp != got {
+                if exp != got {
                     bail!("LOCK_MISMATCH lock mismatch for module {module}: expected {exp}, got {got}");
                 }
             }
