@@ -18,3 +18,4 @@ tests/lang_gates_v1/out_tranche_a/
 # local scratch / backups
 .clean
 *.bak.*
+.tmp*
