@@ -95,3 +95,93 @@ A run writes outputs under the selected out directory and MUST emit the followin
 ## Errors
 Errors use stable string codes and deterministic rendering into `error.json` and `stderr.txt`.
 
+
+## Manifest Contract Spec (Intent Tranche v1.0: g11–g15)
+
+This section specifies the **normative contract** enforced by `tests/intent_tranche_v1_0_g11_g15.rs` over:
+
+- `spec/stdlib_surface.v1_0.ontology.json`
+
+### Checklist (must hold)
+
+#### A) File + parseability
+- [ ] File exists at `spec/stdlib_surface.v1_0.ontology.json`.
+- [ ] File bytes parse as JSON (UTF-8 JSON text; no trailing garbage).
+
+#### B) Top-level shape + key order
+- [ ] Top-level value is an **object**.
+- [ ] Top-level keys are **exactly**: `["modules","schema"]` in that order.
+- [ ] `schema` is a **string** and equals: `fard.stdlib_surface.ontology.v1_0`.
+- [ ] `modules` is an **object** and is **non-empty**.
+
+#### C) Canonical bytes (exact file-bytes constraint)
+- [ ] The file bytes are exactly: `canon_compact_bytes(JSON) + "\n"`.
+  - Canonicalization rule: recursively sort **all object keys** lexicographically; arrays preserve order; scalars unchanged.
+  - Serialization rule: compact JSON (no extra whitespace), then a single trailing newline `\n`.
+
+#### D) Module keys: canonical path + sorted order
+For each module key `mname` in `modules`:
+- [ ] `mname` is a **canonical module path**:
+  - must start with `std/`
+  - tail (after `std/`) is non-empty
+  - tail characters are only `[a-z0-9_]`
+- [ ] Module keys in `modules` are iterated in **lexicographic ascending order**.
+
+#### E) Module value shape
+For each module entry `(mname, mval)`:
+- [ ] `mval` is an **object** with keyset **exactly**: `{ "exports" }`.
+- [ ] `mval.exports` is an **object**.
+
+#### F) Export keys: sorted order
+For each module `mname`, within `exports`:
+- [ ] Export names `ename` are iterated in **lexicographic ascending order**.
+
+#### G) Export record shape + enums
+For each export entry `(ename, eval)` in `mname.exports`:
+- [ ] `eval` is an **object** with keyset equal to **one of**:
+  - `{ "intent","pipe","return","status" }`
+  - `{ "intent","pipe","return","status","notes" }`
+- [ ] `intent` is a **string** in: `{ "construct","transform","query","effect" }`
+- [ ] `pipe` is a **string** in: `{ "Stage","No" }`
+- [ ] `return` is a **string** in: `{ "Value","Option","Result" }`
+- [ ] `status` is a **string** in: `{ "implemented","planned" }`
+- [ ] If present, `notes` is a **string**.
+
+#### H) Stage constraint
+For every export:
+- [ ] If `pipe == "Stage"`, then `intent != "construct"`.
+
+#### I) Fully-qualified uniqueness
+Across the entire manifest:
+- [ ] Fully-qualified export names are unique:
+  - `fq := mname + "." + ename`
+  - no duplicate `fq` across all modules/exports.
+
+#### J) Minimum surface (v1.0 presence guarantees)
+The following modules/exports must exist in `modules` and in each module's `exports`:
+
+- [ ] `std/result` exports: `Ok`, `Err`, `andThen`
+- [ ] `std/list` exports: `len`, `hist_int`, `sort_by_int_key`
+- [ ] `std/str` exports: `len`, `concat`
+- [ ] `std/json` exports: `encode`, `decode`
+- [ ] `std/map` exports: `get`, `set`, `keys`, `values`, `has`
+- [ ] `std/grow` exports: `append`, `merge`
+- [ ] `std/flow` exports: `id`, `tap`
+
+### Implied invariants (derived from the checklist)
+
+1) Canonical JSON bytes ⇒ stable digesting
+- Because the file bytes must equal canonicalized compact JSON + newline, identical semantic content implies identical bytes and thus identical digests.
+
+2) Deterministic module/export iteration
+- Sorted module keys and sorted export keys imply deterministic iteration order in any consumer that iterates via the JSON object map.
+
+3) Ontology discipline
+- Every export is forced into a small, enumerated intent/pipe/return/status space with an optional human note, preventing ad-hoc fields.
+
+4) Pipeline semantics safety
+- The Stage constraint forbids “constructors as pipeline stages”, preserving the convention that Stage entries are value-first transforms/queries/effects, not literal constructors.
+
+5) No ambiguous symbol resolution
+- FQ uniqueness guarantees that `std/x.y` resolves to exactly one export across the entire manifest.
+
