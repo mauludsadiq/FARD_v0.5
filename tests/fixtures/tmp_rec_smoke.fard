@@ -1,0 +1,15 @@
+import("std/rec") as rec
+
+let r = { a: 1, b: 2 }
+let r2 = rec.set(r, "c", 3)
+let r3 = rec.update(r2, "b", fn(x) { x + 10 })
+
+let _ = emit({tag:"rec_smoke_ok"}) in
+{
+  keys: rec.keys(r3),
+  has_a: rec.has(r3, "a"),
+  get_z: rec.get(r3, "z"),
+  getOr_z: rec.getOr(r3, "z", 99),
+  getOrErr_z: rec.getOrErr(r3, "z", "missing"),
+  r3: r3
+}

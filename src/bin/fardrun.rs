@@ -1472,6 +1472,19 @@ struct Func {
 enum Builtin {
     ResultOk,
     ResultAndThen,
+    RecEmpty,
+    RecKeys,
+    RecValues,
+    RecHas,
+    RecGet,
+    RecGetOr,
+    RecGetOrErr,
+    RecSet,
+    RecRemove,
+    RecMerge,
+    RecSelect,
+    RecRename,
+    RecUpdate,
     ResultErr,
     ListGet,
     ListSortByIntKey,
@@ -2059,28 +2072,147 @@ fn call_builtin(
         }
 
         Builtin::ListSortByIntKey => {
-            if args.len() != 2 {
-                bail!("ERROR_BADARG sort_by_int_key expects 2 args");
+              if args.len() != 2 {
+                  bail!("ERROR_BADARG sort_by_int_key expects 2 args");
+              }
+              let xs = match &args[0] {
+                  Val::List(v) => v.clone(),
+                  _ => bail!("ERROR_BADARG sort_by_int_key arg0 must be list"),
+              };
+              let mut keyed: Vec<(i64, usize, Val)> = Vec::new();
+              for (idx, it) in xs.into_iter().enumerate() {
+                  let k = match &it {
+                      Val::Rec(m) => match m.get("k") {
+                          Some(Val::Int(n)) => *n,
+                          _ => bail!("ERROR_BADARG sort_by_int_key expects rec.k int"),
+                      },
+                      _ => bail!("ERROR_BADARG sort_by_int_key expects records"),
+                  };
+                  keyed.push((k, idx, it));
+              }
+              keyed.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+              let out: Vec<Val> = keyed.into_iter().map(|t| t.2).collect();
+              return Ok(Val::List(out));
+          }
+        Builtin::RecEmpty => {
+            if args.len() != 0 {
+                bail!("ERROR_BADARG rec.empty expects 0 args");
             }
-            let xs = match &args[0] {
-                Val::List(v) => v.clone(),
-                _ => bail!("ERROR_BADARG sort_by_int_key arg0 must be list"),
-            };
-            let mut keyed: Vec<(i64, usize, Val)> = Vec::new();
-            for (idx, it) in xs.into_iter().enumerate() {
-                let k = match &it {
-                    Val::Rec(m) => match m.get("k") {
-                        Some(Val::Int(n)) => *n,
-                        _ => bail!("ERROR_BADARG sort_by_int_key expects rec.k int"),
-                    },
-                    _ => bail!("ERROR_BADARG sort_by_int_key expects records"),
-                };
-                keyed.push((k, idx, it));
-            }
-            keyed.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
-            let out: Vec<Val> = keyed.into_iter().map(|t| t.2).collect();
-            return Ok(Val::List(out));
+            Ok(Val::Rec(BTreeMap::new()))
         }
+
+        Builtin::RecKeys => {
+            if args.len() != 1 { bail!("ERROR_BADARG rec.keys expects 1 arg"); }
+            let m = match &args[0] { Val::Rec(mm) => mm, _ => bail!("ERROR_BADARG rec.keys arg0 must be record") };
+            let mut out: Vec<Val> = Vec::new();
+            for k in m.keys() { out.push(Val::Str(k.clone())); }
+            Ok(Val::List(out))
+        }
+
+        Builtin::RecValues => {
+            if args.len() != 1 { bail!("ERROR_BADARG rec.values expects 1 arg"); }
+            let m = match &args[0] { Val::Rec(mm) => mm, _ => bail!("ERROR_BADARG rec.values arg0 must be record") };
+            let mut out: Vec<Val> = Vec::new();
+            for v in m.values() { out.push(v.clone()); }
+            Ok(Val::List(out))
+        }
+
+        Builtin::RecHas => {
+            if args.len() != 2 { bail!("ERROR_BADARG rec.has expects 2 args"); }
+            let m = match &args[0] { Val::Rec(mm) => mm, _ => bail!("ERROR_BADARG rec.has arg0 must be record") };
+            let k = match &args[1] { Val::Str(s) => s, _ => bail!("ERROR_BADARG rec.has arg1 must be string") };
+            Ok(Val::Bool(m.contains_key(k)))
+        }
+
+        Builtin::RecGet => {
+            if args.len() != 2 { bail!("ERROR_BADARG rec.get expects 2 args"); }
+            let m = match &args[0] { Val::Rec(mm) => mm, _ => bail!("ERROR_BADARG rec.get arg0 must be record") };
+            let k = match &args[1] { Val::Str(s) => s, _ => bail!("ERROR_BADARG rec.get arg1 must be string") };
+            Ok(m.get(k).cloned().unwrap_or(Val::Null))
+        }
+
+        Builtin::RecGetOr => {
+            if args.len() != 3 { bail!("ERROR_BADARG rec.getOr expects 3 args"); }
+            let m = match &args[0] { Val::Rec(mm) => mm, _ => bail!("ERROR_BADARG rec.getOr arg0 must be record") };
+            let k = match &args[1] { Val::Str(s) => s, _ => bail!("ERROR_BADARG rec.getOr arg1 must be string") };
+            let d = args[2].clone();
+            Ok(m.get(k).cloned().unwrap_or(d))
+        }
+
+        Builtin::RecGetOrErr => {
+            if args.len() != 3 { bail!("ERROR_BADARG rec.getOrErr expects 3 args"); }
+            let m = match &args[0] { Val::Rec(mm) => mm, _ => bail!("ERROR_BADARG rec.getOrErr arg0 must be record") };
+            let k = match &args[1] { Val::Str(s) => s, _ => bail!("ERROR_BADARG rec.getOrErr arg1 must be string") };
+            let msg = args[2].clone();
+            match m.get(k) {
+                Some(v) => Ok(mk_result_ok(v.clone())),
+                None => Ok(mk_result_err(msg)),
+            }
+        }
+
+        Builtin::RecSet => {
+            if args.len() != 3 { bail!("ERROR_BADARG rec.set expects 3 args"); }
+            let m = match &args[0] { Val::Rec(mm) => mm, _ => bail!("ERROR_BADARG rec.set arg0 must be record") };
+            let k = match &args[1] { Val::Str(s) => s, _ => bail!("ERROR_BADARG rec.set arg1 must be string") };
+            let v = args[2].clone();
+            let mut out = m.clone();
+            out.insert(k.clone(), v);
+            Ok(Val::Rec(out))
+        }
+
+        Builtin::RecRemove => {
+            if args.len() != 2 { bail!("ERROR_BADARG rec.remove expects 2 args"); }
+            let m = match &args[0] { Val::Rec(mm) => mm, _ => bail!("ERROR_BADARG rec.remove arg0 must be record") };
+            let k = match &args[1] { Val::Str(s) => s, _ => bail!("ERROR_BADARG rec.remove arg1 must be string") };
+            let mut out = m.clone();
+            out.remove(k);
+            Ok(Val::Rec(out))
+        }
+
+        Builtin::RecMerge => {
+            if args.len() != 2 { bail!("ERROR_BADARG rec.merge expects 2 args"); }
+            let a = match &args[0] { Val::Rec(mm) => mm, _ => bail!("ERROR_BADARG rec.merge arg0 must be record") };
+            let b = match &args[1] { Val::Rec(mm) => mm, _ => bail!("ERROR_BADARG rec.merge arg1 must be record") };
+            let mut out = a.clone();
+            for (k,v) in b.iter() { out.insert(k.clone(), v.clone()); }
+            Ok(Val::Rec(out))
+        }
+
+        Builtin::RecSelect => {
+            if args.len() != 2 { bail!("ERROR_BADARG rec.select expects 2 args"); }
+            let m = match &args[0] { Val::Rec(mm) => mm, _ => bail!("ERROR_BADARG rec.select arg0 must be record") };
+            let ks = match &args[1] { Val::List(v) => v, _ => bail!("ERROR_BADARG rec.select arg1 must be list") };
+            let mut out: BTreeMap<String, Val> = BTreeMap::new();
+            for x in ks.iter() {
+                let k = match x { Val::Str(s) => s, _ => bail!("ERROR_BADARG rec.select keys must be strings") };
+                if let Some(v) = m.get(k) { out.insert(k.clone(), v.clone()); }
+            }
+            Ok(Val::Rec(out))
+        }
+
+        Builtin::RecRename => {
+            if args.len() != 3 { bail!("ERROR_BADARG rec.rename expects 3 args"); }
+            let m = match &args[0] { Val::Rec(mm) => mm, _ => bail!("ERROR_BADARG rec.rename arg0 must be record") };
+            let a = match &args[1] { Val::Str(s) => s, _ => bail!("ERROR_BADARG rec.rename arg1 must be string") };
+            let b = match &args[2] { Val::Str(s) => s, _ => bail!("ERROR_BADARG rec.rename arg2 must be string") };
+            let mut out = m.clone();
+            if let Some(v) = out.remove(a) { out.insert(b.clone(), v); }
+            Ok(Val::Rec(out))
+        }
+
+        Builtin::RecUpdate => {
+            if args.len() != 3 { bail!("ERROR_BADARG rec.update expects 3 args"); }
+            let m = match &args[0] { Val::Rec(mm) => mm, _ => bail!("ERROR_BADARG rec.update arg0 must be record") };
+            let k = match &args[1] { Val::Str(s) => s, _ => bail!("ERROR_BADARG rec.update arg1 must be string") };
+            let f = args[2].clone();
+            let old = m.get(k).cloned().unwrap_or(Val::Null);
+            let newv = call(f, vec![old], tracer, loader)?;
+            let mut out = m.clone();
+            out.insert(k.clone(), newv);
+            Ok(Val::Rec(out))
+        }
+
+
 
         Builtin::GrowUnfoldTree => {
             if args.len() < 2 {
@@ -2886,6 +3018,25 @@ impl ModuleLoader {
                 m.insert("set".to_string(), Val::Builtin(Builtin::MapSet));
                 Ok(m)
             }
+
+
+              "std/rec" => {
+                  let mut m = BTreeMap::new();
+                  m.insert("empty".to_string(), Val::Builtin(Builtin::RecEmpty));
+                  m.insert("keys".to_string(), Val::Builtin(Builtin::RecKeys));
+                  m.insert("values".to_string(), Val::Builtin(Builtin::RecValues));
+                  m.insert("has".to_string(), Val::Builtin(Builtin::RecHas));
+                  m.insert("get".to_string(), Val::Builtin(Builtin::RecGet));
+                  m.insert("getOr".to_string(), Val::Builtin(Builtin::RecGetOr));
+                  m.insert("getOrErr".to_string(), Val::Builtin(Builtin::RecGetOrErr));
+                  m.insert("set".to_string(), Val::Builtin(Builtin::RecSet));
+                  m.insert("remove".to_string(), Val::Builtin(Builtin::RecRemove));
+                  m.insert("merge".to_string(), Val::Builtin(Builtin::RecMerge));
+                  m.insert("select".to_string(), Val::Builtin(Builtin::RecSelect));
+                  m.insert("rename".to_string(), Val::Builtin(Builtin::RecRename));
+                  m.insert("update".to_string(), Val::Builtin(Builtin::RecUpdate));
+                  Ok(m)
+              }
 
             "std/json" => {
                 let mut m = BTreeMap::new();

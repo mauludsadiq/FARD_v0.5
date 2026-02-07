@@ -1,0 +1,20 @@
+// std/rec.fard
+// Surface module for record helpers.
+// This file exists to make std/rec importable and to bind exported names.
+// Implementations may be builtins keyed by fq name (std/rec::get etc) or wrappers.
+
+export {
+  empty,
+  keys,
+  values,
+  has,
+  get,
+  getOr,
+  getOrErr,
+  set,
+  remove,
+  merge,
+  select,
+  rename,
+  update
+}

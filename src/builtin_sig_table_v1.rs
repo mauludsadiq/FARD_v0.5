@@ -105,6 +105,8 @@ pub fn builtin_sig_table_v1() -> BTreeMap<&'static str, BuiltinSig> {
     m.insert("std/list::chunk", vf2);
 
     // std/rec
+    m.insert("std/rec::empty", BuiltinSig { arity_min: 0, value_first: false });
+    m.insert("std/rec::merge", BuiltinSig { arity_min: 2, value_first: false });
     m.insert("std/rec::keys", vf1);
     m.insert("std/rec::values", vf1);
     m.insert("std/rec::has", vf2);
