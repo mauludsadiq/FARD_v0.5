@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FARD stdlib surface ontology v1.0",
+  "type": "object",
+  "required": ["kind", "version", "entries"],
+  "properties": {
+    "kind": { "type": "string", "minLength": 1 },
+    "version": { "type": "string", "minLength": 1 },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["module", "export", "intent", "return", "pipe"],
+        "properties": {
+          "module": { "type": "string", "minLength": 1 },
+          "export": { "type": "string", "minLength": 1 },
+          "intent": { "type": "string", "enum": ["construct", "transform", "query", "effect"] },
+          "return": { "type": "string", "enum": ["Value", "Option", "Result"] },
+          "pipe": { "type": "string", "enum": ["Stage", "No"] },
+          "notes": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
