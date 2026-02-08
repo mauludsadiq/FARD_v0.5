@@ -1470,6 +1470,10 @@ struct Func {
 }
 #[derive(Clone, Debug)]
 enum Builtin {
+    ListMap,
+    ListFilter,
+    StrTrim,
+    StrToLower,
     ResultOk,
     ResultAndThen,
     RecEmpty,
@@ -2290,6 +2294,42 @@ Builtin::GrowUnfoldTree => {
             return Ok(Val::Null);
         }
 
+        Builtin::StrTrim => {
+            if args.len() != 1 { bail!("ERROR_BADARG str.trim expects 1 arg"); }
+            let s = match &args[0] { Val::Str(s) => s.clone(), _ => bail!("ERROR_BADARG str.trim arg0 must be string") };
+            Ok(Val::Str(s.trim().to_string()))
+        }
+
+        Builtin::StrToLower => {
+            if args.len() != 1 { bail!("ERROR_BADARG str.toLower expects 1 arg"); }
+            let s = match &args[0] { Val::Str(s) => s.clone(), _ => bail!("ERROR_BADARG str.toLower arg0 must be string") };
+            Ok(Val::Str(s.to_ascii_lowercase()))
+        }
+
+        Builtin::ListMap => {
+            if args.len() != 2 { bail!("ERROR_BADARG list.map expects 2 args"); }
+            let xs = match &args[0] { Val::List(v) => v.clone(), _ => bail!("ERROR_BADARG list.map arg0 must be list") };
+            let f = args[1].clone();
+            let mut out: Vec<Val> = Vec::with_capacity(xs.len());
+            for x in xs { out.push(call(f.clone(), vec![x], tracer, loader)?); }
+            Ok(Val::List(out))
+        }
+
+        Builtin::ListFilter => {
+            if args.len() != 2 { bail!("ERROR_BADARG list.filter expects 2 args"); }
+            let xs = match &args[0] { Val::List(v) => v.clone(), _ => bail!("ERROR_BADARG list.filter arg0 must be list") };
+            let pred = args[1].clone();
+            let mut out: Vec<Val> = Vec::new();
+            for x in xs {
+                let keep = call(pred.clone(), vec![x.clone()], tracer, loader)?;
+                match keep {
+                    Val::Bool(true) => out.push(x),
+                    Val::Bool(false) => {}
+                    _ => bail!("ERROR_BADARG list.filter predicate must return bool"),
+                }
+            }
+            Ok(Val::List(out))
+        }
         Builtin::ImportArtifact => {
             if args.len() != 1 {
                 bail!("ERROR_BADARG import_artifact expects 1 arg");
@@ -2999,23 +3039,16 @@ impl ModuleLoader {
         match name {
             "std/list" => {
                 let mut m = BTreeMap::new();
-                  m.insert("len".to_string(), Val::Builtin(Builtin::Len));
-                  m.insert("len".to_string(), Val::Builtin(Builtin::Len));
+                m.insert("len".to_string(), Val::Builtin(Builtin::Len));
+                m.insert("map".to_string(), Val::Builtin(Builtin::ListMap));
+                m.insert("filter".to_string(), Val::Builtin(Builtin::ListFilter));
                 m.insert("get".to_string(), Val::Builtin(Builtin::ListGet));
-                m.insert(
-                    "sort_by_int_key".to_string(),
-                    Val::Builtin(Builtin::ListSortByIntKey),
-                );
+                m.insert("sort_by_int_key".to_string(), Val::Builtin(Builtin::ListSortByIntKey));
                 m.insert("sort_int".to_string(), Val::Builtin(Builtin::SortInt));
-                m.insert(
-                    "dedupe_sorted_int".to_string(),
-                    Val::Builtin(Builtin::DedupeSortedInt),
-                );
+                m.insert("dedupe_sorted_int".to_string(), Val::Builtin(Builtin::DedupeSortedInt));
                 m.insert("hist_int".to_string(), Val::Builtin(Builtin::HistInt));
                 Ok(m)
             }
-
-            
 "std/result" => {
                   let mut m = BTreeMap::new();
                   m.insert("Ok".to_string(), Val::Builtin(Builtin::ResultOk));
@@ -3048,11 +3081,11 @@ impl ModuleLoader {
             "std/str" => {
                 let mut m = BTreeMap::new();
                 m.insert("len".to_string(), Val::Builtin(Builtin::StrLen));
+                m.insert("trim".to_string(), Val::Builtin(Builtin::StrTrim));
+                m.insert("toLower".to_string(), Val::Builtin(Builtin::StrToLower));
                 m.insert("concat".to_string(), Val::Builtin(Builtin::StrConcat));
                 Ok(m)
             }
-
-            
 "std/map" => {
                   let mut m = BTreeMap::new();
                   m.insert("get".to_string(), Val::Builtin(Builtin::MapGet));
