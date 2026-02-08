@@ -20,7 +20,11 @@ fn gate_runner_smoke_optional() {
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("target")
                 .join("debug")
-                .join(if cfg!(windows) { "gaterun.exe" } else { "gaterun" })
+                .join(if cfg!(windows) {
+                    "gaterun.exe"
+                } else {
+                    "gaterun"
+                })
         });
 
     assert!(exe.exists(), "gaterun missing at {}", exe.display());

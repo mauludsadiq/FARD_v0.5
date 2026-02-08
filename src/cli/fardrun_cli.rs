@@ -35,19 +35,29 @@ pub struct RunArgs {
 
 impl Cli {
     pub fn parse_compat() -> (RunArgs, bool) {
-            use std::ffi::OsString;
-    let mut argv: Vec<OsString> = std::env::args_os().collect();
-    if argv.len() >= 2 {
-        let has_legacy = argv.iter().any(|a| {
-            let s = a.to_string_lossy();
-            s == "--program" || s == "--lock" || s == "--lockfile" || s == "--registry" || s == "--out" || s == "--trace" || s == "--result" || s == "--stdin"
-        });
-        let first_is_flag = argv.get(1).map(|a| a.to_string_lossy().starts_with("-")).unwrap_or(false);
-        if has_legacy && first_is_flag {
-            argv.insert(1, OsString::from("run"));
+        use std::ffi::OsString;
+        let mut argv: Vec<OsString> = std::env::args_os().collect();
+        if argv.len() >= 2 {
+            let has_legacy = argv.iter().any(|a| {
+                let s = a.to_string_lossy();
+                s == "--program"
+                    || s == "--lock"
+                    || s == "--lockfile"
+                    || s == "--registry"
+                    || s == "--out"
+                    || s == "--trace"
+                    || s == "--result"
+                    || s == "--stdin"
+            });
+            let first_is_flag = argv
+                .get(1)
+                .map(|a| a.to_string_lossy().starts_with("-"))
+                .unwrap_or(false);
+            if has_legacy && first_is_flag {
+                argv.insert(1, OsString::from("run"));
+            }
         }
-    }
-      let cli = Cli::parse_from(argv.clone());
+        let cli = Cli::parse_from(argv.clone());
 
         if cli.version {
             let dummy = RunArgs {

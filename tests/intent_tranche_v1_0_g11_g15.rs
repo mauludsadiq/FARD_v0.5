@@ -14,7 +14,9 @@ fn canon_value(v: &serde_json::Value) -> serde_json::Value {
         serde_json::Value::Bool(b) => serde_json::Value::Bool(*b),
         serde_json::Value::Number(n) => serde_json::Value::Number(n.clone()),
         serde_json::Value::String(s) => serde_json::Value::String(s.clone()),
-        serde_json::Value::Array(a) => serde_json::Value::Array(a.iter().map(canon_value).collect()),
+        serde_json::Value::Array(a) => {
+            serde_json::Value::Array(a.iter().map(canon_value).collect())
+        }
         serde_json::Value::Object(m) => {
             let mut keys: Vec<&String> = m.keys().collect();
             keys.sort();
@@ -36,18 +38,27 @@ fn is_ident_char(c: char) -> bool {
 }
 
 fn is_canonical_module_path(s: &str) -> bool {
-    if !s.starts_with("std/") { return false; }
+    if !s.starts_with("std/") {
+        return false;
+    }
     let tail = &s[4..];
-    if tail.is_empty() { return false; }
+    if tail.is_empty() {
+        return false;
+    }
     tail.chars().all(is_ident_char)
 }
 
-fn as_obj<'a>(v: &'a serde_json::Value, ctx: &str) -> &'a serde_json::Map<String, serde_json::Value> {
-    v.as_object().unwrap_or_else(|| panic!("TYPE_FAIL expected=object ctx={}", ctx))
+fn as_obj<'a>(
+    v: &'a serde_json::Value,
+    ctx: &str,
+) -> &'a serde_json::Map<String, serde_json::Value> {
+    v.as_object()
+        .unwrap_or_else(|| panic!("TYPE_FAIL expected=object ctx={}", ctx))
 }
 
 fn as_str<'a>(v: &'a serde_json::Value, ctx: &str) -> &'a str {
-    v.as_str().unwrap_or_else(|| panic!("TYPE_FAIL expected=string ctx={}", ctx))
+    v.as_str()
+        .unwrap_or_else(|| panic!("TYPE_FAIL expected=string ctx={}", ctx))
 }
 
 fn keys_set(obj: &serde_json::Map<String, serde_json::Value>) -> BTreeSet<String> {
@@ -59,8 +70,14 @@ fn require_export_shape(path: &str, name: &str, v: &serde_json::Value) {
     let o = as_obj(v, &ctx);
     let ks = keys_set(o);
 
-    let k4: BTreeSet<String> = ["intent","pipe","return","status"].iter().map(|s| s.to_string()).collect();
-    let k5: BTreeSet<String> = ["intent","pipe","return","status","notes"].iter().map(|s| s.to_string()).collect();
+    let k4: BTreeSet<String> = ["intent", "pipe", "return", "status"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let k5: BTreeSet<String> = ["intent", "pipe", "return", "status", "notes"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
 
     if ks != k4 && ks != k5 {
         panic!("KEYSET_FAIL ctx={} keys={:?}", ctx, ks);
@@ -71,18 +88,31 @@ fn require_export_shape(path: &str, name: &str, v: &serde_json::Value) {
     let pipe = as_str(o.get("pipe").unwrap(), &format!("{}.pipe", ctx));
     let status = as_str(o.get("status").unwrap(), &format!("{}.status", ctx));
 
-    let intents: HashSet<&'static str> = ["construct","transform","query","effect"].into_iter().collect();
-    let rets: HashSet<&'static str> = ["Value","Option","Result"].into_iter().collect();
-    let pipes: HashSet<&'static str> = ["Stage","No"].into_iter().collect();
-    let statuses: HashSet<&'static str> = ["implemented","planned"].into_iter().collect();
+    let intents: HashSet<&'static str> = ["construct", "transform", "query", "effect"]
+        .into_iter()
+        .collect();
+    let rets: HashSet<&'static str> = ["Value", "Option", "Result"].into_iter().collect();
+    let pipes: HashSet<&'static str> = ["Stage", "No"].into_iter().collect();
+    let statuses: HashSet<&'static str> = ["implemented", "planned"].into_iter().collect();
 
-    if !intents.contains(intent) { panic!("ENUM_FAIL ctx={} field=intent val={}", ctx, intent); }
-    if !rets.contains(ret) { panic!("ENUM_FAIL ctx={} field=return val={}", ctx, ret); }
-    if !pipes.contains(pipe) { panic!("ENUM_FAIL ctx={} field=pipe val={}", ctx, pipe); }
-    if !statuses.contains(status) { panic!("ENUM_FAIL ctx={} field=status val={}", ctx, status); }
+    if !intents.contains(intent) {
+        panic!("ENUM_FAIL ctx={} field=intent val={}", ctx, intent);
+    }
+    if !rets.contains(ret) {
+        panic!("ENUM_FAIL ctx={} field=return val={}", ctx, ret);
+    }
+    if !pipes.contains(pipe) {
+        panic!("ENUM_FAIL ctx={} field=pipe val={}", ctx, pipe);
+    }
+    if !statuses.contains(status) {
+        panic!("ENUM_FAIL ctx={} field=status val={}", ctx, status);
+    }
 
     if pipe == "Stage" && intent == "construct" {
-        panic!("STAGE_CONTRACT_FAIL ctx={} rule=construct_cannot_be_stage", ctx);
+        panic!(
+            "STAGE_CONTRACT_FAIL ctx={} rule=construct_cannot_be_stage",
+            ctx
+        );
     }
 
     if let Some(n) = o.get("notes") {
@@ -108,12 +138,18 @@ fn g11_manifest_parseable_and_schema() {
     let have_top_keys: Vec<String> = top_keys.iter().map(|s| (*s).clone()).collect();
 
     if have_top_keys != want_top_keys {
-        panic!("TOP_KEY_ORDER_FAIL have={:?} want={:?}", have_top_keys, want_top_keys);
+        panic!(
+            "TOP_KEY_ORDER_FAIL have={:?} want={:?}",
+            have_top_keys, want_top_keys
+        );
     }
 
     let schema = as_str(top.get("schema").unwrap(), "top.schema");
     if schema != "fard.stdlib_surface.ontology.v1_0" {
-        panic!("SCHEMA_MISMATCH have={} want=fard.stdlib_surface.ontology.v1_0", schema);
+        panic!(
+            "SCHEMA_MISMATCH have={} want=fard.stdlib_surface.ontology.v1_0",
+            schema
+        );
     }
 
     let modules = as_obj(top.get("modules").unwrap(), "top.modules");
@@ -177,7 +213,10 @@ fn g13_exports_shapes_valid_and_fq_unique() {
         for (ename, eval) in exports {
             if let Some(p) = prev {
                 if p > ename.as_str() {
-                    panic!("EXPORT_KEY_ORDER_FAIL module={} prev={} curr={}", mname, p, ename);
+                    panic!(
+                        "EXPORT_KEY_ORDER_FAIL module={} prev={} curr={}",
+                        mname, p, ename
+                    );
                 }
             }
             prev = Some(ename.as_str());
@@ -200,15 +239,24 @@ fn g14_stage_value_first_contract() {
 
     for (mname, mval) in modules {
         let mo = as_obj(mval, &format!("module {}", mname));
-        let exports = as_obj(mo.get("exports").unwrap(), &format!("module {} exports", mname));
+        let exports = as_obj(
+            mo.get("exports").unwrap(),
+            &format!("module {} exports", mname),
+        );
         for (ename, eval) in exports {
             let ectx = format!("{}.{}", mname, ename);
             let eo = as_obj(eval, &format!("export {}", ectx));
             let pipe = as_str(eo.get("pipe").unwrap(), &format!("export {} pipe", ectx));
             if pipe == "Stage" {
-                let intent = as_str(eo.get("intent").unwrap(), &format!("export {} intent", ectx));
+                let intent = as_str(
+                    eo.get("intent").unwrap(),
+                    &format!("export {} intent", ectx),
+                );
                 if intent == "construct" {
-                    panic!("STAGE_CONTRACT_FAIL export={} rule=construct_cannot_be_stage", ectx);
+                    panic!(
+                        "STAGE_CONTRACT_FAIL export={} rule=construct_cannot_be_stage",
+                        ectx
+                    );
                 }
             }
         }
@@ -220,9 +268,14 @@ fn require_module_exports_present(
     module: &str,
     exports: &[&str],
 ) {
-    let mv = modules.get(module).unwrap_or_else(|| panic!("MIN_SURFACE_MISSING_MODULE {}", module));
+    let mv = modules
+        .get(module)
+        .unwrap_or_else(|| panic!("MIN_SURFACE_MISSING_MODULE {}", module));
     let mo = as_obj(mv, &format!("min_surface {}", module));
-    let ex = as_obj(mo.get("exports").unwrap(), &format!("min_surface {} exports", module));
+    let ex = as_obj(
+        mo.get("exports").unwrap(),
+        &format!("min_surface {} exports", module),
+    );
 
     for e in exports {
         if !ex.contains_key(*e) {
@@ -237,11 +290,11 @@ fn g15_minimum_1_0_surface_present() {
     let top = as_obj(&v, "top");
     let modules = as_obj(top.get("modules").unwrap(), "top.modules");
 
-    require_module_exports_present(modules, "std/result", &["Ok","Err","andThen"]);
-    require_module_exports_present(modules, "std/list", &["len","hist_int","sort_by_int_key"]);
-    require_module_exports_present(modules, "std/str", &["len","concat"]);
-    require_module_exports_present(modules, "std/json", &["encode","decode"]);
-    require_module_exports_present(modules, "std/map", &["get","set","keys","values","has"]);
-    require_module_exports_present(modules, "std/grow", &["append","merge"]);
-    require_module_exports_present(modules, "std/flow", &["id","tap"]);
+    require_module_exports_present(modules, "std/result", &["Ok", "Err", "andThen"]);
+    require_module_exports_present(modules, "std/list", &["len", "hist_int", "sort_by_int_key"]);
+    require_module_exports_present(modules, "std/str", &["len", "concat"]);
+    require_module_exports_present(modules, "std/json", &["encode", "decode"]);
+    require_module_exports_present(modules, "std/map", &["get", "set", "keys", "values", "has"]);
+    require_module_exports_present(modules, "std/grow", &["append", "merge"]);
+    require_module_exports_present(modules, "std/flow", &["id", "tap"]);
 }

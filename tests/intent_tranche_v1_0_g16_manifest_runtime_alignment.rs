@@ -11,12 +11,17 @@ fn json_parse(bytes: &[u8]) -> serde_json::Value {
     serde_json::from_slice(bytes).unwrap_or_else(|e| panic!("JSON_PARSE_FAIL err={}", e))
 }
 
-fn as_obj<'a>(v: &'a serde_json::Value, ctx: &str) -> &'a serde_json::Map<String, serde_json::Value> {
-    v.as_object().unwrap_or_else(|| panic!("TYPE_FAIL expected=object ctx={}", ctx))
+fn as_obj<'a>(
+    v: &'a serde_json::Value,
+    ctx: &str,
+) -> &'a serde_json::Map<String, serde_json::Value> {
+    v.as_object()
+        .unwrap_or_else(|| panic!("TYPE_FAIL expected=object ctx={}", ctx))
 }
 
 fn as_str<'a>(v: &'a serde_json::Value, ctx: &str) -> &'a str {
-    v.as_str().unwrap_or_else(|| panic!("TYPE_FAIL expected=string ctx={}", ctx))
+    v.as_str()
+        .unwrap_or_else(|| panic!("TYPE_FAIL expected=string ctx={}", ctx))
 }
 
 fn load_manifest() -> serde_json::Value {
@@ -26,23 +31,38 @@ fn load_manifest() -> serde_json::Value {
 }
 
 fn fard_bin() -> String {
-    if let Ok(p) = std::env::var("FARD_BIN") { return p; }
-    if let Ok(p) = std::env::var("CARGO_BIN_EXE_fardrun") { return p; }
-    if let Ok(p) = std::env::var("CARGO_BIN_EXE_fard") { return p; }
+    if let Ok(p) = std::env::var("FARD_BIN") {
+        return p;
+    }
+    if let Ok(p) = std::env::var("CARGO_BIN_EXE_fardrun") {
+        return p;
+    }
+    if let Ok(p) = std::env::var("CARGO_BIN_EXE_fard") {
+        return p;
+    }
 
     let root = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
     let profile = std::env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
 
     let cand1 = format!("{}/target/{}/fardrun", root, profile);
-    if std::path::Path::new(&cand1).exists() { return cand1; }
+    if std::path::Path::new(&cand1).exists() {
+        return cand1;
+    }
 
     let cand2 = format!("{}/target/debug/fardrun", root);
-    if std::path::Path::new(&cand2).exists() { return cand2; }
+    if std::path::Path::new(&cand2).exists() {
+        return cand2;
+    }
 
     let cand3 = format!("{}/target/release/fardrun", root);
-    if std::path::Path::new(&cand3).exists() { return cand3; }
+    if std::path::Path::new(&cand3).exists() {
+        return cand3;
+    }
 
-    panic!("FARD_BIN_NOT_FOUND set FARD_BIN=/path/to/fardrun or build it at target/{}/fardrun", profile);
+    panic!(
+        "FARD_BIN_NOT_FOUND set FARD_BIN=/path/to/fardrun or build it at target/{}/fardrun",
+        profile
+    );
 }
 
 fn tmpdir(prefix: &str) -> PathBuf {
@@ -73,8 +93,8 @@ fn run_one(module: &str, export: &str) {
 
     let mut cmd = Command::new(&bin);
     cmd.arg("run")
-          .arg("--program")
-          .arg(&prog_path)
+        .arg("--program")
+        .arg(&prog_path)
         .arg("--out")
         .arg(&out_dir);
 
@@ -91,7 +111,12 @@ fn run_one(module: &str, export: &str) {
 
     let rj = out_dir.join("result.json");
     if !rj.exists() {
-        panic!("RESULT_MISSING module={} export={} path={}", module, export, rj.display());
+        panic!(
+            "RESULT_MISSING module={} export={} path={}",
+            module,
+            export,
+            rj.display()
+        );
     }
 }
 
@@ -108,9 +133,15 @@ fn g16_manifest_implemented_exports_resolve_in_runtime() {
         let exports = as_obj(mo.get("exports").unwrap(), &format!("{}.exports", mname));
         for (ename, eval) in exports {
             let eo = as_obj(eval, &format!("export {}.{}", mname, ename));
-            let status = as_str(eo.get("status").unwrap(), &format!("{}.{}.status", mname, ename));
+            let status = as_str(
+                eo.get("status").unwrap(),
+                &format!("{}.{}.status", mname, ename),
+            );
             if status == "implemented" {
-                implemented.entry(mname.clone()).or_default().push(ename.clone());
+                implemented
+                    .entry(mname.clone())
+                    .or_default()
+                    .push(ename.clone());
             }
         }
     }

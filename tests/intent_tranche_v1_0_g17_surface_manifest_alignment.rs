@@ -17,21 +17,20 @@ fn tmpdir(name: &str) -> PathBuf {
     d
 }
 
-
 fn write_prog(dir: &Path, module: &str, export: &str) -> PathBuf {
     let alias = "m";
-    let prog = format!(r#"import("std/rec") as r
+    let prog = format!(
+        r#"import("std/rec") as r
 import("{module}") as {alias}
 let x = r.get({alias}, "{export}")
 0
-"#);
+"#
+    );
     let p = dir.join("main.fard");
     fs::write(&p, prog.as_bytes()).unwrap();
     p
 }
 
-
- 
 #[test]
 fn g17_surface_manifest_matches_builtin_std_maps() {
     let man = PathBuf::from("ontology/stdlib_surface.v1_0.ontology.json");
@@ -45,20 +44,23 @@ fn g17_surface_manifest_matches_builtin_std_maps() {
         let module = e.get("module").and_then(|x| x.as_str()).unwrap();
         let export = e.get("export").and_then(|x| x.as_str()).unwrap();
 
-        let work = tmpdir(&format!("case{}_{}_{}", i, module.replace("/", "_"), export));
+        let work = tmpdir(&format!(
+            "case{}_{}_{}",
+            i,
+            module.replace("/", "_"),
+            export
+        ));
         let out = work.join("out");
         fs::create_dir_all(&out).unwrap();
 
         let prog = write_prog(&work, module, export);
 
-        let output = 
-Command::new(&bin)
+        let output = Command::new(&bin)
             .arg("run")
             .arg("--program")
             .arg(&prog)
             .arg("--out")
             .arg(&out)
-
             .output()
             .unwrap();
 

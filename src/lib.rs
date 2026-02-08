@@ -1,5 +1,5 @@
-pub mod builtin_sig_table_v1;
 pub mod builtin_pipe_v1;
+pub mod builtin_sig_table_v1;
 
 use anyhow::{anyhow, bail, Context, Result};
 use regex::Regex;

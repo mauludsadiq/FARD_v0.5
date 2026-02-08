@@ -5,9 +5,8 @@ use std::fs;
 
 use serde::Deserialize;
 
-
-use fard_v0_5_language_gate::builtin_sig_table_v1::builtin_sig_table_v1;
 use fard_v0_5_language_gate::builtin_pipe_v1::stage_allowlist_v1;
+use fard_v0_5_language_gate::builtin_sig_table_v1::builtin_sig_table_v1;
 #[derive(Debug, Deserialize)]
 struct Ontology {
     schema: String,
@@ -25,19 +24,19 @@ struct Annotations {
 
 #[derive(Debug, Deserialize)]
 struct Module {
-    name: String,   // e.g. "std/list"
+    name: String, // e.g. "std/list"
     family: String,
     exports: Vec<Export>,
 }
 
 #[derive(Debug, Deserialize)]
 struct Export {
-    name: String,   // e.g. "map"
+    name: String, // e.g. "map"
     #[serde(rename = "intent")]
     intent_class: String,
     #[serde(rename = "return")]
     return_meaning: String,
-    pipe: String,   // "Stage" | "No"
+    pipe: String, // "Stage" | "No"
     #[serde(default)]
     notes: Option<String>,
 }
@@ -49,16 +48,27 @@ fn stdlib_surface_ontology_gate_v1() {
     let bytes = fs::read(&path).expect("read stdlib ontology json");
     let s = String::from_utf8(bytes).expect("utf8");
 
-    assert!(!s.contains("\"Yes\""), "ontology json must not contain pipe tag \"Yes\" anywhere");
+    assert!(
+        !s.contains("\"Yes\""),
+        "ontology json must not contain pipe tag \"Yes\" anywhere"
+    );
 
     let ont: Ontology = serde_json::from_str(&s).expect("parse ontology json");
 
     assert_eq!(ont.schema, "fard.stdlib.surface_tables.v1.0.ontology");
 
     // A) annotation keys must be exactly Stage|No (order irrelevant)
-    let keys: BTreeSet<String> = ont.annotations.pipeline_eligibility.keys().cloned().collect();
+    let keys: BTreeSet<String> = ont
+        .annotations
+        .pipeline_eligibility
+        .keys()
+        .cloned()
+        .collect();
     let expected: BTreeSet<String> = ["Stage", "No"].into_iter().map(|x| x.to_string()).collect();
-    assert_eq!(keys, expected, "pipeline_eligibility keys must be exactly Stage|No");
+    assert_eq!(
+        keys, expected,
+        "pipeline_eligibility keys must be exactly Stage|No"
+    );
 
     // B) every export .pipe must be Stage|No
     for m in &ont.modules {
@@ -81,9 +91,20 @@ fn stdlib_surface_ontology_gate_v1() {
 
     // C0) allowlist policy must only name real, value-first builtins
     for fq in stage.iter() {
-        let sig = sigs.get(*fq).unwrap_or_else(|| panic!("Stage allowlist entry missing from sig table: {}", fq));
-        assert!(sig.arity_min >= 1, "Stage allowlist entry must accept >=1 arg: {} arity_min={}", fq, sig.arity_min);
-        assert!(sig.value_first, "Stage allowlist entry must be value-first per sig table: {}", fq);
+        let sig = sigs
+            .get(*fq)
+            .unwrap_or_else(|| panic!("Stage allowlist entry missing from sig table: {}", fq));
+        assert!(
+            sig.arity_min >= 1,
+            "Stage allowlist entry must accept >=1 arg: {} arity_min={}",
+            fq,
+            sig.arity_min
+        );
+        assert!(
+            sig.value_first,
+            "Stage allowlist entry must be value-first per sig table: {}",
+            fq
+        );
     }
 
     // C1) ontology Stage set must exactly equal the runtime Stage allowlist
@@ -113,14 +134,25 @@ fn stdlib_surface_ontology_gate_v1() {
         );
     }
 
-    assert_eq!(stage_from_ont, stage_from_runtime, "ontology Stage set must equal runtime stage_allowlist_v1");
+    assert_eq!(
+        stage_from_ont, stage_from_runtime,
+        "ontology Stage set must equal runtime stage_allowlist_v1"
+    );
 
     // C2) every ontology Stage export must be value-first according to the runtime sig table
     for fq in stage_from_runtime.iter() {
         let sig = sigs.get(fq.as_str()).unwrap_or_else(|| {
-            panic!("missing signature table entry for Stage export: {} (add to builtin_sig_table_v1)", fq)
+            panic!(
+                "missing signature table entry for Stage export: {} (add to builtin_sig_table_v1)",
+                fq
+            )
         });
-        assert!(sig.arity_min >= 1, "Stage export must accept at least 1 arg: {} arity_min={}", fq, sig.arity_min);
+        assert!(
+            sig.arity_min >= 1,
+            "Stage export must accept at least 1 arg: {} arity_min={}",
+            fq,
+            sig.arity_min
+        );
         assert!(sig.value_first, "Stage export must be value-first: {}", fq);
     }
 }
