@@ -1,0 +1,12 @@
+import("std/str") as str
+
+let a = import_artifact("in.txt")?
+let s = str.lower(a.text)
+
+emit({tag: "g59_probe", step: 1, n: len(s)})
+
+emit_artifact("out.txt", {text: s})?
+
+emit({tag: "g59_probe", step: 2})
+
+{n: len(s)}

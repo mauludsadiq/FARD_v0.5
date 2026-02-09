@@ -1,0 +1,4 @@
+import("std/list") as list
+let xs = list.range(0, 3) in
+emit({tag: "probe", xs: xs}) in
+{xs: xs}

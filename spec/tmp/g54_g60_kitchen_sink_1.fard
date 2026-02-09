@@ -1,0 +1,8 @@
+
+import("std/list") as list
+
+let a = list.range(0, 5)        
+let b = list.repeat("x", 3)     
+let c = list.concat([a, [9], [10]])
+emit({tag: "g56", a: a, b: b, c: c})
+{a: a, b: b, c: c}

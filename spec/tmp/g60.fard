@@ -1,0 +1,5 @@
+
+emit({tag: "g60", a: 1})
+emit({tag: "g60", a: 2})
+{ok: true}
+        

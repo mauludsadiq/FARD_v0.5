@@ -1,0 +1,3 @@
+emit({tag:"seq_probe", step:1})
+emit({tag:"seq_probe", step:2})
+{ok:true}

@@ -1,0 +1,6 @@
+
+import("std/json") as json
+
+let x = {a: 1, b: 2}
+emit({tag: "g54", x: x})
+x

@@ -1,0 +1,4 @@
+import("std/str") as str
+let s = "AbC" 
+let t = str.lower(s)
+{t: t}

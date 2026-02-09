@@ -1,0 +1,9 @@
+
+import("std/str") as str
+
+let s = "  AbC \nDeF  \n"
+let t = str.trim(s)
+let u = str.lower(t)
+let xs = str.split_lines(u)
+emit({tag: "g55", t: t, u: u, xs: xs})
+{t: t, u: u, xs: xs}
