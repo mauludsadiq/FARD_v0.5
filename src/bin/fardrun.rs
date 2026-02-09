@@ -1764,22 +1764,36 @@ bail!("ERROR_BADARG result.ok expects 1 arg");
 Ok(mk_result_ok(args[0].clone()))
 }
 Builtin::ResultAndThen => {
-if args.len() != 2 {
-bail!("ERROR_BADARG result.andThen expects 2 args");
-}
-let r = args[0].clone();
-let f = args[1].clone();
-let m = match r {
-Val::Rec(m) => m,
-_ => bail!("ERROR_BADARG result.andThen arg0 must be record"),
-};
-if let Some(v) = m.get("ok").cloned() {
-call(f, vec![v], tracer, loader)
-} else {
-Ok(Val::Rec(m))
-}
-}
-Builtin::ResultErr => {
+      if args.len() != 2 {
+        bail!("ERROR_BADARG result.andThen expects 2 args");
+      }
+      let r = args[0].clone();
+      let f = args[1].clone();
+
+      if !result_is_ok(&r)? {
+        return Ok(r);
+      }
+      let v = result_unwrap_ok(&r)?;
+      let out = call(f, vec![v], tracer, loader)?;
+      match out {
+        Val::Rec(ref m) => match m.get(RESULT_TAG_KEY) {
+          Some(Val::Str(t)) if t == RESULT_OK_TAG => {
+            if !m.contains_key(RESULT_OK_VAL_KEY) {
+              bail!("{} ok missing v", QMARK_EXPECT_RESULT);
+            }
+          }
+          Some(Val::Str(t)) if t == RESULT_ERR_TAG => {
+            if !m.contains_key(RESULT_ERR_VAL_KEY) {
+              bail!("{} err missing e", QMARK_EXPECT_RESULT);
+            }
+          }
+          _ => bail!("{} expected result tag", QMARK_EXPECT_RESULT),
+        },
+        _ => bail!("{} expected result", QMARK_EXPECT_RESULT),
+      }
+      Ok(out)
+    }
+    Builtin::ResultErr => {
 if args.len() != 1 {
 bail!("ERROR_BADARG result.err expects 1 arg");
 }
@@ -3148,12 +3162,12 @@ m.insert("hist_int".to_string(), Val::Builtin(Builtin::HistInt));
 Ok(m)
 }
 "std/result" => {
-let mut m = BTreeMap::new();
-m.insert("Ok".to_string(), Val::Builtin(Builtin::ResultOk));
-m.insert("Err".to_string(), Val::Builtin(Builtin::ResultErr));
-m.insert("andThen".to_string(), Val::Builtin(Builtin::ResultAndThen));
-Ok(m)
-}
+  let mut m = BTreeMap::new();
+  m.insert("ok".to_string(), Val::Builtin(Builtin::ResultOk));
+  m.insert("err".to_string(), Val::Builtin(Builtin::ResultErr));
+  m.insert("andThen".to_string(), Val::Builtin(Builtin::ResultAndThen));
+  Ok(m)
+  }
 "std/grow" => {
 let mut m = BTreeMap::new();
 m.insert("append".to_string(), Val::Builtin(Builtin::GrowAppend));
