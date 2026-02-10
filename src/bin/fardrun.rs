@@ -73,6 +73,15 @@ s
 }
 };
 let mut em = Map::new();
+  let mut extra_e: Option<J> = None;
+  if code == QMARK_PROPAGATE_ERR {
+  if let Some(q) = e.downcast_ref::<QMarkUnwind>() {
+  if let Some(j) = q.err.to_json() {
+  extra_e = Some(j);
+  }
+  }
+  }
+
 em.insert("code".to_string(), J::String(code.clone()));
 em.insert("message".to_string(), J::String(msg.clone()));
 if let Some(se) = e.downcast_ref::<SpannedRuntimeError>() {
@@ -129,7 +138,12 @@ fs::write(
 out_dir.join("error.json"),
 serde_json::to_vec(&J::Object(em))?,
 )?;
-tracer.error_event(&code, &msg).ok();
+
+  if let Some(ev) = &extra_e {
+  tracer.error_event_with_e(&code, &msg, ev).ok();
+  } else {
+  tracer.error_event(&code, &msg).ok();
+  }
 bail!(msg);
 }
 };
@@ -202,6 +216,25 @@ self.w.write_all(line.as_bytes())?;
 self.w.write_all(b"\n")?;
 Ok(())
 }
+  fn error_event_with_e(&mut self, code: &str, message: &str, e: &J) -> Result<()> {
+  let mut m = Map::new();
+  m.insert("t".to_string(), J::String("error".to_string()));
+  m.insert("code".to_string(), J::String(code.to_string()));
+  let mut s = message.to_string();
+  if let Some(rest) = s.strip_prefix("ERROR_RUNTIME ") {
+  s = rest.to_string();
+  }
+  if let Some(rest) = s.strip_prefix(&format!("{} ", code)) {
+  s = rest.to_string();
+  }
+  m.insert("message".to_string(), J::String(format!("{} {}", code, s)));
+  m.insert("e".to_string(), e.clone());
+  let line = serde_json::to_string(&J::Object(m))?;
+  self.w.write_all(line.as_bytes())?;
+  self.w.write_all(b"\n")?;
+  Ok(())
+  }
+
 fn error_event(&mut self, code: &str, message: &str) -> Result<()> {
 let mut m = Map::new();
 m.insert("t".to_string(), J::String("error".to_string()));
@@ -1295,7 +1328,7 @@ err: Val,
 }
 impl std::fmt::Display for QMarkUnwind {
 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-write!(f, "{}", QMARK_PROPAGATE_ERR)
+write!(f, "{} {:?}", QMARK_PROPAGATE_ERR, self.err)
 }
 }
 impl std::error::Error for QMarkUnwind {}
@@ -1359,6 +1392,20 @@ MapSet,
 JsonEncode,
 JsonDecode,
 }
+
+#[derive(Debug)]
+struct QmarkPropagateErr {
+    e: Val,
+}
+
+impl std::fmt::Display for QmarkPropagateErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {:?}", QMARK_PROPAGATE_ERR, self.e)
+    }
+}
+
+impl std::error::Error for QmarkPropagateErr {}
+
 #[derive(Clone, Debug)]
 struct Env {
 parent: Option<Box<Env>>,
