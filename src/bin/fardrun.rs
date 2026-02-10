@@ -1319,6 +1319,8 @@ StrToLower,
 StrSplitLines,
 ResultOk,
 ResultAndThen,
+  ResultUnwrapOk,
+  ResultUnwrapErr,
 RecEmpty,
 RecKeys,
 RecValues,
@@ -1662,9 +1664,9 @@ Val::Rec(m) => match m.get(RESULT_TAG_KEY) {
 Some(Val::Str(t)) if t == RESULT_OK_TAG => m
 .get(RESULT_OK_VAL_KEY)
 .cloned()
-.ok_or_else(|| anyhow!("{} ok missing v", QMARK_EXPECT_RESULT)),
+.ok_or_else(|| anyhow!("QMARK_EXPECT_RESULT ok missing v")),
 Some(Val::Str(t)) if t == RESULT_ERR_TAG => {
-bail!("{} tried unwrap ok on err", QMARK_EXPECT_RESULT)
+bail!("QMARK_EXPECT_RESULT tried unwrap ok on err")
 }
 _ => bail!("{} expected result tag", QMARK_EXPECT_RESULT),
 },
@@ -1677,9 +1679,9 @@ Val::Rec(m) => match m.get(RESULT_TAG_KEY) {
 Some(Val::Str(t)) if t == RESULT_ERR_TAG => m
 .get(RESULT_ERR_VAL_KEY)
 .cloned()
-.ok_or_else(|| anyhow!("{} err missing e", QMARK_EXPECT_RESULT)),
+.ok_or_else(|| anyhow!("QMARK_EXPECT_RESULT err missing e")),
 Some(Val::Str(t)) if t == RESULT_OK_TAG => {
-bail!("{} tried unwrap err on ok", QMARK_EXPECT_RESULT)
+bail!("QMARK_EXPECT_RESULT tried unwrap err on ok")
 }
 _ => bail!("{} expected result tag", QMARK_EXPECT_RESULT),
 },
@@ -1779,12 +1781,12 @@ Builtin::ResultAndThen => {
         Val::Rec(ref m) => match m.get(RESULT_TAG_KEY) {
           Some(Val::Str(t)) if t == RESULT_OK_TAG => {
             if !m.contains_key(RESULT_OK_VAL_KEY) {
-              bail!("{} ok missing v", QMARK_EXPECT_RESULT);
+              bail!("QMARK_EXPECT_RESULT ok missing v");
             }
           }
           Some(Val::Str(t)) if t == RESULT_ERR_TAG => {
             if !m.contains_key(RESULT_ERR_VAL_KEY) {
-              bail!("{} err missing e", QMARK_EXPECT_RESULT);
+              bail!("QMARK_EXPECT_RESULT err missing e");
             }
           }
           _ => bail!("{} expected result tag", QMARK_EXPECT_RESULT),
@@ -1793,6 +1795,23 @@ Builtin::ResultAndThen => {
       }
       Ok(out)
     }
+    Builtin::ResultUnwrapOk => {
+      if args.len() != 1 {
+        bail!("ERROR_BADARG result.unwrap_ok expects 1 arg");
+      }
+      let r = args[0].clone();
+      let v = result_unwrap_ok(&r)?;
+      Ok(v)
+    }
+    Builtin::ResultUnwrapErr => {
+      if args.len() != 1 {
+        bail!("ERROR_BADARG result.unwrap_err expects 1 arg");
+      }
+      let r = args[0].clone();
+      let e = result_unwrap_err(&r)?;
+      Ok(e)
+    }
+
     Builtin::ResultErr => {
 if args.len() != 1 {
 bail!("ERROR_BADARG result.err expects 1 arg");
@@ -3162,12 +3181,14 @@ m.insert("hist_int".to_string(), Val::Builtin(Builtin::HistInt));
 Ok(m)
 }
 "std/result" => {
-  let mut m = BTreeMap::new();
-  m.insert("ok".to_string(), Val::Builtin(Builtin::ResultOk));
-  m.insert("err".to_string(), Val::Builtin(Builtin::ResultErr));
-  m.insert("andThen".to_string(), Val::Builtin(Builtin::ResultAndThen));
-  Ok(m)
-  }
+let mut m = BTreeMap::new();
+m.insert("ok".to_string(), Val::Builtin(Builtin::ResultOk));
+m.insert("err".to_string(), Val::Builtin(Builtin::ResultErr));
+m.insert("andThen".to_string(), Val::Builtin(Builtin::ResultAndThen));
+  m.insert("unwrap_ok".to_string(), Val::Builtin(Builtin::ResultUnwrapOk));
+  m.insert("unwrap_err".to_string(), Val::Builtin(Builtin::ResultUnwrapErr));
+Ok(m)
+}
 "std/grow" => {
 let mut m = BTreeMap::new();
 m.insert("append".to_string(), Val::Builtin(Builtin::GrowAppend));
