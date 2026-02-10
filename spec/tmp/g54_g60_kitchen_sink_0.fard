@@ -1,6 +1,4 @@
 
-import("std/json") as json
-
-let x = {a: 1, b: 2}
-emit({tag: "g54", x: x})
-x
+import("std/result") as result
+let r = result.err({code:"E", msg:"m"})
+result.unwrap_err(r)

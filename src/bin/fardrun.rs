@@ -216,7 +216,19 @@ self.w.write_all(line.as_bytes())?;
 self.w.write_all(b"\n")?;
 Ok(())
 }
-  fn error_event_with_e(&mut self, code: &str, message: &str, e: &J) -> Result<()> {
+fn module_resolve(&mut self, name: &str, kind: &str, cid: &str) -> Result<()> {
+  let mut m = Map::new();
+  m.insert("t".to_string(), J::String("module_resolve".to_string()));
+  m.insert("name".to_string(), J::String(name.to_string()));
+  m.insert("kind".to_string(), J::String(kind.to_string()));
+  m.insert("cid".to_string(), J::String(cid.to_string()));
+  let line = serde_json::to_string(&J::Object(m))?;
+  self.w.write_all(line.as_bytes())?;
+  self.w.write_all(b"\n")?;
+  Ok(())
+}
+
+fn error_event_with_e(&mut self, code: &str, message: &str, e: &J) -> Result<()> {
   let mut m = Map::new();
   m.insert("t".to_string(), J::String("error".to_string()));
   m.insert("code".to_string(), J::String(code.to_string()));
@@ -3085,6 +3097,7 @@ let exports = self.with_current(callee_id, |slf| {
 let exports = if name.starts_with("std/") {
 let ex = slf.builtin_std(name)?;
 slf.check_lock(name, &slf.builtin_digest(name))?;
+  tracer.module_resolve(name, "std", &slf.builtin_digest(name))?;
 ex
 } else if name.starts_with("pkg:") || name.starts_with("pkg/") {
 if slf.lock.is_none() {
@@ -3131,6 +3144,7 @@ let path = base.join("files").join(&rel);
 let src = fs::read_to_string(&path)
 .with_context(|| format!("missing module file: {}", path.display()))?;
 slf.check_lock(name, &file_digest(&path)?)?;
+  tracer.module_resolve(name, "pkg", &file_digest(&path)?)?;
 let file = path.to_string_lossy().to_string();
 let mut p = Parser::from_src(&src, &file)?;
 let items = p.parse_module()?;
@@ -3154,6 +3168,7 @@ eprintln!("IMPORT_PKG_REQUIRES_LOCK");
 format!("missing module file: {}", path.display())
 })?;
 slf.check_lock(name, &file_digest(&path)?)?;
+  tracer.module_resolve(name, "registry", &file_digest(&path)?)?;
 let file = path.to_string_lossy().to_string();
 let mut p = Parser::from_src(&src, &file)?;
 let items = p.parse_module()?;
@@ -3177,6 +3192,7 @@ eprintln!("IMPORT_PKG_REQUIRES_LOCK");
 format!("missing module file: {}", path.display())
 })?;
 slf.check_lock(name, &file_digest(&path)?)?;
+  tracer.module_resolve(name, "rel", &file_digest(&path)?)?;
 let file = path.to_string_lossy().to_string();
 let mut p = Parser::from_src(&src, &file)?;
 let items = p.parse_module()?;

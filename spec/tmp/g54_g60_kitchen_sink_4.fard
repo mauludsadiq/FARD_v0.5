@@ -1,7 +1,4 @@
 
-import("std/int") as int
-
-let a = int.parse("42")?
-let b = int.pow(2, 10)
-emit({tag: "g58", a: a, b: b})
-{a: a, b: b}
+import("std/result") as result
+let r = result.ok(41)
+result.unwrap_ok(r)
