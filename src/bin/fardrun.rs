@@ -1698,72 +1698,107 @@ eval(body, &mut env2, tracer, loader)
 }
 }
 fn is_result_val(v: &Val) -> bool {
-match v {
-Val::Rec(m) => match m.get(RESULT_TAG_KEY) {
-Some(Val::Str(t)) if t == RESULT_OK_TAG => m.contains_key(RESULT_OK_VAL_KEY),
-Some(Val::Str(t)) if t == RESULT_ERR_TAG => m.contains_key(RESULT_ERR_VAL_KEY),
-_ => false,
-},
-_ => false,
+  match v {
+    Val::Rec(m) => {
+      if m.len() != 2 {
+        return false;
+      }
+      match m.get(RESULT_TAG_KEY) {
+        Some(Val::Str(t)) if t == RESULT_OK_TAG => m.contains_key(RESULT_OK_VAL_KEY),
+        Some(Val::Str(t)) if t == RESULT_ERR_TAG => m.contains_key(RESULT_ERR_VAL_KEY),
+        _ => false,
+      }
+    }
+    _ => false,
+  }
 }
-}
+
 fn result_is_ok(v: &Val) -> Result<bool> {
-match v {
-Val::Rec(m) => match m.get(RESULT_TAG_KEY) {
-Some(Val::Str(t)) if t == RESULT_OK_TAG => Ok(true),
-Some(Val::Str(t)) if t == RESULT_ERR_TAG => Ok(false),
-_ => bail!("{} expected result tag", QMARK_EXPECT_RESULT),
-},
-_ => bail!("{} expected result", QMARK_EXPECT_RESULT),
+  match v {
+    Val::Rec(m) => {
+      if m.len() != 2 {
+        bail!("{} expected result", QMARK_EXPECT_RESULT);
+      }
+      match m.get(RESULT_TAG_KEY) {
+        Some(Val::Str(t)) if t == RESULT_OK_TAG => {
+          if !m.contains_key(RESULT_OK_VAL_KEY) {
+            bail!("QMARK_EXPECT_RESULT ok missing v");
+          }
+          Ok(true)
+        }
+        Some(Val::Str(t)) if t == RESULT_ERR_TAG => {
+          if !m.contains_key(RESULT_ERR_VAL_KEY) {
+            bail!("QMARK_EXPECT_RESULT err missing e");
+          }
+          Ok(false)
+        }
+        _ => bail!("{} expected result tag", QMARK_EXPECT_RESULT),
+      }
+    }
+    _ => bail!("{} expected result", QMARK_EXPECT_RESULT),
+  }
 }
-}
+
 fn result_unwrap_ok(v: &Val) -> Result<Val> {
-match v {
-Val::Rec(m) => match m.get(RESULT_TAG_KEY) {
-Some(Val::Str(t)) if t == RESULT_OK_TAG => m
-.get(RESULT_OK_VAL_KEY)
-.cloned()
-.ok_or_else(|| anyhow!("QMARK_EXPECT_RESULT ok missing v")),
-Some(Val::Str(t)) if t == RESULT_ERR_TAG => {
-bail!("QMARK_EXPECT_RESULT tried unwrap ok on err")
+  match v {
+    Val::Rec(m) => {
+      if m.len() != 2 {
+        bail!("{} expected result", QMARK_EXPECT_RESULT);
+      }
+      match m.get(RESULT_TAG_KEY) {
+        Some(Val::Str(t)) if t == RESULT_OK_TAG => m
+          .get(RESULT_OK_VAL_KEY)
+          .cloned()
+          .ok_or_else(|| anyhow!("QMARK_EXPECT_RESULT ok missing v")),
+        Some(Val::Str(t)) if t == RESULT_ERR_TAG => {
+          bail!("QMARK_EXPECT_RESULT tried unwrap ok on err")
+        }
+        _ => bail!("{} expected result tag", QMARK_EXPECT_RESULT),
+      }
+    }
+    _ => bail!("{} expected result", QMARK_EXPECT_RESULT),
+  }
 }
-_ => bail!("{} expected result tag", QMARK_EXPECT_RESULT),
-},
-_ => bail!("{} expected result", QMARK_EXPECT_RESULT),
-}
-}
+
 fn result_unwrap_err(v: &Val) -> Result<Val> {
-match v {
-Val::Rec(m) => match m.get(RESULT_TAG_KEY) {
-Some(Val::Str(t)) if t == RESULT_ERR_TAG => m
-.get(RESULT_ERR_VAL_KEY)
-.cloned()
-.ok_or_else(|| anyhow!("QMARK_EXPECT_RESULT err missing e")),
-Some(Val::Str(t)) if t == RESULT_OK_TAG => {
-bail!("QMARK_EXPECT_RESULT tried unwrap err on ok")
+  match v {
+    Val::Rec(m) => {
+      if m.len() != 2 {
+        bail!("{} expected result", QMARK_EXPECT_RESULT);
+      }
+      match m.get(RESULT_TAG_KEY) {
+        Some(Val::Str(t)) if t == RESULT_ERR_TAG => m
+          .get(RESULT_ERR_VAL_KEY)
+          .cloned()
+          .ok_or_else(|| anyhow!("QMARK_EXPECT_RESULT err missing e")),
+        Some(Val::Str(t)) if t == RESULT_OK_TAG => {
+          bail!("QMARK_EXPECT_RESULT tried unwrap err on ok")
+        }
+        _ => bail!("{} expected result tag", QMARK_EXPECT_RESULT),
+      }
+    }
+    _ => bail!("{} expected result", QMARK_EXPECT_RESULT),
+  }
 }
-_ => bail!("{} expected result tag", QMARK_EXPECT_RESULT),
-},
-_ => bail!("{} expected result", QMARK_EXPECT_RESULT),
-}
-}
+
 fn mk_result_ok(v: Val) -> Val {
-let mut m = BTreeMap::new();
-m.insert(
-RESULT_TAG_KEY.to_string(),
-Val::Str(RESULT_OK_TAG.to_string()),
-);
-m.insert(RESULT_OK_VAL_KEY.to_string(), v);
-Val::Rec(m)
+  let mut m = BTreeMap::new();
+  m.insert(
+    RESULT_TAG_KEY.to_string(),
+    Val::Str(RESULT_OK_TAG.to_string()),
+  );
+  m.insert(RESULT_OK_VAL_KEY.to_string(), v);
+  Val::Rec(m)
 }
+
 fn mk_result_err(e: Val) -> Val {
-let mut m = BTreeMap::new();
-m.insert(
-RESULT_TAG_KEY.to_string(),
-Val::Str(RESULT_ERR_TAG.to_string()),
-);
-m.insert(RESULT_ERR_VAL_KEY.to_string(), e);
-Val::Rec(m)
+  let mut m = BTreeMap::new();
+  m.insert(
+    RESULT_TAG_KEY.to_string(),
+    Val::Str(RESULT_ERR_TAG.to_string()),
+  );
+  m.insert(RESULT_ERR_VAL_KEY.to_string(), e);
+  Val::Rec(m)
 }
 fn val_eq(a: &Val, b: &Val) -> bool {
 match (a, b) {
@@ -1825,35 +1860,29 @@ bail!("ERROR_BADARG result.ok expects 1 arg");
 Ok(mk_result_ok(args[0].clone()))
 }
 Builtin::ResultAndThen => {
-      if args.len() != 2 {
-        bail!("ERROR_BADARG result.andThen expects 2 args");
-      }
-      let r = args[0].clone();
-      let f = args[1].clone();
+  if args.len() != 2 {
+    bail!("ERROR_BADARG result.andThen expects 2 args");
+  }
+  let r = args[0].clone();
+  let f = args[1].clone();
 
-      if !result_is_ok(&r)? {
-        return Ok(r);
-      }
-      let v = result_unwrap_ok(&r)?;
-      let out = call(f, vec![v], tracer, loader)?;
-      match out {
-        Val::Rec(ref m) => match m.get(RESULT_TAG_KEY) {
-          Some(Val::Str(t)) if t == RESULT_OK_TAG => {
-            if !m.contains_key(RESULT_OK_VAL_KEY) {
-              bail!("QMARK_EXPECT_RESULT ok missing v");
-            }
-          }
-          Some(Val::Str(t)) if t == RESULT_ERR_TAG => {
-            if !m.contains_key(RESULT_ERR_VAL_KEY) {
-              bail!("QMARK_EXPECT_RESULT err missing e");
-            }
-          }
-          _ => bail!("{} expected result tag", QMARK_EXPECT_RESULT),
-        },
-        _ => bail!("{} expected result", QMARK_EXPECT_RESULT),
-      }
-      Ok(out)
-    }
+  if !is_result_val(&r) {
+    bail!("{} expected result", QMARK_EXPECT_RESULT);
+  }
+
+  if !result_is_ok(&r)? {
+    return Ok(r);
+  }
+
+  let v = result_unwrap_ok(&r)?;
+  let out = call(f, vec![v], tracer, loader)?;
+
+  if !is_result_val(&out) {
+    bail!("{} expected result", QMARK_EXPECT_RESULT);
+  }
+
+  Ok(out)
+}
     Builtin::ResultUnwrapOk => {
       if args.len() != 1 {
         bail!("ERROR_BADARG result.unwrap_ok expects 1 arg");
