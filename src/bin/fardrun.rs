@@ -510,6 +510,53 @@ items: Vec<Pat>,
 rest: Option<String>,
 },
 }
+
+fn pat_reject_duplicate_binds(p: &Pat) -> Result<()> {
+  let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+  pat_reject_duplicate_binds_rec(p, &mut seen)
+}
+
+fn pat_reject_duplicate_binds_rec(
+  p: &Pat,
+  seen: &mut std::collections::BTreeSet<String>,
+) -> Result<()> {
+  match p {
+    Pat::Wild => Ok(()),
+    Pat::LitInt(_) => Ok(()),
+    Pat::LitStr(_) => Ok(()),
+    Pat::LitBool(_) => Ok(()),
+    Pat::LitNull => Ok(()),
+    Pat::Bind(name) => {
+      if !seen.insert(name.clone()) {
+        bail!("ERROR_PARSE duplicate binding {}", name);
+      }
+      Ok(())
+    }
+    Pat::Obj { items, rest } => {
+      for (_k, sub) in items {
+        pat_reject_duplicate_binds_rec(sub, seen)?;
+      }
+      if let Some(r) = rest {
+        if !seen.insert(r.clone()) {
+          bail!("ERROR_PARSE duplicate binding {}", r);
+        }
+      }
+      Ok(())
+    }
+    Pat::List { items, rest } => {
+      for sub in items {
+        pat_reject_duplicate_binds_rec(sub, seen)?;
+      }
+      if let Some(r) = rest {
+        if !seen.insert(r.clone()) {
+          bail!("ERROR_PARSE duplicate binding {}", r);
+        }
+      }
+      Ok(())
+    }
+  }
+}
+
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 struct MatchArm {
@@ -861,185 +908,133 @@ continue;
 Ok(items)
 }
 fn parse_pat(&mut self) -> Result<Pat> {
-// PAT_LITERALS_V0_5
-match self.peek() {
-Tok::Num(n) => {
-let n = *n;
-self.i += 1;
-return Ok(Pat::LitInt(n));
-}
-Tok::Str(s) => {
-let s = s.clone();
-self.i += 1;
-return Ok(Pat::LitStr(s));
-}
-Tok::Kw(s) if s == "true" => {
-self.i += 1;
-return Ok(Pat::LitBool(true));
-}
-Tok::Kw(s) if s == "false" => {
-self.i += 1;
-return Ok(Pat::LitBool(false));
-}
-Tok::Kw(s) if s == "null" => {
-self.i += 1;
-return Ok(Pat::LitNull);
-}
-_ => {}
-}
-// literal patterns: Tok::Num/Tok::Str/true/false/null
-match self.peek() {
-Tok::Num(_) => {
-let n = match self.bump() {
-Tok::Num(x) => x,
-_ => unreachable!(),
-};
-return Ok(Pat::LitInt(n));
-}
-Tok::Str(_) => {
-let s = match self.bump() {
-Tok::Str(x) => x,
-_ => unreachable!(),
-};
-return Ok(Pat::LitStr(s));
-}
-Tok::Kw(s) | Tok::Ident(s) if s == "true" => {
-self.bump();
-return Ok(Pat::LitBool(true));
-}
-Tok::Kw(s) | Tok::Ident(s) if s == "false" => {
-self.bump();
-return Ok(Pat::LitBool(false));
-}
-Tok::Kw(s) | Tok::Ident(s) if s == "null" => {
-self.bump();
-return Ok(Pat::LitNull);
-}
-_ => {}
-}
-if self.eat_sym("[") {
-let mut items: Vec<Pat> = Vec::new();
-let mut rest: Option<String> = None;
-if self.eat_sym("]") {
-return Ok(Pat::List { items, rest });
-}
-loop {
-if self.eat_sym("...") {
-rest = match self.bump() {
-Tok::Ident(n) => Some(n),
-Tok::Kw(n) => Some(n),
-_ => None,
-};
-self.expect_sym("]")?;
-return Ok(Pat::List { items, rest });
-}
-items.push(self.parse_pat()?);
-if self.eat_sym(",") {
-if self.eat_sym("]") {
-return Ok(Pat::List { items, rest });
-}
-continue;
-}
-self.expect_sym("]")?;
-return Ok(Pat::List { items, rest });
-}
-}
-if self.eat_sym("{") {
-let mut items: Vec<(String, Pat)> = Vec::new();
-let mut rest: Option<String> = None;
-if self.eat_sym("}") {
-return Ok(Pat::Obj { items, rest });
-}
-loop {
-if self.eat_sym("...") {
-rest = match self.bump() {
-Tok::Ident(n) => Some(n),
-Tok::Kw(n) => Some(n),
-_ => None,
-};
-self.expect_sym("}")?;
-return Ok(Pat::Obj { items, rest });
-}
-let k = match self.bump() {
-Tok::Ident(x) => x,
-Tok::Kw(x) => x,
-Tok::Str(x) => x,
-_ => bail!("record key must be ident or string"),
-};
-self.expect_sym(":")?;
-let p = self.parse_pat()?;
-items.push((k, p));
-if self.eat_sym(",") {
-if self.eat_sym("}") {
-return Ok(Pat::Obj { items, rest });
-}
-continue;
-}
-self.expect_sym("}")?;
-return Ok(Pat::Obj { items, rest });
-}
-}
-match self.bump() {
-Tok::Ident(n) => {
-if n == "_" {
-Ok(Pat::Wild)
-} else {
-Ok(Pat::Bind(n))
-}
-}
-Tok::Kw(n) => {
-if n == "true" {
-Ok(Pat::LitBool(true))
-} else if n == "false" {
-Ok(Pat::LitBool(false))
-} else if n == "null" {
-Ok(Pat::LitNull)
-} else if n == "_" {
-Ok(Pat::Wild)
-} else {
-Ok(Pat::Bind(n))
-}
-}
-Tok::Num(n) => Ok(Pat::LitInt(n)),
-Tok::Str(s) => Ok(Pat::LitStr(s)),
-other => bail!("ERROR_PARSE unexpected token: {other:?}"),
-}
+  let p = match self.peek().clone() {
+    Tok::Kw(x) | Tok::Ident(x) if x == "true" => {
+      self.i += 1;
+      Pat::LitBool(true)
+    }
+    Tok::Kw(x) | Tok::Ident(x) if x == "false" => {
+      self.i += 1;
+      Pat::LitBool(false)
+    }
+    Tok::Kw(x) | Tok::Ident(x) if x == "null" => {
+      self.i += 1;
+      Pat::LitNull
+    }
+    Tok::Ident(x) if x == "_" => {
+      self.i += 1;
+      Pat::Wild
+    }
+    Tok::Num(n) => {
+      self.i += 1;
+      Pat::LitInt(n)
+    }
+    Tok::Str(s) => {
+      self.i += 1;
+      Pat::LitStr(s)
+    }
+    Tok::Sym(s) if s == "{" => {
+      self.i += 1;
+      let mut items: Vec<(String, Pat)> = Vec::new();
+      let mut rest: Option<String> = None;
+      if !self.eat_sym("}") {
+        loop {
+          if self.eat_sym("...") {
+            let r = self.expect_ident()?;
+            rest = Some(r);
+            self.expect_sym("}")?;
+            break;
+          }
+          let k = self.expect_ident()?;
+          self.expect_sym(":")?;
+          let sub = self.parse_pat()?;
+          items.push((k, sub));
+          if self.eat_sym("}") {
+            break;
+          }
+          self.expect_sym(",")?;
+          if self.eat_sym("}") {
+            break;
+          }
+        }
+      }
+      Pat::Obj { items, rest }
+    }
+    Tok::Sym(s) if s == "[" => {
+      self.i += 1;
+      let mut items: Vec<Pat> = Vec::new();
+      let mut rest: Option<String> = None;
+      if !self.eat_sym("]") {
+        loop {
+          if self.eat_sym("...") {
+            let r = self.expect_ident()?;
+            rest = Some(r);
+            self.expect_sym("]")?;
+            break;
+          }
+          let sub = self.parse_pat()?;
+          items.push(sub);
+          if self.eat_sym("]") {
+            break;
+          }
+          self.expect_sym(",")?;
+          if self.eat_sym("]") {
+            break;
+          }
+        }
+      }
+      Pat::List { items, rest }
+    }
+    Tok::Ident(x) => {
+      self.i += 1;
+      Pat::Bind(x)
+    }
+    Tok::Kw(x) => {
+      self.i += 1;
+      Pat::Bind(x)
+    }
+    _ => bail!("ERROR_PARSE expected pattern"),
+  };
+
+  pat_reject_duplicate_binds(&p)?;
+  Ok(p)
 }
 fn parse_match_arms(&mut self) -> Result<Vec<MatchArm>> {
-self.expect_sym("{")?;
-let mut arms: Vec<MatchArm> = Vec::new();
-if self.eat_sym("}") {
-return Ok(arms);
+  self.expect_sym("{")?;
+  let mut arms: Vec<MatchArm> = Vec::new();
+  if self.eat_sym("}") {
+    return Ok(arms);
+  }
+  loop {
+    let pat = self.parse_pat()?;
+    let (guard, guard_span) = if self.eat_kw("if") {
+      let lo_i = self.i;
+      let g = self.parse_expr()?;
+      let hi_i = if self.i > 0 { self.i - 1 } else { lo_i };
+      (Some(g), Some(self.span_range(lo_i, hi_i)))
+    } else {
+      (None, None)
+    };
+    self.expect_sym("=>")?;
+    let body = self.parse_expr()?;
+    arms.push(MatchArm {
+      pat,
+      guard,
+      guard_span,
+      body,
+    });
+    if self.eat_sym(",") {
+      if self.eat_sym("}") {
+        break;
+      }
+      continue;
+    }
+    self.expect_sym("}")?;
+    break;
+  }
+  Ok(arms)
 }
-loop {
-let pat = self.parse_pat()?;
-let (guard, guard_span) = if self.eat_kw("if") {
-let lo_i = self.i;
-let g = self.parse_expr()?;
-let hi_i = if self.i > 0 { self.i - 1 } else { lo_i };
-(Some(g), Some(self.span_range(lo_i, hi_i)))
-} else {
-(None, None)
-};
-self.expect_sym("=>")?;
-let body = self.parse_expr()?;
-arms.push(MatchArm {
-pat,
-guard,
-guard_span,
-body,
-});
-if self.eat_sym(",") {
-if self.eat_sym("}") {
-break;
-}
-continue;
-}
-self.expect_sym("}")?;
-break;
-}
-Ok(arms)
-}
+
 fn parse_expr(&mut self) -> Result<Expr> {
 if self.eat_kw("using") {
 let pat = self.parse_pat()?;
