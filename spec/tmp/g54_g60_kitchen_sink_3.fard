@@ -1,11 +1,12 @@
 
 import("std/result") as result
-fn f(x){ result.ok(x + 1) }
-fn g(x){ result.ok(x * 2) }
 
-let r = result.ok(10)
+fn tag(r) {
+  match r {
+    {t:"ok", v:x} => "ok",
+    {t:"err", e:_} => "err",
+    _ => "other"
+  }
+}
 
-let lhs = result.andThen(result.andThen(r, f), g)
-let rhs = result.andThen(r, fn(x){ result.andThen(f(x), g) })
-
-{lhs: lhs, rhs: rhs}
+{a: tag(result.ok(1)), b: tag(result.err({code:"E", msg:"m"}))}
