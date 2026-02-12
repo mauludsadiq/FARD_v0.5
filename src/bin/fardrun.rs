@@ -244,10 +244,13 @@ fn artifact_out_derived(
   parents: &[(String, String)],
 ) -> Result<()> {
   for (pname, pcid) in parents {
-    let got = self.artifact_cids.get(pname).unwrap_or_else(|| {
-      panic!("M3 parent not declared: {pname} (child {name})");
-    });
-    assert!(got == pcid, "M3 parent cid mismatch for {pname}: declared {got} vs {pcid}");
+    let got = match self.artifact_cids.get(pname) {
+        Some(g) => g,
+        None => bail!("ERROR_M3_PARENT_NOT_DECLARED {pname} (child {name})"),
+      };
+if got != pcid {
+      bail!("ERROR_M3_PARENT_CID_MISMATCH {pname}: declared {got} vs {pcid}");
+    }
   }
 
   self.artifact_cids.insert(name.to_string(), cid.to_string());
@@ -2751,22 +2754,16 @@ Ok(mk_result_ok(Val::Rec(rec)))
       let pcid = match tracer.artifact_cids.get(&pn) {
         Some(s) => s.clone(),
         None => {
-          return Ok(mk_result_err(Val::Str(format!(
-            "ERROR_BADARG emit_artifact_derived parent not declared: {pn}"
-          ))));
-        }
-      };
+            bail!("ERROR_M3_PARENT_NOT_DECLARED {pn}");
+          }
+};
       parents.push((pn, pcid));
     }
 
     let cid = sha256_bytes(&bytes);
-    if let Err(e) = tracer.artifact_out_derived(&name, &filename, &cid, &bytes, &parents) {
-      return Ok(mk_result_err(Val::Str(format!(
-        "ERROR_IO cannot write artifact: {filename} ({e})"
-      ))));
-    }
-
-    let mut rec = std::collections::BTreeMap::new();
+    tracer.artifact_out_derived(&name, &filename, &cid, &bytes, &parents)
+        .map_err(|e| anyhow!("ERROR_IO cannot write artifact: {filename} ({e})"))?;
+let mut rec = std::collections::BTreeMap::new();
     rec.insert("name".to_string(), Val::Str(name));
     rec.insert("cid".to_string(), Val::Str(cid));
     Ok(mk_result_ok(Val::Rec(rec)))
