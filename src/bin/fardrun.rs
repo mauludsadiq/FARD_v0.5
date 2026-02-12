@@ -39,6 +39,16 @@ loader.lock = Some(Lockfile::load(&lockp)?);
 let v = match loader.eval_main(&program, &mut tracer) {
 Ok(v) => v,
 Err(e) => {
+      let _ = std::panic::catch_unwind(|| {
+        let v = loader.graph.to_json();
+        let b = canonical_json_bytes(&v);
+        let _ = fs::write(
+          tracer.out_dir.join("module_graph.json"),
+          b,
+        );
+      });
+
+
 let msg0 = format!("{}", e);
 let code = {
 const PINNED: &[&str] = &[

@@ -1,6 +1,7 @@
 
-import("std/result") as result
-fn f(x){ result.ok(x + 2) }
-let lhs = result.andThen(result.ok(5), f)
-let rhs = f(5)
-{lhs: lhs, rhs: rhs}
+import("std/int") as int
+
+let a = int.parse("42")?
+let b = int.pow(2, 10)
+emit({tag: "g58", a: a, b: b})
+{a: a, b: b}

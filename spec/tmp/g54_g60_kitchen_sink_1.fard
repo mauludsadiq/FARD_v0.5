@@ -1,11 +1,9 @@
 
-import("std/result") as result
-fn id(x){ result.ok(x) }
+import("std/str") as str
 
-let a = result.andThen(result.ok(7), id)
-let b = result.ok(7)
-
-let c = result.andThen(result.err({code:"E", msg:"m"}), id)
-let d = result.err({code:"E", msg:"m"})
-
-{a:a, b:b, c:c, d:d}
+let s = "  AbC \nDeF  \n"
+let t = str.trim(s)
+let u = str.lower(t)
+let xs = str.split_lines(u)
+emit({tag: "g55", t: t, u: u, xs: xs})
+{t: t, u: u, xs: xs}
