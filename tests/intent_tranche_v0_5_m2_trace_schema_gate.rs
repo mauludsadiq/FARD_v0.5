@@ -87,9 +87,10 @@ fn assert_m2_event_shape(line: &str) {
             assert_req_str(obj, "cid");
         }
         "error" => {
-            assert_req_str(obj, "code");
-            assert_req_str(obj, "message");
-        }
+              assert_req_str(obj, "code");
+              assert_req_str(obj, "message");
+              assert_has_key(obj, "e");
+          }
         _ => panic!("M2: unknown event kind: {t}"),
     }
 }

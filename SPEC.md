@@ -80,20 +80,54 @@ Evaluation is deterministic and call-by-value. Functions are lexically scoped an
 Runtime values include JSONable scalars, lists, and records; function values exist but are not JSONable.
 
 ## Trace
-When enabled, trace output is append-only and deterministic for identical inputs (program bytes + stdlib bytes + toolchain).
+The runner writes `trace.ndjson` when tracing is enabled. Trace output is append-only and deterministic for identical inputs (program bytes + stdlib bytes + toolchain).
+
+### Trace Ledger Schema (Intent Tranche v0.5: M2–M3)
+
+A trace is an NDJSON stream. Each line MUST be a JSON object with a required field `t`.
+
+#### Closure rules
+- The allowed event kinds are exactly:
+  - `emit`
+  - `grow_node`
+  - `module_resolve`
+  - `artifact_in`
+  - `artifact_out`
+  - `error`
+- For each event kind, the object keyset MUST match exactly the schema below (no extra keys).
+
+#### Event schemas (normative)
+- `emit`:
+  - `{t:"emit", v:any}`
+- `grow_node`:
+  - `{t:"grow_node", v:any}`
+- `module_resolve`:
+  - `{t:"module_resolve", name:string, kind:string, cid:string}`
+- `artifact_in`:
+  - `{t:"artifact_in", name:string, path:string, cid:string}`
+- `artifact_out`:
+  - `{t:"artifact_out", name:string, cid:string, parents:[{name:string, cid:string}, ...]}`
+  - `parents` MUST be non-empty for derived outputs.
+  - Each parent entry object keyset MUST be exactly `{name,cid}`.
+- `error`:
+  - `{t:"error", code:string, message:string, e:any}`
+
+#### Ordering constraints (causality)
+- An `artifact_out` parent name MUST refer to an artifact previously declared by an `artifact_in` or `artifact_out` event in the same trace.
+- For each parent reference `{name,cid}` in `artifact_out.parents`, `cid` MUST match the previously-declared artifact `cid` for that `name`.
 
 ## Modules
 `import("std/x") as Alias` resolves a standard-library module path to a stable module identity for the given stdlib bytes.
 
 ## Out-dir
-A run writes outputs under the selected out directory and MUST emit the following files:
+A run invocation (CLI/harness) writes outputs under the selected out directory and MUST emit the following files:
 - `trace.ndjson`
 - `result.json`
 - `stderr.txt`
 - `error.json`
 
 ## Errors
-Errors use stable string codes and deterministic rendering into `error.json` and `stderr.txt`.
+Errors use stable string codes and deterministic rendering into `error.json`. The CLI/harness captures process stderr into `stderr.txt` (e.g., shell redirection: `2>OUT/stderr.txt`).
 
 
 ## Manifest Contract Spec (Intent Tranche v1.0: g11–g15)
