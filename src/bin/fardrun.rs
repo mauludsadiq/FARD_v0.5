@@ -154,8 +154,9 @@ fs::write(&result_path, serde_json::to_vec(&J::Object(root))?)?;
 Ok(())
 }
 struct Tracer {
-w: fs::File,
-out_dir: PathBuf,
+  artifact_cids: std::collections::BTreeMap<String, String>,
+  w: fs::File,
+  out_dir: PathBuf,
 }
 impl Tracer {
 fn new(out_dir: &Path, path: &Path) -> Result<Self> {
@@ -163,8 +164,9 @@ fs::create_dir_all(out_dir).ok();
 fs::create_dir_all(out_dir.join("artifacts")).ok();
 let w = fs::File::create(path)?;
 Ok(Self {
-w,
-out_dir: out_dir.to_path_buf(),
+  w,
+  out_dir: out_dir.to_path_buf(),
+  artifact_cids: std::collections::BTreeMap::new(),
 })
 }
 fn emit(&mut self, v: &J) -> Result<()> {
@@ -174,7 +176,14 @@ m.insert("v".to_string(), v.clone());
 let line = serde_json::to_string(&J::Object(m))?;
 self.w.write_all(line.as_bytes())?;
 self.w.write_all(b"\n")?;
-Ok(())
+  Ok(())
+}
+
+fn emit_event(&mut self, ev: J) -> Result<()> {
+  let line = serde_json::to_string(&ev)?;
+  self.w.write_all(line.as_bytes())?;
+  self.w.write_all(b"\n")?;
+  Ok(())
 }
 fn grow_node(&mut self, v: &Val) -> Result<()> {
 let j = v.to_json().context("grow_node must be jsonable")?;
@@ -187,34 +196,82 @@ self.w.write_all(b"\n")?;
 Ok(())
 }
 fn artifact_in(&mut self, path: &str, cid: &str) -> Result<()> {
-let mut m = Map::new();
-m.insert("t".to_string(), J::String("artifact_in".to_string()));
-m.insert("path".to_string(), J::String(path.to_string()));
-m.insert("cid".to_string(), J::String(cid.to_string()));
-let line = serde_json::to_string(&J::Object(m))?;
-self.w.write_all(line.as_bytes())?;
-self.w.write_all(b"\n")?;
-Ok(())
+  // legacy import_artifact: treat path as the stable name
+  self.artifact_cids.insert(path.to_string(), cid.to_string());
+
+  let mut m = serde_json::Map::new();
+  m.insert("t".to_string(), J::String("artifact_in".to_string()));
+  m.insert("name".to_string(), J::String(path.to_string()));
+  m.insert("path".to_string(), J::String(path.to_string()));
+  m.insert("cid".to_string(), J::String(cid.to_string()));
+  self.emit_event(J::Object(m))
 }
 fn artifact_out(&mut self, name: &str, cid: &str, bytes: &[u8]) -> Result<()> {
-let outp = self.out_dir.join("artifacts").join(name);
-fs::write(&outp, bytes)?;
-{
-let cid_path = if let Some(ext) = outp.extension().and_then(|e| e.to_str()) {
-outp.with_extension(format!("{ext}.cid"))
-} else {
-outp.with_extension("cid")
-};
-fs::write(&cid_path, format!("{}\n", cid))?;
+  // legacy emit_artifact: name is also the stable name
+  self.artifact_cids.insert(name.to_string(), cid.to_string());
+
+  let out_path = self.out_dir.join("artifacts").join(name);
+  if let Some(parent) = out_path.parent() {
+    std::fs::create_dir_all(parent)?;
+  }
+  std::fs::write(&out_path, bytes)?;
+
+  let mut m = serde_json::Map::new();
+  m.insert("t".to_string(), J::String("artifact_out".to_string()));
+  m.insert("name".to_string(), J::String(name.to_string()));
+  m.insert("cid".to_string(), J::String(cid.to_string()));
+  m.insert("parents".to_string(), J::Array(vec![]));
+  self.emit_event(J::Object(m))
 }
-let mut m = Map::new();
-m.insert("t".to_string(), J::String("artifact_out".to_string()));
-m.insert("name".to_string(), J::String(name.to_string()));
-m.insert("cid".to_string(), J::String(cid.to_string()));
-let line = serde_json::to_string(&J::Object(m))?;
-self.w.write_all(line.as_bytes())?;
-self.w.write_all(b"\n")?;
-Ok(())
+
+fn artifact_in_named(&mut self, name: &str, path: &str, cid: &str) -> Result<()> {
+  self.artifact_cids.insert(name.to_string(), cid.to_string());
+
+  let mut m = serde_json::Map::new();
+  m.insert("t".to_string(), J::String("artifact_in".to_string()));
+  m.insert("name".to_string(), J::String(name.to_string()));
+  m.insert("path".to_string(), J::String(path.to_string()));
+  m.insert("cid".to_string(), J::String(cid.to_string()));
+  self.emit_event(J::Object(m))
+}
+
+fn artifact_out_derived(
+  &mut self,
+  name: &str,
+  filename: &str,
+  cid: &str,
+  bytes: &[u8],
+  parents: &[(String, String)],
+) -> Result<()> {
+  for (pname, pcid) in parents {
+    let got = self.artifact_cids.get(pname).unwrap_or_else(|| {
+      panic!("M3 parent not declared: {pname} (child {name})");
+    });
+    assert!(got == pcid, "M3 parent cid mismatch for {pname}: declared {got} vs {pcid}");
+  }
+
+  self.artifact_cids.insert(name.to_string(), cid.to_string());
+
+  let out_path = self.out_dir.join("artifacts").join(filename);
+  if let Some(parent) = out_path.parent() {
+    std::fs::create_dir_all(parent)?;
+  }
+  std::fs::write(&out_path, bytes)?;
+
+  let mut plist: Vec<J> = Vec::new();
+  for (pname, pcid) in parents {
+    let mut pm = serde_json::Map::new();
+    pm.insert("name".to_string(), J::String(pname.clone()));
+    pm.insert("cid".to_string(), J::String(pcid.clone()));
+    plist.push(J::Object(pm));
+  }
+
+  let mut m = serde_json::Map::new();
+  m.insert("t".to_string(), J::String("artifact_out".to_string()));
+  m.insert("name".to_string(), J::String(name.to_string()));
+  m.insert("cid".to_string(), J::String(cid.to_string()));
+  m.insert("parents".to_string(), J::Array(plist));
+  self.emit_event(J::Object(m))
 }
 fn module_resolve(&mut self, name: &str, kind: &str, cid: &str) -> Result<()> {
   let mut m = Map::new();
@@ -1380,7 +1437,9 @@ ListSortByIntKey,
 GrowUnfoldTree,
 GrowAppend,
 ImportArtifact,
-EmitArtifact,
+  ImportArtifactNamed,
+  EmitArtifact,
+  EmitArtifactDerived,
 Emit,
 Len,
 IntParse,
@@ -1853,30 +1912,25 @@ bail!("ERROR_BADARG result.ok expects 1 arg");
 Ok(mk_result_ok(args[0].clone()))
 }
 Builtin::ResultAndThen => {
-  if args.len() != 2 {
-    bail!("ERROR_BADARG result.andThen expects 2 args");
-  }
-  let r = args[0].clone();
-  let f = args[1].clone();
+    if args.len() != 2 {
+      bail!("ERROR_BADARG result.andThen expects 2 args");
+    }
+    let r = args[0].clone();
+    let f = args[1].clone();
 
-  if !is_result_val(&r) {
-    bail!("{} expected result", QMARK_EXPECT_RESULT);
-  }
+    let ok = result_is_ok(&r)?;
+    if !ok {
+      return Ok(r);
+    }
 
-  if !result_is_ok(&r)? {
-    return Ok(r);
-  }
+    let v = result_unwrap_ok(&r)?;
+    let out = call(f, vec![v], tracer, loader)?;
 
-  let v = result_unwrap_ok(&r)?;
-  let out = call(f, vec![v], tracer, loader)?;
-
-  if !is_result_val(&out) {
-    bail!("{} expected result", QMARK_EXPECT_RESULT);
+    let _ = result_is_ok(&out)?;
+    Ok(out)
   }
 
-  Ok(out)
-}
-    Builtin::ResultUnwrapOk => {
+  Builtin::ResultUnwrapOk => {
       if args.len() != 1 {
         bail!("ERROR_BADARG result.unwrap_ok expects 1 arg");
       }
@@ -2483,6 +2537,45 @@ rec.insert("text".to_string(), Val::Str(text));
 rec.insert("cid".to_string(), Val::Str(cid));
 Ok(mk_result_ok(Val::Rec(rec)))
 }
+
+  Builtin::ImportArtifactNamed => {
+    if args.len() != 2 {
+      bail!("ERROR_BADARG import_artifact_named expects 2 args");
+    }
+    let name = match &args[0] {
+      Val::Str(s) => s.clone(),
+      _ => bail!("ERROR_BADARG import_artifact_named name must be string"),
+    };
+    let p = match &args[1] {
+      Val::Str(s) => s.clone(),
+      _ => bail!("ERROR_BADARG import_artifact_named path must be string"),
+    };
+
+    let bytes = match fs::read(&p) {
+      Ok(b) => b,
+      Err(e) => {
+        return Ok(mk_result_err(Val::Str(format!(
+          "ERROR_IO cannot read artifact: {p} ({e})"
+        ))));
+      }
+    };
+    let cid = sha256_bytes(&bytes);
+    tracer.artifact_in_named(&name, &p, &cid)?;
+
+    let text = match String::from_utf8(bytes) {
+      Ok(s) => s,
+      Err(e) => {
+        return Ok(mk_result_err(Val::Str(format!(
+          "ERROR_UTF8 invalid utf8 in artifact: {p} ({e})"
+        ))));
+      }
+    };
+
+    let mut rec = std::collections::BTreeMap::new();
+    rec.insert("text".to_string(), Val::Str(text));
+    rec.insert("cid".to_string(), Val::Str(cid));
+    Ok(mk_result_ok(Val::Rec(rec)))
+  }
 Builtin::EmitArtifact => {
 if args.len() != 2 {
 bail!("ERROR_BADARG emit_artifact expects 2 args");
@@ -2543,7 +2636,144 @@ rec.insert("name".to_string(), Val::Str(name));
 rec.insert("cid".to_string(), Val::Str(cid));
 Ok(mk_result_ok(Val::Rec(rec)))
 }
-Builtin::Emit => {
+  Builtin::EmitArtifactDerived => {
+    if args.len() != 4 {
+      bail!("ERROR_BADARG emit_artifact_derived expects 4 args");
+    }
+
+    let name = match &args[0] {
+      Val::Str(s) => s.clone(),
+      _ => bail!("ERROR_BADARG emit_artifact_derived name must be string"),
+    };
+
+    let filename = match &args[1] {
+      Val::Str(s) => s.clone(),
+      _ => bail!("ERROR_BADARG emit_artifact_derived filename must be string"),
+    };
+
+    // Payload encoding:
+    // - list[int] => raw bytes
+    // - {text:string} => utf8 bytes
+    // - otherwise any jsonable => compact JSON bytes
+    let bytes: Vec<u8> = match &args[2] {
+      Val::List(vs) => {
+        let mut out: Vec<u8> = Vec::with_capacity(vs.len());
+        for v in vs {
+          let n = match v {
+            Val::Int(i) => *i,
+            _ => {
+              return Ok(mk_result_err(Val::Str(
+                "ERROR_BADARG emit_artifact_derived bytes must be ints".to_string(),
+              )));
+            }
+          };
+          if n < 0 || n > 255 {
+            return Ok(mk_result_err(Val::Str(
+              "ERROR_BADARG emit_artifact_derived byte out of range".to_string(),
+            )));
+          }
+          out.push(n as u8);
+        }
+        out
+      }
+      Val::Rec(m) => {
+        if let Some(Val::Str(s)) = m.get("text") {
+          s.as_bytes().to_vec()
+        } else {
+          let j = match args[2].to_json() {
+            Some(j) => j,
+            None => {
+              return Ok(mk_result_err(Val::Str(
+                "ERROR_BADARG emit_artifact_derived value must be jsonable".to_string(),
+              )));
+            }
+          };
+          match serde_json::to_vec(&j) {
+            Ok(b) => b,
+            Err(e) => {
+              return Ok(mk_result_err(Val::Str(format!(
+                "ERROR_JSON emit_artifact_derived cannot encode json: {e}"
+              ))));
+            }
+          }
+        }
+      }
+      _ => {
+        let j = match args[2].to_json() {
+          Some(j) => j,
+          None => {
+            return Ok(mk_result_err(Val::Str(
+              "ERROR_BADARG emit_artifact_derived value must be jsonable".to_string(),
+            )));
+          }
+        };
+        match serde_json::to_vec(&j) {
+          Ok(b) => b,
+          Err(e) => {
+            return Ok(mk_result_err(Val::Str(format!(
+              "ERROR_JSON emit_artifact_derived cannot encode json: {e}"
+            ))));
+          }
+        }
+      }
+    };
+
+    let parent_names: Vec<String> = match &args[3] {
+      Val::List(xs) => {
+        let mut out: Vec<String> = Vec::new();
+        for x in xs {
+          match x {
+            Val::Str(s) => out.push(s.clone()),
+            _ => {
+              return Ok(mk_result_err(Val::Str(
+                "ERROR_BADARG emit_artifact_derived parents must be list[string]".to_string(),
+              )));
+            }
+          }
+        }
+        out
+      }
+      _ => {
+        return Ok(mk_result_err(Val::Str(
+          "ERROR_BADARG emit_artifact_derived parents must be list[string]".to_string(),
+        )));
+      }
+    };
+
+    if parent_names.is_empty() {
+      return Ok(mk_result_err(Val::Str(
+        "ERROR_BADARG emit_artifact_derived parents must be non-empty".to_string(),
+      )));
+    }
+
+    let mut parents: Vec<(String, String)> = Vec::new();
+    for pn in parent_names {
+      let pcid = match tracer.artifact_cids.get(&pn) {
+        Some(s) => s.clone(),
+        None => {
+          return Ok(mk_result_err(Val::Str(format!(
+            "ERROR_BADARG emit_artifact_derived parent not declared: {pn}"
+          ))));
+        }
+      };
+      parents.push((pn, pcid));
+    }
+
+    let cid = sha256_bytes(&bytes);
+    if let Err(e) = tracer.artifact_out_derived(&name, &filename, &cid, &bytes, &parents) {
+      return Ok(mk_result_err(Val::Str(format!(
+        "ERROR_IO cannot write artifact: {filename} ({e})"
+      ))));
+    }
+
+    let mut rec = std::collections::BTreeMap::new();
+    rec.insert("name".to_string(), Val::Str(name));
+    rec.insert("cid".to_string(), Val::Str(cid));
+    Ok(mk_result_ok(Val::Rec(rec)))
+  }
+
+
+  Builtin::Emit => {
 if args.len() != 1 {
 bail!("emit arity");
 }
@@ -3434,10 +3664,20 @@ e.set(
 "import_artifact".to_string(),
 Val::Builtin(Builtin::ImportArtifact),
 );
+
+  e.set(
+    "import_artifact_named".to_string(),
+    Val::Builtin(Builtin::ImportArtifactNamed),
+  );
 e.set(
 "emit_artifact".to_string(),
 Val::Builtin(Builtin::EmitArtifact),
 );
+
+  e.set(
+    "emit_artifact_derived".to_string(),
+    Val::Builtin(Builtin::EmitArtifactDerived),
+  );
 e
 }
 fn sha256_bytes(bytes: &[u8]) -> String {

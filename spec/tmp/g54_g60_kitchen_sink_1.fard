@@ -1,12 +1,11 @@
 
 import("std/result") as result
+fn id(x){ result.ok(x) }
 
-fn tag(r) {
-  match r {
-    {t:"ok", v:x} => "ok",
-    {t:"err", e:_} => "err",
-    _ => "other"
-  }
-}
+let a = result.andThen(result.ok(7), id)
+let b = result.ok(7)
 
-{a: tag(result.ok(1)), b: tag(result.err({code:"E", msg:"m"}))}
+let c = result.andThen(result.err({code:"E", msg:"m"}), id)
+let d = result.err({code:"E", msg:"m"})
+
+{a:a, b:b, c:c, d:d}

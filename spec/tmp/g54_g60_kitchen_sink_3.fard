@@ -1,12 +1,7 @@
 
-import("std/result") as result
+import("std/int") as int
 
-fn tag(r) {
-  match r {
-    {t:"ok", v:x} => "ok",
-    {t:"err", e:_} => "err",
-    _ => "other"
-  }
-}
-
-{a: tag(result.ok(1)), b: tag(result.err({code:"E", msg:"m"}))}
+let a = int.parse("42")?
+let b = int.pow(2, 10)
+emit({tag: "g58", a: a, b: b})
+{a: a, b: b}

@@ -70,6 +70,9 @@ fn assert_m2_event_shape(line: &str) {
         "emit" => {
             assert_has_key(obj, "v");
         }
+        "grow_node" => {
+            assert_has_key(obj, "v");
+        }
         "module_resolve" => {
             assert_req_str(obj, "name");
             assert_req_str(obj, "kind");
@@ -163,8 +166,19 @@ let _x = (Result.err({k:"e"}))? in
         false,
     );
 
+    let out4 = run_fard(
+        "m2_gate_grow_node",
+        r#"
+import("std/grow") as Grow
+Grow.unfold_tree({n:0}, {depth:1})
+0
+"#,
+        true,
+    );
+
     check_trace(&out0);
     check_trace(&out1);
     check_trace(&out2);
     check_trace(&out3);
+    check_trace(&out4);
 }

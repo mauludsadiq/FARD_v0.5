@@ -1,12 +1,6 @@
 
 import("std/result") as result
-
-fn tag(r) {
-  match r {
-    {t:"ok", v:x} => "ok",
-    {t:"err", e:_} => "err",
-    _ => "other"
-  }
-}
-
-{a: tag(result.ok(1)), b: tag(result.err({code:"E", msg:"m"}))}
+fn f(x){ result.ok(x + 2) }
+let lhs = result.andThen(result.ok(5), f)
+let rhs = f(5)
+{lhs: lhs, rhs: rhs}
