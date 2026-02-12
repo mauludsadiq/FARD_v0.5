@@ -290,7 +290,7 @@ fn g15_minimum_1_0_surface_present() {
     let top = as_obj(&v, "top");
     let modules = as_obj(top.get("modules").unwrap(), "top.modules");
 
-    require_module_exports_present(modules, "std/result", &["Ok", "Err", "andThen"]);
+    require_module_exports_present(modules, "std/result", &["ok", "err", "andThen"]);
     require_module_exports_present(modules, "std/list", &["len", "hist_int", "sort_by_int_key"]);
     require_module_exports_present(modules, "std/str", &["len", "concat"]);
     require_module_exports_present(modules, "std/json", &["encode", "decode"]);
