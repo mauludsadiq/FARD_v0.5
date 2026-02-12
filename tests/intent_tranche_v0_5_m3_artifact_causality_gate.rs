@@ -86,6 +86,8 @@ fn run_fard(name: &str, src: &str, expect_ok: bool) -> String {
 #[derive(Clone, Debug)]
 struct ArtifactNode {
     cid: String,
+    #[allow(dead_code)]
+    #[allow(dead_code)]
     is_input: bool,
 }
 

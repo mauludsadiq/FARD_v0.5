@@ -1,12 +1,4 @@
 
 import("std/result") as result
-
-fn tag(r) {
-  match r {
-    {t:"ok", v:x} => "ok",
-    {t:"err", e:_} => "err",
-    _ => "other"
-  }
-}
-
-{a: tag(result.ok(1)), b: tag(result.err({code:"E", msg:"m"}))}
+let r = result.err({code:"E", msg:"m"})
+result.unwrap_err(r)

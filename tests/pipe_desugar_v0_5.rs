@@ -26,15 +26,19 @@ fn run_prog(src: &str) -> (i32, String, String, PathBuf) {
     fs::create_dir_all(&out).unwrap();
     fs::write(&prog, src.as_bytes()).unwrap();
 
-    // Call the already-built binary if available; fall back to cargo run.
-    // Keep it simple: cargo run is acceptable in CI if that’s how your other tests work.
-    let mut cmd = Command::new("cargo");
+    // DO NOT spawn `cargo run` during tests unless we must.
+    // Cargo provides CARGO_BIN_EXE_fardrun for integration tests; use it to avoid target-dir lock contention.
+    let exe = std::env::var("CARGO_BIN_EXE_fardrun").ok();
+
+    let mut cmd = if let Some(exe) = exe {
+        Command::new(exe)
+    } else {
+        let mut c = Command::new("cargo");
+        c.args(["run", "-q", "--bin", "fardrun", "--"]);
+        c
+    };
+
     cmd.args([
-        "run",
-        "-q",
-        "--bin",
-        "fardrun",
-        "--",
         "run",
         "--program",
         prog.to_str().unwrap(),

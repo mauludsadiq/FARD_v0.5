@@ -36,6 +36,7 @@ fn run_probe(name: &str, src: &str, expect_ok: bool) {
     }
 }
 
+#[allow(dead_code)]
 fn read_lines(p: &str) -> Vec<String> {
     let s = fs::read_to_string(p).expect("read trace");
     s.lines()

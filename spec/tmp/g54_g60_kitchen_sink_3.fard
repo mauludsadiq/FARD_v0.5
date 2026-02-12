@@ -1,7 +1,11 @@
 
-import("std/int") as int
+import("std/result") as result
 
-let a = int.parse("42")?
-let b = int.pow(2, 10)
-emit({tag: "g58", a: a, b: b})
-{a: a, b: b}
+fn via_qmark() {
+  let _ = result.err({code:"E_Q", msg:"q"})?
+  result.ok(0)
+}
+
+let a = via_qmark()
+let b = result.err({code:"E_Q", msg:"q"})
+{a:a, b:b}

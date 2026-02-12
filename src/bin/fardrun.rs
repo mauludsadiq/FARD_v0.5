@@ -12,7 +12,6 @@ use serde_json::{Map, Value as J};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 fn main() -> Result<()> {
 let (run, want_version) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
@@ -150,20 +149,33 @@ bail!(msg);
 let j = v.to_json().context("final result must be jsonable")?;
 let mut root = Map::new();
 root.insert("result".to_string(), j);
-fs::write(&result_path, serde_json::to_vec(&J::Object(root))?)?;
+{
+    let v = J::Object(root);
+    fs::write(&result_path, canonical_json_bytes(&v))?;
+}
 Ok(())
 }
 struct Tracer {
+  first_event: bool,
   artifact_cids: std::collections::BTreeMap<String, String>,
   w: fs::File,
   out_dir: PathBuf,
 }
 impl Tracer {
+  fn write_ndjson(&mut self, line: &str) -> Result<()> {
+    if !self.first_event {
+      std::io::Write::write_all(&mut self.w, b"\n")?;
+    }
+    std::io::Write::write_all(&mut self.w, line.as_bytes())?;
+    self.first_event = false;
+    Ok(())
+  }
 fn new(out_dir: &Path, path: &Path) -> Result<Self> {
 fs::create_dir_all(out_dir).ok();
 fs::create_dir_all(out_dir.join("artifacts")).ok();
 let w = fs::File::create(path)?;
 Ok(Self {
+  first_event: true,
   w,
   out_dir: out_dir.to_path_buf(),
   artifact_cids: std::collections::BTreeMap::new(),
@@ -174,15 +186,13 @@ let mut m = Map::new();
 m.insert("t".to_string(), J::String("emit".to_string()));
 m.insert("v".to_string(), v.clone());
 let line = serde_json::to_string(&J::Object(m))?;
-self.w.write_all(line.as_bytes())?;
-self.w.write_all(b"\n")?;
+self.write_ndjson(&line)?;
   Ok(())
 }
 
 fn emit_event(&mut self, ev: J) -> Result<()> {
   let line = serde_json::to_string(&ev)?;
-  self.w.write_all(line.as_bytes())?;
-  self.w.write_all(b"\n")?;
+  self.write_ndjson(&line)?;
   Ok(())
 }
 fn grow_node(&mut self, v: &Val) -> Result<()> {
@@ -191,8 +201,7 @@ let mut m = Map::new();
 m.insert("t".to_string(), J::String("grow_node".to_string()));
 m.insert("v".to_string(), j);
 let line = serde_json::to_string(&J::Object(m))?;
-self.w.write_all(line.as_bytes())?;
-self.w.write_all(b"\n")?;
+self.write_ndjson(&line)?;
 Ok(())
 }
 fn artifact_in(&mut self, path: &str, cid: &str) -> Result<()> {
@@ -283,8 +292,7 @@ fn module_resolve(&mut self, name: &str, kind: &str, cid: &str) -> Result<()> {
   m.insert("kind".to_string(), J::String(kind.to_string()));
   m.insert("cid".to_string(), J::String(cid.to_string()));
   let line = serde_json::to_string(&J::Object(m))?;
-  self.w.write_all(line.as_bytes())?;
-  self.w.write_all(b"\n")?;
+  self.write_ndjson(&line)?;
   Ok(())
 }
 
@@ -302,8 +310,7 @@ fn error_event_with_e(&mut self, code: &str, message: &str, e: &J) -> Result<()>
   m.insert("message".to_string(), J::String(format!("{} {}", code, s)));
   m.insert("e".to_string(), e.clone());
   let line = serde_json::to_string(&J::Object(m))?;
-  self.w.write_all(line.as_bytes())?;
-  self.w.write_all(b"\n")?;
+  self.write_ndjson(&line)?;
   Ok(())
   }
 
@@ -320,8 +327,7 @@ s = rest.to_string();
 }
 m.insert("message".to_string(), J::String(format!("{} {}", code, s)));
 let line = serde_json::to_string(&J::Object(m))?;
-self.w.write_all(line.as_bytes())?;
-self.w.write_all(b"\n")?;
+self.write_ndjson(&line)?;
 Ok(())
 }
 }
@@ -1463,6 +1469,7 @@ JsonDecode,
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct QmarkPropagateErr {
     e: Val,
 }
@@ -1729,7 +1736,7 @@ Expr::Try(x) => {
 }
 Expr::Match(scrut, _arms) => {
 let sv = eval(scrut, env, tracer, loader)?;
-for arm in _arms.into_iter() {
+for arm in _arms.iter() {
 let mut env2 = env.child();
 if fard_pat_match_v0_5(&arm.pat, &sv, &mut env2)? {
 if let Some(g) = &arm.guard {
@@ -1751,7 +1758,10 @@ message: "ERROR_RUNTIME match guard not bool".to_string(),
 }
 }
 }
-return eval(&arm.body, &mut env2, tracer, loader);
+match eval(&arm.body, &mut env2, tracer, loader) {
+            Ok(v) => return Ok(v),
+            Err(e) => return Err(e),
+        };
 }
 }
 bail!("{} no match", ERROR_MATCH_NO_ARM)
@@ -1766,6 +1776,7 @@ eval(body, &mut env2, tracer, loader)
 }
 }
 }
+#[allow(dead_code)]
 fn is_result_val(v: &Val) -> bool {
   match v {
     Val::Rec(m) => match m.get(RESULT_TAG_KEY) {
@@ -3274,7 +3285,10 @@ slf.eval_items(items, &mut env, tracer, &here_dir)
 })?;
 fs::write(
 tracer.out_dir.join("module_graph.json"),
-serde_json::to_vec(&self.graph.to_json())?,
+{ 
+    let v = self.graph.to_json();
+    canonical_json_bytes(&v)
+},
 )?;
 Ok(v)
 }
@@ -3469,6 +3483,8 @@ bail!("LOCK_MISMATCH lock mismatch for module {module}: expected {exp}, got {got
 Ok(())
 }
 fn builtin_std(&self, name: &str) -> Result<BTreeMap<String, Val>> {
+  if name == "std/record" { return self.builtin_std("std/rec"); }
+
 match name {
 "std/list" => {
 let mut m = BTreeMap::new();
@@ -3644,10 +3660,42 @@ m.insert("ref".to_string(), Val::Builtin(Builtin::Unimplemented));
 m.insert("derive".to_string(), Val::Builtin(Builtin::Unimplemented));
 Ok(m)
 }
-_ => bail!("unknown std module: {name}"),
+        "std/bytes" => {
+            let m: BTreeMap<String, Val> = BTreeMap::new();
+            Ok(m)
+        }
+
+        "std/codec" => {
+            let m: BTreeMap<String, Val> = BTreeMap::new();
+            Ok(m)
+        }
+        "std/env" => {
+            let m: BTreeMap<String, Val> = BTreeMap::new();
+            Ok(m)
+        }
+        "std/fs" => {
+            let m: BTreeMap<String, Val> = BTreeMap::new();
+            Ok(m)
+        }
+        "std/hash" => {
+            let m: BTreeMap<String, Val> = BTreeMap::new();
+            Ok(m)
+        }
+        "std/http" => {
+            let m: BTreeMap<String, Val> = BTreeMap::new();
+            Ok(m)
+        }
+        "std/record" => {
+            let m: BTreeMap<String, Val> = BTreeMap::new();
+            Ok(m)
+        }
+
+        _ => bail!("unknown std module: {name}"),
 }
 }
 fn builtin_digest(&self, name: &str) -> String {
+  if name == "std/record" { return self.builtin_digest("std/rec"); }
+
 let mut h = Sha256::new();
 h.update(format!("builtin:{name}:v0.5").as_bytes());
 format!("sha256:{:x}", h.finalize())
@@ -3688,3 +3736,71 @@ let mut h = Sha256::new();
 h.update(&b);
 Ok(format!("sha256:{:x}", h.finalize()))
 }
+
+fn canonical_json_bytes(v: &serde_json::Value) -> Vec<u8> {
+    fn write(v: &serde_json::Value, out: &mut Vec<u8>) {
+        match v {
+            serde_json::Value::Null => out.extend_from_slice(b"null"),
+            serde_json::Value::Bool(b) => {
+                if *b { out.extend_from_slice(b"true") } else { out.extend_from_slice(b"false") }
+            }
+            serde_json::Value::Number(n) => {
+    let mut s = n.to_string();
+
+    if s.contains("e") || s.contains("E") {
+        let f: f64 = s.parse().unwrap();
+        s = format!("{}", f);
+    }
+
+    if s.contains(".") {
+        while s.ends_with("0") { s.pop(); }
+        if s.ends_with(".") { s.pop(); }
+    }
+
+    if s == "-0" { s = "0".to_string(); }
+
+    out.extend_from_slice(s.as_bytes());
+},
+            serde_json::Value::String(s) => {
+                out.push(b'"');
+                for c in s.chars() {
+                    match c {
+                        '"' => out.extend_from_slice(b"\\\""),
+                        '\\' => out.extend_from_slice(b"\\\\"),
+                        '\n' => out.extend_from_slice(b"\\n"),
+                        '\r' => out.extend_from_slice(b"\\r"),
+                        '\t' => out.extend_from_slice(b"\\t"),
+                        c if c < ' ' => out.extend_from_slice(format!("\\u{:04x}", c as u32).as_bytes()),
+                        _ => out.extend_from_slice(c.to_string().as_bytes()),
+                    }
+                }
+                out.push(b'"');
+            }
+            serde_json::Value::Array(a) => {
+                out.push(b'[');
+                for (i, x) in a.iter().enumerate() {
+                    if i != 0 { out.push(b','); }
+                    write(x, out);
+                }
+                out.push(b']');
+            }
+            serde_json::Value::Object(map) => {
+                out.push(b'{');
+                let mut keys: Vec<_> = map.keys().collect();
+                keys.sort();
+                for (i, k) in keys.iter().enumerate() {
+                    if i != 0 { out.push(b','); }
+                    write(&serde_json::Value::String((*k).clone()), out);
+                    out.push(b':');
+                    write(&map[*k], out);
+                }
+                out.push(b'}');
+            }
+        }
+    }
+
+    let mut out = Vec::new();
+    write(v, &mut out);
+    out
+}
+

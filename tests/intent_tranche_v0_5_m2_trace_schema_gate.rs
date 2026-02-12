@@ -8,6 +8,8 @@ fn write_file(path: &str, s: &str) {
     fs::write(path, s.as_bytes()).expect("write file");
 }
 
+#[allow(dead_code)]
+#[allow(dead_code)]
 fn read_nonempty_lines(p: &str) -> Vec<String> {
     let s = fs::read_to_string(p).expect("read trace");
     s.lines()
