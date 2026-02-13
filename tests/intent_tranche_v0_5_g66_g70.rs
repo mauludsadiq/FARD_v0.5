@@ -7,8 +7,8 @@ static RUN_ID: AtomicUsize = AtomicUsize::new(0);
 
 fn run_ok(src: &str) -> serde_json::Value {
     let id = RUN_ID.fetch_add(1, Ordering::SeqCst);
-    let outdir = format!("out/g54_g60_{}", id);
-    let program = format!("spec/tmp/g54_g60_kitchen_sink_{}.fard", id);
+    let outdir = format!("out/g66_g70_{}", id);
+    let program = format!("spec/tmp/g66_g70_{}.fard", id);
     let _ = fs::remove_dir_all(&outdir);
 
     fs::create_dir_all("spec/tmp").expect("MKDIR_TMP_FAIL");
@@ -138,8 +138,8 @@ let b = result.err({code:"E_Q", msg:"q"})
 #[test]
 fn g70_andthen_callback_result_shape_is_checked() {
     let id = RUN_ID.fetch_add(1, Ordering::SeqCst);
-    let outdir = format!("out/g70_{}", id);
-    let program = format!("spec/tmp/g70_{}.fard", id);
+    let outdir = format!("out/g66_g70_g70_{}", id);
+    let program = format!("spec/tmp/g66_g70_g70_{}.fard", id);
     let _ = fs::remove_dir_all(&outdir);
 
     fs::create_dir_all("spec/tmp").expect("MKDIR_TMP_FAIL");

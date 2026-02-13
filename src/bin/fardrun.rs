@@ -13,6 +13,66 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
+fn sha256_bytes_hex(bytes: &[u8]) -> String {
+    let mut h = Sha256::new();
+    h.update(bytes);
+    format!("{:x}", h.finalize())
+}
+
+fn sha256_file_hex(path: &std::path::Path) -> Result<String> {
+    let bytes = std::fs::read(path)
+      .with_context(|| format!("read failed: {}", path.display()))?;
+    Ok(sha256_bytes_hex(&bytes))
+}
+
+fn write_m5_digests(out_dir: &std::path::Path, runtime_version: &str, trace_format_version: &str, stdlib_root_digest: &str, ok: bool) -> Result<()> {
+    let trace_path = out_dir.join("trace.ndjson");
+    let modg_path  = out_dir.join("module_graph.json");
+
+    let trace_h = format!("sha256:{}", sha256_file_hex(&trace_path)?);
+    let modg_h  = format!("sha256:{}", sha256_file_hex(&modg_path)?);
+
+    let (leaf_name, leaf_path) = if ok {
+        ("result.json", out_dir.join("result.json"))
+    } else {
+        ("error.json", out_dir.join("error.json"))
+    };
+    let leaf_h = format!("sha256:{}", sha256_file_hex(&leaf_path)?);
+
+    let mut files: BTreeMap<String,String> = BTreeMap::new();
+    files.insert("trace.ndjson".to_string(), trace_h.clone());
+    files.insert("module_graph.json".to_string(), modg_h.clone());
+    files.insert(leaf_name.to_string(), leaf_h.clone());
+
+    let mut pre = String::new();
+    pre.push_str("cid_run_v0\n");
+    pre.push_str(&format!("runtime_version={}\n", runtime_version));
+    pre.push_str(&format!("trace_format_version={}\n", trace_format_version));
+    pre.push_str(&format!("stdlib_root_digest={}\n", stdlib_root_digest));
+    pre.push_str(&format!("trace.ndjson={}\n", trace_h));
+    pre.push_str(&format!("module_graph.json={}\n", modg_h));
+    pre.push_str(&format!("{}={}\n", leaf_name, leaf_h));
+
+    let bundle_cid = format!("sha256:{}", sha256_bytes_hex(pre.as_bytes()));
+
+    let dig = serde_json::json!({
+        "t": "digests_v0",
+        "algo": "sha256",
+        "id": {
+            "runtime_version": runtime_version,
+            "trace_format_version": trace_format_version,
+            "stdlib_root_digest": stdlib_root_digest
+        },
+        "files": files,
+        "bundle_cid": bundle_cid
+    });
+
+    let out = canonical_json_bytes(&dig);
+    std::fs::write(out_dir.join("digests.json"), out)
+      .with_context(|| "write digests.json")?;
+    Ok(())
+}
+
 fn main() -> Result<()> {
 let (run, want_version) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
 if want_version {
@@ -30,6 +90,8 @@ let trace_path = out_dir.join("trace.ndjson");
 let result_path = out_dir.join("result.json");
 let mut tracer = Tracer::new(&out_dir, &trace_path)?;
 let mut loader = ModuleLoader::new(program.parent().unwrap_or(Path::new(".")));
+  let runtime_version = env!("CARGO_PKG_VERSION");
+  let trace_format_version = "0.1.0";
 if let Some(rp) = registry_dir.clone() {
 loader.registry_dir = Some(rp);
 }
@@ -42,9 +104,7 @@ Err(e) => {
       let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
   let v = loader.graph.to_json();
   let b = canonical_json_bytes(&v);
-  let _ = fs::write(tracer.out_dir.join("module_graph.json"), &b);
-  let cid = sha256_bytes(&b);
-  let _ = tracer.module_graph_event(&cid);
+      let _ = fs::write(tracer.out_dir.join("module_graph.json"), &b);
 }));
 let msg0 = format!("{}", e);
 let code = {
@@ -159,6 +219,17 @@ root.insert("result".to_string(), j);
 {
     let v = J::Object(root);
     fs::write(&result_path, canonical_json_bytes(&v))?;
+
+    {
+      let mg = loader.graph.to_json();
+      let b = canonical_json_bytes(&mg);
+      fs::write(out_dir.join("module_graph.json"), &b)?;
+      let cid = sha256_bytes(&b);
+      let _ = tracer.module_graph_event(&cid);
+
+      let stdlib_root_digest = loader.stdlib_root_digest();
+      write_m5_digests(&out_dir, runtime_version, trace_format_version, &stdlib_root_digest, true)?;
+    }
 }
 Ok(())
 }
@@ -3314,14 +3385,6 @@ fn eval_main(&mut self, main_path: &Path, tracer: &mut Tracer) -> Result<Val> {
   let v = self.with_current(main_id, |slf| {
     slf.eval_items(items, &mut env, tracer, &here_dir)
   })?;
-
-  {
-    let v = self.graph.to_json();
-    let b = canonical_json_bytes(&v);
-    fs::write(tracer.out_dir.join("module_graph.json"), &b)?;
-    let cid = sha256_bytes(&b);
-    let _ = tracer.module_graph_event(&cid);
-  }
   Ok(v)
 }
 fn eval_items(
@@ -3738,6 +3801,50 @@ let mut h = Sha256::new();
 h.update(format!("builtin:{name}:v0.5").as_bytes());
 format!("sha256:{:x}", h.finalize())
 }
+
+fn stdlib_root_digest(&self) -> String {
+  let names: [&str; 20] = [
+    "std/artifact",
+    "std/bytes",
+    "std/codec",
+    "std/env",
+    "std/flow",
+    "std/fs",
+    "std/grow",
+    "std/hash",
+    "std/http",
+    "std/int",
+    "std/json",
+    "std/list",
+    "std/map",
+    "std/option",
+    "std/record",
+    "std/result",
+    "std/str",
+    "std/time",
+    "std/trace",
+    "std/rec"
+  ];
+
+  let mut pairs: Vec<(String,String)> = names
+    .into_iter()
+    .map(|n| (n.to_string(), self.builtin_digest(n)))
+    .collect();
+
+  pairs.sort_by(|a,b| a.0.cmp(&b.0));
+
+  let mut pre = String::new();
+  pre.push_str("stdlib_root_v0\n");
+  for (n,d) in pairs {
+    pre.push_str(&n);
+    pre.push_str("=");
+    pre.push_str(&d);
+    pre.push_str("\n");
+  }
+
+  format!("sha256:{}", sha256_bytes_hex(pre.as_bytes()))
+}
+
 }
 fn base_env() -> Env {
 let mut e = Env::new();

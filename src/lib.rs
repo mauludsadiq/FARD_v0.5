@@ -297,3 +297,4 @@ pub fn matches_any_regex(text: &str, patterns: &[String]) -> Result<bool> {
 }
 
 pub mod cli;
+pub mod digest;

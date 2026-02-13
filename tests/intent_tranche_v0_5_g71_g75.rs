@@ -7,8 +7,8 @@ static RUN_ID: AtomicUsize = AtomicUsize::new(0);
 
 fn run_ok(src: &str) -> serde_json::Value {
     let id = RUN_ID.fetch_add(1, Ordering::SeqCst);
-    let outdir = format!("out/g54_g60_{}", id);
-    let program = format!("spec/tmp/g54_g60_kitchen_sink_{}.fard", id);
+    let outdir = format!("out/g71_g75_{}", id);
+    let program = format!("spec/tmp/g71_g75_kitchen_sink_{}.fard", id);
     let _ = fs::remove_dir_all(&outdir);
 
     fs::create_dir_all("spec/tmp").expect("MKDIR_TMP_FAIL");
