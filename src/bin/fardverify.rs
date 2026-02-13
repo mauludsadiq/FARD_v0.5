@@ -3,13 +3,18 @@ use std::fs;
 
 #[path = "../verify/trace_verify.rs"]
 mod trace_verify;
+
 #[path = "../verify/artifact_verify.rs"]
 mod artifact_verify;
+
+#[path = "../verify/bundle_verify.rs"]
+mod bundle_verify;
 
 fn usage() -> ! {
   eprintln!("usage:");
   eprintln!("  fardverify trace --out <dir>");
   eprintln!("  fardverify artifact --out <dir>");
+  eprintln!("  fardverify bundle --out <dir>");
   std::process::exit(2);
 }
 
@@ -71,6 +76,22 @@ fn main() {
         let p = format!("{}/FAIL_ARTIFACT.txt", outdir);
         let _ = fs::write(&p, format!("FAIL {}\n", e).as_bytes());
         eprintln!("TRACE_VERIFY_FAIL {}", e);
+        std::process::exit(2);
+      }
+    }
+  }
+
+  if sub == "bundle" {
+    match bundle_verify::verify_bundle_outdir(&outdir) {
+      Ok(()) => {
+        let p = format!("{}/PASS_BUNDLE.txt", outdir);
+        let _ = fs::write(&p, b"PASS\n");
+        std::process::exit(0);
+      }
+      Err(e) => {
+        let p = format!("{}/FAIL_BUNDLE.txt", outdir);
+        let _ = fs::write(&p, format!("FAIL {}\n", e).as_bytes());
+        eprintln!("BUNDLE_VERIFY_FAIL {}", e);
         std::process::exit(2);
       }
     }

@@ -18,6 +18,68 @@ fn sha256_bytes_hex(bytes: &[u8]) -> String {
     h.update(bytes);
     format!("{:x}", h.finalize())
 }
+fn canon_json(v: &serde_json::Value) -> Result<String> {
+    fn canon_value(v: &serde_json::Value, out: &mut String) -> Result<()> {
+        match v {
+            serde_json::Value::Null => {
+                out.push_str("null");
+                Ok(())
+            }
+            serde_json::Value::Bool(b) => {
+                out.push_str(if *b { "true" } else { "false" });
+                Ok(())
+            }
+            serde_json::Value::Number(n) => {
+                let s = n.to_string();
+                if s.contains('+') {
+                    bail!("M5_CANON_NUM_PLUS");
+                }
+                if s.starts_with('0') && s.len() > 1 && !s.starts_with("0.") {
+                    bail!("M5_CANON_NUM_LEADING_ZERO");
+                }
+                if s.ends_with(".0") {
+                    bail!("M5_CANON_NUM_DOT0");
+                }
+                out.push_str(&s);
+                Ok(())
+            }
+            serde_json::Value::String(s) => {
+                out.push_str(&serde_json::to_string(s).context("M5_CANON_STRING_FAIL")?);
+                Ok(())
+            }
+            serde_json::Value::Array(a) => {
+                out.push('[');
+                for (i, x) in a.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    canon_value(x, out)?;
+                }
+                out.push(']');
+                Ok(())
+            }
+            serde_json::Value::Object(m) => {
+                let mut keys: Vec<&String> = m.keys().collect();
+                keys.sort();
+                out.push('{');
+                for (i, k) in keys.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    out.push_str(&serde_json::to_string(k).context("M5_CANON_KEY_ESC_FAIL")?);
+                    out.push(':');
+                    canon_value(&m[*k], out)?;
+                }
+                out.push('}');
+                Ok(())
+            }
+        }
+    }
+
+    let mut out = String::new();
+    canon_value(v, &mut out)?;
+    Ok(out)
+}
 
 fn sha256_file_hex(path: &std::path::Path) -> Result<String> {
     let bytes = std::fs::read(path).with_context(|| format!("read failed: {}", path.display()))?;
@@ -48,20 +110,17 @@ fn write_m5_digests(
     files.insert("trace.ndjson".to_string(), trace_h.clone());
     files.insert("module_graph.json".to_string(), modg_h.clone());
     files.insert(leaf_name.to_string(), leaf_h.clone());
+      let preimage = serde_json::json!({
+        "files": files,
+        "ok": ok,
+        "runtime_version": runtime_version,
+        "stdlib_root_digest": stdlib_root_digest,
+        "trace_format_version": trace_format_version
+      });
 
-    let mut pre = String::new();
-    pre.push_str("cid_run_v0\n");
-    pre.push_str(&format!("runtime_version={}\n", runtime_version));
-    pre.push_str(&format!("trace_format_version={}\n", trace_format_version));
-    pre.push_str(&format!("stdlib_root_digest={}\n", stdlib_root_digest));
-    pre.push_str(&format!("ok={}\n", if ok { "true" } else { "false" }));
-    for (name, h) in files.iter() {
-        pre.push_str(&format!("{}={}\n", name, h));
-    }
-
-    let preimage_sha256 = format!("sha256:{}", sha256_bytes_hex(pre.as_bytes()));
-
-    let dig = serde_json::json!({
+      let canon = canon_json(&preimage)?;
+      let preimage_sha256 = format!("sha256:{}", sha256_bytes_hex(canon.as_bytes()));
+let dig = serde_json::json!({
       "runtime_version": runtime_version,
       "trace_format_version": trace_format_version,
       "stdlib_root_digest": stdlib_root_digest,
