@@ -45,6 +45,7 @@ fn write_m5_digests(out_dir: &std::path::Path, runtime_version: &str, trace_form
     files.insert(leaf_name.to_string(), leaf_h.clone());
 
     let mut pre = String::new();
+    pre.push_str("cid_run_v0\n");
     pre.push_str(&format!("runtime_version={}\n", runtime_version));
     pre.push_str(&format!("trace_format_version={}\n", trace_format_version));
     pre.push_str(&format!("stdlib_root_digest={}\n", stdlib_root_digest));
@@ -202,20 +203,27 @@ fs::write(
       serde_json::to_vec(&J::Object(em))?,
     )?;
 
-    {
-      let mg = loader.graph.to_json();
-      let b = canonical_json_bytes(&mg);
-      fs::write(out_dir.join("module_graph.json"), &b)?;
-
+    
+{
       let stdlib_root_digest = loader.stdlib_root_digest();
+
+      {
+        let mg = loader.graph.to_json();
+        let b = canonical_json_bytes(&mg);
+        fs::write(out_dir.join("module_graph.json"), &b)?;
+        let cid = sha256_bytes(&b);
+        let _ = tracer.module_graph_event(&cid);
+      }
+
+      if let Some(ev) = &extra_e {
+        tracer.error_event_with_e(&code, &msg, ev).ok();
+      } else {
+        tracer.error_event(&code, &msg).ok();
+      }
+
+      drop(tracer);
       write_m5_digests(&out_dir, runtime_version, trace_format_version, &stdlib_root_digest, false)?;
     }
-
-  if let Some(ev) = &extra_e {
-  tracer.error_event_with_e(&code, &msg, ev).ok();
-  } else {
-  tracer.error_event(&code, &msg).ok();
-  }
 bail!(msg);
 }
 };
@@ -234,6 +242,7 @@ root.insert("result".to_string(), j);
       let _ = tracer.module_graph_event(&cid);
 
       let stdlib_root_digest = loader.stdlib_root_digest();
+      drop(tracer);
       write_m5_digests(&out_dir, runtime_version, trace_format_version, &stdlib_root_digest, true)?;
     }
 }
