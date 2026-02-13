@@ -8,8 +8,12 @@ fn json_parse(bytes: &[u8]) -> serde_json::Value {
     serde_json::from_slice(bytes).unwrap_or_else(|e| panic!("JSON_PARSE_FAIL err={}", e))
 }
 
-fn as_obj<'a>(v: &'a serde_json::Value, ctx: &str) -> &'a serde_json::Map<String, serde_json::Value> {
-    v.as_object().unwrap_or_else(|| panic!("TYPE_FAIL expected=object ctx={}", ctx))
+fn as_obj<'a>(
+    v: &'a serde_json::Value,
+    ctx: &str,
+) -> &'a serde_json::Map<String, serde_json::Value> {
+    v.as_object()
+        .unwrap_or_else(|| panic!("TYPE_FAIL expected=object ctx={}", ctx))
 }
 
 fn module_list_from_manifest() -> Vec<String> {
@@ -18,7 +22,9 @@ fn module_list_from_manifest() -> Vec<String> {
     let v = json_parse(&bytes);
 
     let top = as_obj(&v, "top");
-    let modules_v = top.get("modules").unwrap_or_else(|| panic!("MISSING top.modules"));
+    let modules_v = top
+        .get("modules")
+        .unwrap_or_else(|| panic!("MISSING top.modules"));
     let modules = as_obj(modules_v, "top.modules");
 
     let mut out: Vec<String> = modules.keys().cloned().collect();
@@ -41,7 +47,8 @@ fn write_probe(spec: &str) -> (String, String) {
 }
 
 fn run_probe(program_path: &str, out_dir: &str) -> (i32, String) {
-    std::fs::create_dir_all(out_dir).unwrap_or_else(|e| panic!("MKDIR_FAIL out={} err={}", out_dir, e));
+    std::fs::create_dir_all(out_dir)
+        .unwrap_or_else(|e| panic!("MKDIR_FAIL out={} err={}", out_dir, e));
 
     let exe = env!("CARGO_BIN_EXE_fardrun");
     let o = Command::new(exe)
@@ -69,7 +76,10 @@ fn stdlib_modules_declared_by_manifest_are_importable() {
         let (program_path, out_dir) = write_probe(&spec);
         let (code, err) = run_probe(&program_path, &out_dir);
         if code != 0 {
-            panic!("IMPORT_PROBE_FAIL spec={} code={} stderr={}", spec, code, err);
+            panic!(
+                "IMPORT_PROBE_FAIL spec={} code={} stderr={}",
+                spec, code, err
+            );
         }
     }
 }

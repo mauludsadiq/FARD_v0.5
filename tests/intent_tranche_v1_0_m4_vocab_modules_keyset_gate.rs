@@ -38,5 +38,9 @@ fn m4_vocab_modules_keyset_is_stable() {
         "std/str".to_string(),
         "std/time".to_string(),
         "std/trace".to_string(),
-    ];    assert_eq!(names, want, "modules keyset changed; update want to repo-truth");
+    ];
+    assert_eq!(
+        names, want,
+        "modules keyset changed; update want to repo-truth"
+    );
 }

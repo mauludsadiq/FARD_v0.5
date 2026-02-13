@@ -19,13 +19,7 @@ fn run_probe(name: &str, src: &str, expect_ok: bool) {
     let exe = env!("CARGO_BIN_EXE_fardrun");
 
     let status = Command::new(exe)
-        .args([
-            "run",
-            "--program",
-            &program,
-            "--out",
-            &outdir,
-        ])
+        .args(["run", "--program", &program, "--out", &outdir])
         .status()
         .expect("spawn fardrun");
 
@@ -48,7 +42,10 @@ fn read_lines(p: &str) -> Vec<String> {
 fn assert_m2_event_shape(line: &str) {
     let v: serde_json::Value = serde_json::from_str(line).expect("trace line must be json");
     let obj = v.as_object().expect("trace line must be object");
-    let t = obj.get("t").and_then(|x| x.as_str()).expect("event.t string");
+    let t = obj
+        .get("t")
+        .and_then(|x| x.as_str())
+        .expect("event.t string");
 
     match t {
         "emit" => {
@@ -115,7 +112,11 @@ fn check_trace_dir(out_dir: &str) {
     let mut lines: Vec<String> = Vec::new();
 
     if let Ok(s) = fs::read_to_string(&p0) {
-        let v: Vec<String> = s.lines().map(|x| x.to_string()).filter(|x| !x.trim().is_empty()).collect();
+        let v: Vec<String> = s
+            .lines()
+            .map(|x| x.to_string())
+            .filter(|x| !x.trim().is_empty())
+            .collect();
         if !v.is_empty() {
             lines = v;
         }
@@ -123,7 +124,11 @@ fn check_trace_dir(out_dir: &str) {
 
     if lines.is_empty() {
         if let Ok(s) = fs::read_to_string(&p1) {
-            let v: Vec<String> = s.lines().map(|x| x.to_string()).filter(|x| !x.trim().is_empty()).collect();
+            let v: Vec<String> = s
+                .lines()
+                .map(|x| x.to_string())
+                .filter(|x| !x.trim().is_empty())
+                .collect();
             if !v.is_empty() {
                 lines = v;
             }

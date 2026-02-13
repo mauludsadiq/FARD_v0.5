@@ -37,12 +37,13 @@ fn run_ok(src: &str) -> serde_json::Value {
     v.get("result").cloned().expect("RESULT_MISSING_RESULT_KEY")
 }
 
-
-
-
-
 fn assert_contains(hay: &str, needle: &str) {
-    assert!(hay.contains(needle), "missing needle: {}\nHAY:\n{}", needle, hay);
+    assert!(
+        hay.contains(needle),
+        "missing needle: {}\nHAY:\n{}",
+        needle,
+        hay
+    );
 }
 
 fn assert_any_contains(hay: &str, needles: &[&str]) {
@@ -66,7 +67,10 @@ out
     );
 
     let o = v.as_object().expect("TYPE_FAIL result.obj");
-    assert_eq!(o.get("t").and_then(|x| x.as_str()).expect("TYPE_FAIL t"), "ok");
+    assert_eq!(
+        o.get("t").and_then(|x| x.as_str()).expect("TYPE_FAIL t"),
+        "ok"
+    );
     assert_eq!(o.get("v").and_then(|x| x.as_i64()).expect("TYPE_FAIL v"), 6);
 }
 
@@ -82,9 +86,20 @@ out
     );
 
     let o = v.as_object().expect("TYPE_FAIL result.obj");
-    assert_eq!(o.get("t").and_then(|x| x.as_str()).expect("TYPE_FAIL t"), "err");
-    let e = o.get("e").and_then(|x| x.as_object()).expect("TYPE_FAIL e.obj");
-    assert_eq!(e.get("code").and_then(|x| x.as_str()).expect("TYPE_FAIL e.code"), "E");
+    assert_eq!(
+        o.get("t").and_then(|x| x.as_str()).expect("TYPE_FAIL t"),
+        "err"
+    );
+    let e = o
+        .get("e")
+        .and_then(|x| x.as_object())
+        .expect("TYPE_FAIL e.obj");
+    assert_eq!(
+        e.get("code")
+            .and_then(|x| x.as_str())
+            .expect("TYPE_FAIL e.code"),
+        "E"
+    );
 }
 
 #[test]
@@ -95,15 +110,29 @@ fn g63_result_andthen_callback_must_return_canonical_result() {
     let _ = fs::remove_dir_all(&outdir);
 
     fs::create_dir_all("spec/tmp").expect("MKDIR_TMP_FAIL");
-    fs::write(&program, r#"
+    fs::write(
+        &program,
+        r#"
 import("std/result") as result
 let r = result.ok(5)
 result.andThen(r, fn(x){ x + 1 })
-"#.as_bytes()).expect("WRITE_SRC_FAIL");
+"#
+        .as_bytes(),
+    )
+    .expect("WRITE_SRC_FAIL");
 
     let status = Command::new("cargo")
         .args([
-            "run","-q","--bin","fardrun","--","run","--program",&program,"--out",&outdir
+            "run",
+            "-q",
+            "--bin",
+            "fardrun",
+            "--",
+            "run",
+            "--program",
+            &program,
+            "--out",
+            &outdir,
         ])
         .status()
         .expect("RUNNER_SPAWN_FAIL");
@@ -111,7 +140,10 @@ result.andThen(r, fn(x){ x + 1 })
     assert!(!status.success(), "EXPECTED_NONZERO");
     let trace = fs::read_to_string(format!("{}/trace.ndjson", outdir)).expect("READ_TRACE_FAIL");
     assert_contains(&trace, r#""t":"error""#);
-    assert_any_contains(&trace, &["QMARK_EXPECT_RESULT","EXPORT_MISSING","ERROR_BADARG"]);
+    assert_any_contains(
+        &trace,
+        &["QMARK_EXPECT_RESULT", "EXPORT_MISSING", "ERROR_BADARG"],
+    );
 }
 
 #[test]
@@ -122,14 +154,28 @@ fn g64_result_andthen_rejects_non_result_input() {
     let _ = fs::remove_dir_all(&outdir);
 
     fs::create_dir_all("spec/tmp").expect("MKDIR_TMP_FAIL");
-    fs::write(&program, r#"
+    fs::write(
+        &program,
+        r#"
 import("std/result") as result
 result.andThen(5, fn(x){ result.ok(x + 1) })
-"#.as_bytes()).expect("WRITE_SRC_FAIL");
+"#
+        .as_bytes(),
+    )
+    .expect("WRITE_SRC_FAIL");
 
     let status = Command::new("cargo")
         .args([
-            "run","-q","--bin","fardrun","--","run","--program",&program,"--out",&outdir
+            "run",
+            "-q",
+            "--bin",
+            "fardrun",
+            "--",
+            "run",
+            "--program",
+            &program,
+            "--out",
+            &outdir,
         ])
         .status()
         .expect("RUNNER_SPAWN_FAIL");
@@ -137,7 +183,10 @@ result.andThen(5, fn(x){ result.ok(x + 1) })
     assert!(!status.success(), "EXPECTED_NONZERO");
     let trace = fs::read_to_string(format!("{}/trace.ndjson", outdir)).expect("READ_TRACE_FAIL");
     assert_contains(&trace, r#""t":"error""#);
-    assert_any_contains(&trace, &["ERROR_BADARG","QMARK_EXPECT_RESULT","EXPORT_MISSING"]);
+    assert_any_contains(
+        &trace,
+        &["ERROR_BADARG", "QMARK_EXPECT_RESULT", "EXPORT_MISSING"],
+    );
 }
 
 #[test]
@@ -154,7 +203,18 @@ f()
     );
 
     let o = v.as_object().expect("TYPE_FAIL result.obj");
-    assert_eq!(o.get("t").and_then(|x| x.as_str()).expect("TYPE_FAIL t"), "err");
-    let e = o.get("e").and_then(|x| x.as_object()).expect("TYPE_FAIL e.obj");
-    assert_eq!(e.get("code").and_then(|x| x.as_str()).expect("TYPE_FAIL e.code"), "E_Q");
+    assert_eq!(
+        o.get("t").and_then(|x| x.as_str()).expect("TYPE_FAIL t"),
+        "err"
+    );
+    let e = o
+        .get("e")
+        .and_then(|x| x.as_object())
+        .expect("TYPE_FAIL e.obj");
+    assert_eq!(
+        e.get("code")
+            .and_then(|x| x.as_str())
+            .expect("TYPE_FAIL e.code"),
+        "E_Q"
+    );
 }

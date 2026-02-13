@@ -91,7 +91,9 @@ struct ArtifactNode {
     is_input: bool,
 }
 
-fn build_artifact_index_and_edges(trace_lines: &[String]) -> (BTreeMap<String, ArtifactNode>, Vec<(String, String)>) {
+fn build_artifact_index_and_edges(
+    trace_lines: &[String],
+) -> (BTreeMap<String, ArtifactNode>, Vec<(String, String)>) {
     let mut nodes: BTreeMap<String, ArtifactNode> = BTreeMap::new();
     let mut edges: Vec<(String, String)> = Vec::new(); // parent_name -> child_name
 

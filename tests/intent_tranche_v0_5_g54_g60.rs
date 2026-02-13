@@ -37,7 +37,6 @@ fn run_ok(src: &str) -> serde_json::Value {
     v.get("result").cloned().expect("RESULT_MISSING_RESULT_KEY")
 }
 
-
 #[test]
 fn g54_smoke_tranche_file_loads() {
     let v = run_ok(

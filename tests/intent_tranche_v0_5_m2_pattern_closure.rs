@@ -142,11 +142,27 @@ let f_ok = f(rec) in
     let v = unwrap_runner_envelope(&top);
     let root = get_obj(v);
 
-    assert_int(root.get("r_match").unwrap(), 1, "record subset match via match");
+    assert_int(
+        root.get("r_match").unwrap(),
+        1,
+        "record subset match via match",
+    );
     assert_int(root.get("r_let").unwrap(), 2, "record subset match via let");
-    assert_int(root.get("l_match").unwrap(), 30, "list exact-length match via match");
-    assert_int(root.get("l_let").unwrap(), 200, "list exact-length match via let");
-    assert_int(root.get("f_ok").unwrap(), 10, "fn param pattern match (record subset)");
+    assert_int(
+        root.get("l_match").unwrap(),
+        30,
+        "list exact-length match via match",
+    );
+    assert_int(
+        root.get("l_let").unwrap(),
+        200,
+        "list exact-length match via let",
+    );
+    assert_int(
+        root.get("f_ok").unwrap(),
+        10,
+        "fn param pattern match (record subset)",
+    );
 }
 
 #[test]
@@ -196,7 +212,8 @@ let _x = let {a: x, b: x} = {a: 1, b: 2} in x in
 "#;
     let e = run_fard_err(prog_dup);
 
-    let ok = e.contains("ERROR_PARSE") && (e.to_lowercase().contains("dup") || e.to_lowercase().contains("duplicate"));
+    let ok = e.contains("ERROR_PARSE")
+        && (e.to_lowercase().contains("dup") || e.to_lowercase().contains("duplicate"));
     assert!(
         ok,
         "duplicate bindings must be rejected deterministically as parse error mentioning duplicate; got:\n{}",

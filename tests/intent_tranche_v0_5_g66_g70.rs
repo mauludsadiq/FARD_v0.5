@@ -37,12 +37,13 @@ fn run_ok(src: &str) -> serde_json::Value {
     v.get("result").cloned().expect("RESULT_MISSING_RESULT_KEY")
 }
 
-
-
-
-
 fn assert_contains(hay: &str, needle: &str) {
-    assert!(hay.contains(needle), "missing needle: {}\nHAY:\n{}", needle, hay);
+    assert!(
+        hay.contains(needle),
+        "missing needle: {}\nHAY:\n{}",
+        needle,
+        hay
+    );
 }
 
 fn assert_any_contains(hay: &str, needles: &[&str]) {
@@ -53,7 +54,6 @@ fn assert_any_contains(hay: &str, needles: &[&str]) {
     }
     panic!("missing any needle {:?}\nHAY:\n{}", needles, hay);
 }
-
 
 #[test]
 fn g66_andthen_left_identity() {
@@ -143,15 +143,29 @@ fn g70_andthen_callback_result_shape_is_checked() {
     let _ = fs::remove_dir_all(&outdir);
 
     fs::create_dir_all("spec/tmp").expect("MKDIR_TMP_FAIL");
-    fs::write(&program, r#"
+    fs::write(
+        &program,
+        r#"
 import("std/result") as result
 let r = result.ok(5)
 result.andThen(r, fn(x){ {t:"ok"} })
-"#.as_bytes()).expect("WRITE_SRC_FAIL");
+"#
+        .as_bytes(),
+    )
+    .expect("WRITE_SRC_FAIL");
 
     let status = Command::new("cargo")
         .args([
-            "run","-q","--bin","fardrun","--","run","--program",&program,"--out",&outdir
+            "run",
+            "-q",
+            "--bin",
+            "fardrun",
+            "--",
+            "run",
+            "--program",
+            &program,
+            "--out",
+            &outdir,
         ])
         .status()
         .expect("RUNNER_SPAWN_FAIL");
@@ -159,5 +173,5 @@ result.andThen(r, fn(x){ {t:"ok"} })
     assert!(!status.success(), "EXPECTED_NONZERO");
     let trace = fs::read_to_string(format!("{}/trace.ndjson", outdir)).expect("READ_TRACE_FAIL");
     assert_contains(&trace, r#""t":"error""#);
-    assert_any_contains(&trace, &["QMARK_EXPECT_RESULT","ERROR_BADARG"]);
+    assert_any_contains(&trace, &["QMARK_EXPECT_RESULT", "ERROR_BADARG"]);
 }

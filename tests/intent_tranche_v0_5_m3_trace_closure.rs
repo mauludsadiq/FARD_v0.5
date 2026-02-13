@@ -99,9 +99,17 @@ fn run_fard(name: &str, src: &str, expect_ok: bool) -> String {
 }
 
 fn assert_m3_trace_closure(lines: &[String]) {
-    let allowed: BTreeSet<&str> = ["emit","module_resolve","module_graph","artifact_in","artifact_out","error","grow_node"]
-        .into_iter()
-        .collect();
+    let allowed: BTreeSet<&str> = [
+        "emit",
+        "module_resolve",
+        "module_graph",
+        "artifact_in",
+        "artifact_out",
+        "error",
+        "grow_node",
+    ]
+    .into_iter()
+    .collect();
 
     for line in lines {
         let v: serde_json::Value = serde_json::from_str(line).expect("trace line must be json");
@@ -120,9 +128,9 @@ fn assert_m3_trace_closure(lines: &[String]) {
             "module_resolve" => {
                 let _name = req_str(obj, "name");
                 let _kind = req_str(obj, "kind");
-                let _cid  = req_str(obj, "cid");
+                let _cid = req_str(obj, "cid");
                 assert_exact_keys(obj, &["t", "name", "kind", "cid"]);
-                }
+            }
             "artifact_in" => {
                 let _name = req_str(obj, "name");
                 let _path = req_str(obj, "path");
@@ -133,26 +141,37 @@ fn assert_m3_trace_closure(lines: &[String]) {
                 let _name = req_str(obj, "name");
                 let _cid = req_str(obj, "cid");
                 let parents = req_arr(obj, "parents");
-                assert!(!parents.is_empty(), "artifact_out.parents must be non-empty for derived outputs: {_name}");
+                assert!(
+                    !parents.is_empty(),
+                    "artifact_out.parents must be non-empty for derived outputs: {_name}"
+                );
 
                 for p in parents {
                     let pobj = p.as_object().expect("parent entry must be object");
                     let p_name = pobj
                         .get("name")
                         .and_then(|x| x.as_str())
-                        .unwrap_or_else(|| panic!("parent.name missing or not string for child {_name}"))
+                        .unwrap_or_else(|| {
+                            panic!("parent.name missing or not string for child {_name}")
+                        })
                         .to_string();
                     let p_cid = pobj
                         .get("cid")
                         .and_then(|x| x.as_str())
-                        .unwrap_or_else(|| panic!("parent.cid missing or not string for child {_name}"))
+                        .unwrap_or_else(|| {
+                            panic!("parent.cid missing or not string for child {_name}")
+                        })
                         .to_string();
                     assert!(!p_name.is_empty(), "parent.name empty for child {_name}");
                     assert!(!p_cid.is_empty(), "parent.cid empty for child {_name}");
 
                     let pkeys: BTreeSet<String> = pobj.keys().cloned().collect();
-                    let exp: BTreeSet<String> = ["name", "cid"].into_iter().map(|x| x.to_string()).collect();
-                    assert!(pkeys == exp, "parent entry keyset must be exactly {{name,cid}} for child {_name}");
+                    let exp: BTreeSet<String> =
+                        ["name", "cid"].into_iter().map(|x| x.to_string()).collect();
+                    assert!(
+                        pkeys == exp,
+                        "parent entry keyset must be exactly {{name,cid}} for child {_name}"
+                    );
                 }
 
                 assert_exact_keys(obj, &["t", "name", "cid", "parents"]);
@@ -161,11 +180,11 @@ fn assert_m3_trace_closure(lines: &[String]) {
                 let _code = req_str(obj, "code");
                 let _message = req_str(obj, "message");
                 assert!(obj.contains_key("e"), "required field missing: e");
-                assert_exact_keys(obj, &["t","code","message","e"]);
+                assert_exact_keys(obj, &["t", "code", "message", "e"]);
             }
             "module_graph" => {
                 let _cid = req_str(obj, "cid");
-                assert_exact_keys(obj, &["t","cid"]);
+                assert_exact_keys(obj, &["t", "cid"]);
             }
             _ => panic!("unreachable: allowed set mismatch"),
         }

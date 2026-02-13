@@ -12,10 +12,7 @@ fn m4_vocab_ontology_top_level_keyset_is_stable() {
 
     // Adjust this list to the exact root keyset you intend to freeze for 1.0.
     // The point: no surprise keys can appear without changing the gate.
-    let want: Vec<String> = vec![
-        "modules".to_string(),
-        "schema".to_string(),
-    ];
+    let want: Vec<String> = vec!["modules".to_string(), "schema".to_string()];
 
     assert_eq!(keys, want, "ontology root keyset changed");
 }

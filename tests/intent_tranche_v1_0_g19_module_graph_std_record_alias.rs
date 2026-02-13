@@ -18,7 +18,6 @@ fn get_std_digest(v: &Value, spec: &str) -> Option<String> {
     None
 }
 
-
 fn assert_sha256_digest(s: &str, label: &str) {
     assert!(s.starts_with("sha256:"), "{label} must start with sha256:");
     let hex = &s["sha256:".len()..];
@@ -28,7 +27,6 @@ fn assert_sha256_digest(s: &str, label: &str) {
         assert!(ok, "{label} must be lowercase hex");
     }
 }
-
 
 fn count_std_nodes(v: &Value, spec: &str) -> usize {
     let nodes = match v.get("nodes").and_then(|x| x.as_array()) {
@@ -54,7 +52,6 @@ fn count_std_nodes(v: &Value, spec: &str) -> usize {
     }
     c
 }
-
 
 fn get_std_node_id(v: &Value, spec: &str) -> Option<i64> {
     let nodes = v.get("nodes")?.as_array()?;
@@ -118,7 +115,6 @@ fn count_import_edges(v: &Value) -> usize {
     c
 }
 
-
 fn has_std_spec(v: &Value, spec: &str) -> bool {
     let nodes = match v.get("nodes").and_then(|x| x.as_array()) {
         Some(a) => a,
@@ -181,8 +177,16 @@ import("std/record") as B
     let mg = fs::read_to_string(out.join("module_graph.json")).expect("read module_graph.json");
     let v: Value = serde_json::from_str(&mg).expect("parse module_graph.json");
 
-    assert_eq!(count_std_nodes(&v, "std/rec"), 1, "std/rec must appear exactly once in module_graph nodes");
-    assert_eq!(count_std_nodes(&v, "std/record"), 1, "std/record must appear exactly once in module_graph nodes");
+    assert_eq!(
+        count_std_nodes(&v, "std/rec"),
+        1,
+        "std/rec must appear exactly once in module_graph nodes"
+    );
+    assert_eq!(
+        count_std_nodes(&v, "std/record"),
+        1,
+        "std/record must appear exactly once in module_graph nodes"
+    );
 
     let id_prog = 0i64;
     let id_rec = get_std_node_id(&v, "std/rec").expect("std/rec node id missing");
@@ -203,8 +207,14 @@ import("std/record") as B
         2,
         "expected exactly two import edges total for this program"
     );
-    assert!(has_std_spec(&v, "std/rec"), "module_graph must preserve std/rec spec literal");
-    assert!(has_std_spec(&v, "std/record"), "module_graph must preserve std/record spec literal");
+    assert!(
+        has_std_spec(&v, "std/rec"),
+        "module_graph must preserve std/rec spec literal"
+    );
+    assert!(
+        has_std_spec(&v, "std/record"),
+        "module_graph must preserve std/record spec literal"
+    );
 
     let d_rec = get_std_digest(&v, "std/rec").expect("std/rec digest missing");
     let d_record = get_std_digest(&v, "std/record").expect("std/record digest missing");

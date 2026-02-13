@@ -66,7 +66,10 @@ fn assert_has_key(obj: &serde_json::Map<String, serde_json::Value>, k: &str) {
 fn assert_m2_event_shape(line: &str) {
     let v: serde_json::Value = serde_json::from_str(line).expect("trace line must be json");
     let obj = v.as_object().expect("trace line must be object");
-    let t = obj.get("t").and_then(|x| x.as_str()).expect("event.t string");
+    let t = obj
+        .get("t")
+        .and_then(|x| x.as_str())
+        .expect("event.t string");
 
     match t {
         "emit" => {
@@ -89,10 +92,10 @@ fn assert_m2_event_shape(line: &str) {
             assert_req_str(obj, "cid");
         }
         "error" => {
-              assert_req_str(obj, "code");
-              assert_req_str(obj, "message");
-              assert_has_key(obj, "e");
-          }
+            assert_req_str(obj, "code");
+            assert_req_str(obj, "message");
+            assert_has_key(obj, "e");
+        }
         "module_graph" => {
             assert!(
                 obj.get("cid").and_then(|x| x.as_str()).is_some(),

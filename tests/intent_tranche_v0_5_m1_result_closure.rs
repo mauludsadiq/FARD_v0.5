@@ -38,8 +38,14 @@ fn run_fard(prog_src: &str) -> serde_json::Value {
         .arg(prog.to_string_lossy().to_string())
         .arg("--out")
         .arg(outdir.to_string_lossy().to_string())
-        .output().unwrap();
-    assert!(out.status.success(), "fardrun failed\nstdout:\n{}\nstderr:\n{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "fardrun failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let result_path = outdir.join("result.json");
     let bs = fs::read(&result_path).unwrap();
@@ -68,8 +74,16 @@ fn assert_result_shape(v: &serde_json::Value) {
 
 fn assert_runner_result_shape(v: &serde_json::Value) {
     let obj = v.as_object().expect("result.json must be object");
-    assert!(obj.len() == 1, "runner envelope must have exactly 1 key; full = {}", serde_json::to_string_pretty(v).unwrap());
-    assert!(obj.contains_key("result"), "runner envelope must have key result; full = {}", serde_json::to_string_pretty(v).unwrap());
+    assert!(
+        obj.len() == 1,
+        "runner envelope must have exactly 1 key; full = {}",
+        serde_json::to_string_pretty(v).unwrap()
+    );
+    assert!(
+        obj.contains_key("result"),
+        "runner envelope must have key result; full = {}",
+        serde_json::to_string_pretty(v).unwrap()
+    );
 }
 
 fn get_obj(v: &serde_json::Value) -> &serde_json::Map<String, serde_json::Value> {
@@ -121,7 +135,10 @@ let c = (fn(_u) { let _ = result.err({k:"keep"})? in result.ok(1) })(0) in
     assert_result_shape(errv);
     assert_result_shape(c);
 
-    assert!(a == expect_a, "andThen(ok(v), f) must equal f(v) (here ok(8))");
+    assert!(
+        a == expect_a,
+        "andThen(ok(v), f) must equal f(v) (here ok(8))"
+    );
     assert!(b == errv, "andThen(err(e), f) must equal err(e)");
 
     let cobj = get_obj(c);

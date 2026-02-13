@@ -37,14 +37,14 @@ fn run_ok(src: &str) -> serde_json::Value {
     v.get("result").cloned().expect("RESULT_MISSING_RESULT_KEY")
 }
 
-
-
-
-
 fn assert_contains(hay: &str, needle: &str) {
-    assert!(hay.contains(needle), "missing needle: {}\nHAY:\n{}", needle, hay);
+    assert!(
+        hay.contains(needle),
+        "missing needle: {}\nHAY:\n{}",
+        needle,
+        hay
+    );
 }
-
 
 #[test]
 fn g71_unwrap_ok_on_ok_returns_v() {
@@ -68,8 +68,18 @@ result.unwrap_err(r)
 "#,
     );
     let o = v.as_object().expect("TYPE_FAIL rec");
-    assert_eq!(o.get("code").and_then(|x| x.as_str()).expect("TYPE_FAIL code"), "E");
-    assert_eq!(o.get("msg").and_then(|x| x.as_str()).expect("TYPE_FAIL msg"), "m");
+    assert_eq!(
+        o.get("code")
+            .and_then(|x| x.as_str())
+            .expect("TYPE_FAIL code"),
+        "E"
+    );
+    assert_eq!(
+        o.get("msg")
+            .and_then(|x| x.as_str())
+            .expect("TYPE_FAIL msg"),
+        "m"
+    );
 }
 
 #[test]
@@ -80,15 +90,29 @@ fn g73_unwrap_ok_on_err_is_deterministic_error() {
     let _ = fs::remove_dir_all(&outdir);
 
     fs::create_dir_all("spec/tmp").expect("MKDIR_TMP_FAIL");
-    fs::write(&program, r#"
+    fs::write(
+        &program,
+        r#"
 import("std/result") as result
 let r = result.err({code:"E", msg:"m"})
 result.unwrap_ok(r)
-"#.as_bytes()).expect("WRITE_SRC_FAIL");
+"#
+        .as_bytes(),
+    )
+    .expect("WRITE_SRC_FAIL");
 
     let status = Command::new("cargo")
         .args([
-            "run","-q","--bin","fardrun","--","run","--program",&program,"--out",&outdir
+            "run",
+            "-q",
+            "--bin",
+            "fardrun",
+            "--",
+            "run",
+            "--program",
+            &program,
+            "--out",
+            &outdir,
         ])
         .status()
         .expect("RUNNER_SPAWN_FAIL");
@@ -107,15 +131,29 @@ fn g74_unwrap_err_on_ok_is_deterministic_error() {
     let _ = fs::remove_dir_all(&outdir);
 
     fs::create_dir_all("spec/tmp").expect("MKDIR_TMP_FAIL");
-    fs::write(&program, r#"
+    fs::write(
+        &program,
+        r#"
 import("std/result") as result
 let r = result.ok(9)
 result.unwrap_err(r)
-"#.as_bytes()).expect("WRITE_SRC_FAIL");
+"#
+        .as_bytes(),
+    )
+    .expect("WRITE_SRC_FAIL");
 
     let status = Command::new("cargo")
         .args([
-            "run","-q","--bin","fardrun","--","run","--program",&program,"--out",&outdir
+            "run",
+            "-q",
+            "--bin",
+            "fardrun",
+            "--",
+            "run",
+            "--program",
+            &program,
+            "--out",
+            &outdir,
         ])
         .status()
         .expect("RUNNER_SPAWN_FAIL");
@@ -145,10 +183,15 @@ fn tag(r) {
     );
 
     let o = v.as_object().expect("TYPE_FAIL rec");
-    assert_eq!(o.get("a").and_then(|x| x.as_str()).expect("TYPE_FAIL a"), "ok");
-    assert_eq!(o.get("b").and_then(|x| x.as_str()).expect("TYPE_FAIL b"), "err");
+    assert_eq!(
+        o.get("a").and_then(|x| x.as_str()).expect("TYPE_FAIL a"),
+        "ok"
+    );
+    assert_eq!(
+        o.get("b").and_then(|x| x.as_str()).expect("TYPE_FAIL b"),
+        "err"
+    );
 }
-
 
 #[test]
 fn g76_unwrap_ok_missing_v_is_frozen_error() {
@@ -158,13 +201,29 @@ fn g76_unwrap_ok_missing_v_is_frozen_error() {
     let _ = fs::remove_dir_all(&outdir);
 
     fs::create_dir_all("spec/tmp").expect("MKDIR_TMP_FAIL");
-    fs::write(&program, r#"
+    fs::write(
+        &program,
+        r#"
 import("std/result") as result
 result.unwrap_ok({t:"ok"})
-"#.as_bytes()).expect("WRITE_SRC_FAIL");
+"#
+        .as_bytes(),
+    )
+    .expect("WRITE_SRC_FAIL");
 
     let status = Command::new("cargo")
-        .args(["run","-q","--bin","fardrun","--","run","--program",&program,"--out",&outdir])
+        .args([
+            "run",
+            "-q",
+            "--bin",
+            "fardrun",
+            "--",
+            "run",
+            "--program",
+            &program,
+            "--out",
+            &outdir,
+        ])
         .status()
         .expect("RUNNER_SPAWN_FAIL");
 
@@ -182,13 +241,29 @@ fn g77_unwrap_err_missing_e_is_frozen_error() {
     let _ = fs::remove_dir_all(&outdir);
 
     fs::create_dir_all("spec/tmp").expect("MKDIR_TMP_FAIL");
-    fs::write(&program, r#"
+    fs::write(
+        &program,
+        r#"
 import("std/result") as result
 result.unwrap_err({t:"err"})
-"#.as_bytes()).expect("WRITE_SRC_FAIL");
+"#
+        .as_bytes(),
+    )
+    .expect("WRITE_SRC_FAIL");
 
     let status = Command::new("cargo")
-        .args(["run","-q","--bin","fardrun","--","run","--program",&program,"--out",&outdir])
+        .args([
+            "run",
+            "-q",
+            "--bin",
+            "fardrun",
+            "--",
+            "run",
+            "--program",
+            &program,
+            "--out",
+            &outdir,
+        ])
         .status()
         .expect("RUNNER_SPAWN_FAIL");
 
@@ -197,4 +272,3 @@ result.unwrap_err({t:"err"})
     assert_contains(&trace, r#""t":"error""#);
     assert_contains(&trace, "QMARK_EXPECT_RESULT err missing e");
 }
-

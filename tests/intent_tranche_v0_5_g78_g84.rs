@@ -6,7 +6,10 @@ static RUN_ID: AtomicUsize = AtomicUsize::new(1);
 
 fn assert_contains(hay: &str, needle: &str) {
     if !hay.contains(needle) {
-        panic!("ASSERT_CONTAINS_FAIL needle={:?}\nHAYSTACK:\n{}", needle, hay);
+        panic!(
+            "ASSERT_CONTAINS_FAIL needle={:?}\nHAYSTACK:\n{}",
+            needle, hay
+        );
     }
 }
 
@@ -27,7 +30,18 @@ fn run_ok(program_src: &str, tag: &str) -> (String, String) {
     fs::write(&program, program_src.as_bytes()).expect("WRITE_SRC_FAIL");
 
     let status = Command::new("cargo")
-        .args(["run","-q","--bin","fardrun","--","run","--program",&program,"--out",&outdir])
+        .args([
+            "run",
+            "-q",
+            "--bin",
+            "fardrun",
+            "--",
+            "run",
+            "--program",
+            &program,
+            "--out",
+            &outdir,
+        ])
         .status()
         .expect("RUNNER_SPAWN_FAIL");
 
@@ -44,7 +58,18 @@ fn run_err_trace(program_src: &str, tag: &str) -> String {
     fs::write(&program, program_src.as_bytes()).expect("WRITE_SRC_FAIL");
 
     let status = Command::new("cargo")
-        .args(["run","-q","--bin","fardrun","--","run","--program",&program,"--out",&outdir])
+        .args([
+            "run",
+            "-q",
+            "--bin",
+            "fardrun",
+            "--",
+            "run",
+            "--program",
+            &program,
+            "--out",
+            &outdir,
+        ])
         .status()
         .expect("RUNNER_SPAWN_FAIL");
 
@@ -66,7 +91,8 @@ Strategy:
 
 #[test]
 fn g78_result_ok_constructor_is_canonical_shape() {
-    let (result_json, _trace) = run_ok(r#"
+    let (result_json, _trace) = run_ok(
+        r#"
 import("std/result") as result
 
 let r = result.ok(123)
@@ -75,14 +101,17 @@ match r {
   {t:"ok", v:123} => 1,
   _ => 0
 }
-"#, "g78");
+"#,
+        "g78",
+    );
 
     assert_contains(&result_json, r#""result":1"#);
 }
 
 #[test]
 fn g79_result_err_constructor_is_canonical_shape() {
-    let (result_json, _trace) = run_ok(r#"
+    let (result_json, _trace) = run_ok(
+        r#"
 import("std/result") as result
 
 let r = result.err("boom")
@@ -91,14 +120,17 @@ match r {
   {t:"err", e:"boom"} => 1,
   _ => 0
 }
-"#, "g79");
+"#,
+        "g79",
+    );
 
     assert_contains(&result_json, r#""result":1"#);
 }
 
 #[test]
 fn g80_andthen_ok_calls_f_and_returns_f_result() {
-    let (result_json, _trace) = run_ok(r#"
+    let (result_json, _trace) = run_ok(
+        r#"
 import("std/result") as result
 
 let f = fn(x) { result.ok(x + 1) }
@@ -109,14 +141,17 @@ match r {
   {t:"ok", v:42} => 1,
   _ => 0
 }
-"#, "g80");
+"#,
+        "g80",
+    );
 
     assert_contains(&result_json, r#""result":1"#);
 }
 
 #[test]
 fn g81_andthen_err_passthrough_preserves_e() {
-    let (result_json, _trace) = run_ok(r#"
+    let (result_json, _trace) = run_ok(
+        r#"
 import("std/result") as result
 
 let f = fn(x) { result.ok(x + 1) }
@@ -127,14 +162,17 @@ match r {
   {t:"err", e:"E0"} => 1,
   _ => 0
 }
-"#, "g81");
+"#,
+        "g81",
+    );
 
     assert_contains(&result_json, r#""result":1"#);
 }
 
 #[test]
 fn g82_andthen_ok_requires_f_return_result_shape() {
-    let trace = run_err_trace(r#"
+    let trace = run_err_trace(
+        r#"
 import("std/result") as result
 
 let bad = fn(x) { 7 }   // not a Result
@@ -142,7 +180,9 @@ let bad = fn(x) { 7 }   // not a Result
 let _ = result.andThen(result.ok(1), bad)
 
 0
-"#, "g82");
+"#,
+        "g82",
+    );
 
     assert_contains(&trace, r#""t":"error""#);
     assert_contains(&trace, "QMARK_EXPECT_RESULT expected result");
@@ -150,26 +190,32 @@ let _ = result.andThen(result.ok(1), bad)
 
 #[test]
 fn g83_qmark_ok_yields_v() {
-    let (result_json, _trace) = run_ok(r#"
+    let (result_json, _trace) = run_ok(
+        r#"
 import("std/result") as result
 
 let x = result.ok(9)?
 
 x
-"#, "g83");
+"#,
+        "g83",
+    );
 
     assert_contains(&result_json, r#""result":9"#);
 }
 
 #[test]
 fn g84_qmark_err_is_frozen_propagation() {
-    let trace = run_err_trace(r#"
+    let trace = run_err_trace(
+        r#"
 import("std/result") as result
 
 let _ = result.err("E_Q")?
 
 0
-"#, "g84");
+"#,
+        "g84",
+    );
 
     assert_contains(&trace, r#""t":"error""#);
     // Your runtime is already emitting this (seen on stderr): freeze it in trace assertions.
