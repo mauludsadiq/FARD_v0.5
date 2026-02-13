@@ -1,0 +1,3 @@
+
+import("std/result") as result
+result.ok(7)
