@@ -1,7 +1,9 @@
 pub static BUILTIN_STD_EXPORTS: &[(&str, &[&str])] = &[
+  ("std/artifact", &["bytes","cid_of_bytes","in","out"]),
   ("std/flow", &["pipe"]),
   ("std/fs", &["writeAll"]),
   ("std/grow", &["unfold","unfold_tree"]),
+  ("std/hash", &["cid_hex","is_sha256","sha256_bytes","sha256_text"]),
   ("std/http", &["okOr","post"]),
   ("std/int", &["clamp"]),
   ("std/json", &["pathGet","pathSet"]),
@@ -15,4 +17,5 @@ pub static BUILTIN_STD_EXPORTS: &[(&str, &[&str])] = &[
   ("std/schema", &["check"]),
   ("std/str", &["concat","contains","endsWith","join","len","padLeft","padRight","replace","slice","split","startsWith"]),
   ("std/time", &["add","sub"]),
+  ("std/trace", &["artifact_in","artifact_out","emit","module_graph"]),
 ];

@@ -51,6 +51,7 @@ pub fn require_minimum_surface(mods: &BTreeMap<String, Vec<String>>) -> Result<(
     "std/result","std/option","std/list","std/rec","std/str","std/json",
     "std/http","std/fs","std/path","std/null","std/int","std/schema",
     "std/flow","std/grow","std/map","std/time",
+    "std/trace","std/artifact","std/hash",
   ];
   for m in req.iter() {
     if !mods.contains_key(*m) { return Err(format!("M4_MISSING_MODULE {}", m)); }

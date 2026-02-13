@@ -103,6 +103,21 @@ pub fn builtin_sig_table() -> BTreeMap<String, BuiltinSig> {
     ins(&mut m, "std/result", "unwrapOr", 2, true);
     ins(&mut m, "std/result", "unwrapOrElse", 2, true);
 
+    ins(&mut m, "std/trace", "emit", 2, true);
+    ins(&mut m, "std/trace", "artifact_in", 2, true);
+    ins(&mut m, "std/trace", "artifact_out", 2, true);
+    ins(&mut m, "std/trace", "module_graph", 1, true);
+
+    ins(&mut m, "std/artifact", "in", 2, true);
+    ins(&mut m, "std/artifact", "out", 2, true);
+    ins(&mut m, "std/artifact", "bytes", 1, true);
+    ins(&mut m, "std/artifact", "cid_of_bytes", 1, true);
+
+    ins(&mut m, "std/hash", "sha256_bytes", 1, true);
+    ins(&mut m, "std/hash", "sha256_text", 1, true);
+    ins(&mut m, "std/hash", "is_sha256", 1, true);
+    ins(&mut m, "std/hash", "cid_hex", 1, true);
+
     ins(&mut m, "std/schema", "check", 2, true);
 
     ins(&mut m, "std/str", "contains", 2, true);

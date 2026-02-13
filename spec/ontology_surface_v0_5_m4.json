@@ -15,4 +15,8 @@
   "std/grow":{"exports":["unfold","unfold_tree"]},
   "std/map":{"exports":["get","set"]},
   "std/time":{"exports":["add","sub"]}
+,
+  "std/trace":{"exports":["emit","artifact_in","artifact_out","module_graph"]},
+  "std/artifact":{"exports":["in","out","bytes","cid_of_bytes"]},
+  "std/hash":{"exports":["sha256_bytes","sha256_text","is_sha256","cid_hex"]}
 }}
