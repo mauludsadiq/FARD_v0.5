@@ -98,6 +98,12 @@ fn assert_m2_event_shape(line: &str) {
                 "error requires message:string"
             );
         }
+        "module_graph" => {
+            assert!(
+                obj.get("cid").and_then(|x| x.as_str()).is_some(),
+                "module_graph requires cid:string"
+            );
+        }
         _ => panic!("M2: unknown event kind: {t}"),
     }
 }

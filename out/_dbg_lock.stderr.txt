@@ -1,3 +1,0 @@
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
-     Running `target/debug/fardrun tests/gate/programs/g09_lock_mismatch/main.fard --out out/_dbg_lock --lock tests/gate/programs/g09_lock_mismatch/fard.lock.json`
-Error: missing --program

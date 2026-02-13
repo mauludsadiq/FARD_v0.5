@@ -1,3 +1,0 @@
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
-     Running `target/debug/fardrun tests/gate/programs/g01_core_eval.fard --out out/_dbg_g01`
-Error: missing --program

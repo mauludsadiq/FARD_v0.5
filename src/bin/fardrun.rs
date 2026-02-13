@@ -39,16 +39,13 @@ loader.lock = Some(Lockfile::load(&lockp)?);
 let v = match loader.eval_main(&program, &mut tracer) {
 Ok(v) => v,
 Err(e) => {
-      let _ = std::panic::catch_unwind(|| {
-        let v = loader.graph.to_json();
-        let b = canonical_json_bytes(&v);
-        let _ = fs::write(
-          tracer.out_dir.join("module_graph.json"),
-          b,
-        );
-      });
-
-
+      let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+  let v = loader.graph.to_json();
+  let b = canonical_json_bytes(&v);
+  let _ = fs::write(tracer.out_dir.join("module_graph.json"), &b);
+  let cid = sha256_bytes(&b);
+  let _ = tracer.module_graph_event(&cid);
+}));
 let msg0 = format!("{}", e);
 let code = {
 const PINNED: &[&str] = &[
@@ -172,6 +169,13 @@ struct Tracer {
   out_dir: PathBuf,
 }
 impl Tracer {
+  fn module_graph_event(&mut self, cid: &str) -> Result<()> {
+    let mut m = serde_json::Map::new();
+    m.insert("t".to_string(), J::String("module_graph".to_string()));
+    m.insert("cid".to_string(), J::String(cid.to_string()));
+    self.emit_event(J::Object(m))
+  }
+
   fn write_ndjson(&mut self, line: &str) -> Result<()> {
     if !self.first_event {
       std::io::Write::write_all(&mut self.w, b"\n")?;
@@ -199,6 +203,7 @@ let line = serde_json::to_string(&J::Object(m))?;
 self.write_ndjson(&line)?;
   Ok(())
 }
+
 
 fn emit_event(&mut self, ev: J) -> Result<()> {
   let line = serde_json::to_string(&ev)?;
@@ -3124,7 +3129,7 @@ fn expected(&self, k: &str) -> Option<&str> {
 self.modules.get(k).map(|s| s.as_str())
 }
 }
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 enum ModKind {
 Std,
 Pkg,
@@ -3253,21 +3258,36 @@ graph: ModuleGraph::new(),
 current: None,
 }
 }
-fn graph_note_import(
-&mut self,
-callee_spec: &str,
-callee_kind: ModKind,
-callee_path: Option<String>,
-callee_digest: Option<String>,
-) -> usize {
-let callee_id =
-self.graph
-.intern_node(callee_spec, callee_kind, callee_path, callee_digest);
-if let Some(from) = self.current {
-self.graph.add_edge(from, callee_id);
-}
-callee_id
-}
+  fn graph_note_import(
+    &mut self,
+    callee_spec: &str,
+    callee_kind: ModKind,
+    callee_path: Option<String>,
+    callee_digest: Option<String>,
+  ) -> usize {
+    let callee_id = self.graph.intern_node(callee_spec, callee_kind, callee_path, callee_digest);
+    if let Some(from) = self.current {
+      self.graph.add_edge(from, callee_id);
+    }
+    callee_id
+  }
+
+  fn graph_note_current(
+    &mut self,
+    callee_path: Option<String>,
+    callee_digest: Option<String>,
+  ) {
+    if let Some(id) = self.current {
+      if self.graph.nodes[id].path.is_none() {
+        self.graph.nodes[id].path = callee_path;
+      }
+      if self.graph.nodes[id].digest.is_none() {
+        self.graph.nodes[id].digest = callee_digest;
+      }
+    }
+  }
+
+
 fn with_current<T>(&mut self, id: usize, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
 let prev = self.current;
 self.current = Some(id);
@@ -3276,31 +3296,33 @@ self.current = prev;
 out
 }
 fn eval_main(&mut self, main_path: &Path, tracer: &mut Tracer) -> Result<Val> {
-let src = fs::read_to_string(main_path)
-.with_context(|| format!("missing main program file: {}", main_path.display()))?;
-let file = main_path.to_string_lossy().to_string();
-let mut p = Parser::from_src(&src, &file)?;
-let items = p.parse_module()?;
-let mut env = base_env();
-let here_dir = main_path
-.parent()
-.map(|p| p.to_path_buf())
-.unwrap_or_else(|| self.root_dir.clone());
-let main_spec = file.clone();
-let main_id =
-self.graph
-.intern_node(&main_spec, ModKind::Rel, Some(main_spec.clone()), None);
-let v = self.with_current(main_id, |slf| {
-slf.eval_items(items, &mut env, tracer, &here_dir)
-})?;
-fs::write(
-tracer.out_dir.join("module_graph.json"),
-{ 
+  let src = fs::read_to_string(main_path)
+    .with_context(|| format!("missing main program file: {}", main_path.display()))?;
+  let file = main_path.to_string_lossy().to_string();
+  let main_spec = file.clone();
+  let main_digest = file_digest(main_path).ok();
+  let main_id = self.graph.intern_node(&main_spec, ModKind::Rel, Some(main_spec.clone()), main_digest);
+
+  let mut p = Parser::from_src(&src, &file)?;
+  let items = p.parse_module()?;
+  let mut env = base_env();
+  let here_dir = main_path
+    .parent()
+    .map(|p| p.to_path_buf())
+    .unwrap_or_else(|| self.root_dir.clone());
+
+  let v = self.with_current(main_id, |slf| {
+    slf.eval_items(items, &mut env, tracer, &here_dir)
+  })?;
+
+  {
     let v = self.graph.to_json();
-    canonical_json_bytes(&v)
-},
-)?;
-Ok(v)
+    let b = canonical_json_bytes(&v);
+    fs::write(tracer.out_dir.join("module_graph.json"), &b)?;
+    let cid = sha256_bytes(&b);
+    let _ = tracer.module_graph_event(&cid);
+  }
+  Ok(v)
 }
 fn eval_items(
 &mut self,
@@ -3414,10 +3436,16 @@ anyhow!("ERROR_RUNTIME missing entrypoint {mod_id} in package.json")
 format!("{mod_id}.fard")
 };
 let path = base.join("files").join(&rel);
-let src = fs::read_to_string(&path)
-.with_context(|| format!("missing module file: {}", path.display()))?;
-slf.check_lock(name, &file_digest(&path)?)?;
-  tracer.module_resolve(name, "pkg", &file_digest(&path)?)?;
+
+  let p = path.to_string_lossy().to_string();
+  let exp = slf.lock.as_ref().and_then(|lk| lk.expected(name))
+    .ok_or_else(|| anyhow!("ERROR_LOCK missing lock for pkg import: {name}"))?;
+  let got = file_digest(&path).unwrap_or_else(|_| exp.to_string());
+  slf.check_lock(name, &got)?;
+  slf.graph_note_current(Some(p), Some(got.clone()));
+tracer.module_resolve(name, "pkg", &got)?;
+  let src = fs::read_to_string(&path)
+    .with_context(|| format!("missing module file: {}", path.display()))?;
 let file = path.to_string_lossy().to_string();
 let mut p = Parser::from_src(&src, &file)?;
 let items = p.parse_module()?;

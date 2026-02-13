@@ -1,7 +1,6 @@
 
-import("std/int") as int
+import("std/json") as json
 
-let a = int.parse("42")?
-let b = int.pow(2, 10)
-emit({tag: "g58", a: a, b: b})
-{a: a, b: b}
+let x = {a: 1, b: 2}
+emit({tag: "g54", x: x})
+x

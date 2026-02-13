@@ -1,3 +1,0 @@
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
-     Running `target/debug/fardrun --program tests/gate/programs/g06_std_grow_unfold.fard --out out/_dbg_g07`
-Error: expected keyword then
