@@ -45,26 +45,23 @@ fn write_m5_digests(out_dir: &std::path::Path, runtime_version: &str, trace_form
     files.insert(leaf_name.to_string(), leaf_h.clone());
 
     let mut pre = String::new();
-    pre.push_str("cid_run_v0\n");
     pre.push_str(&format!("runtime_version={}\n", runtime_version));
     pre.push_str(&format!("trace_format_version={}\n", trace_format_version));
     pre.push_str(&format!("stdlib_root_digest={}\n", stdlib_root_digest));
-    pre.push_str(&format!("trace.ndjson={}\n", trace_h));
-    pre.push_str(&format!("module_graph.json={}\n", modg_h));
-    pre.push_str(&format!("{}={}\n", leaf_name, leaf_h));
+    pre.push_str(&format!("ok={}\n", if ok { "true" } else { "false" }));
+    for (name, h) in files.iter() {
+      pre.push_str(&format!("{}={}\n", name, h));
+    }
 
-    let bundle_cid = format!("sha256:{}", sha256_bytes_hex(pre.as_bytes()));
+    let preimage_sha256 = format!("sha256:{}", sha256_bytes_hex(pre.as_bytes()));
 
     let dig = serde_json::json!({
-        "t": "digests_v0",
-        "algo": "sha256",
-        "id": {
-            "runtime_version": runtime_version,
-            "trace_format_version": trace_format_version,
-            "stdlib_root_digest": stdlib_root_digest
-        },
-        "files": files,
-        "bundle_cid": bundle_cid
+      "runtime_version": runtime_version,
+      "trace_format_version": trace_format_version,
+      "stdlib_root_digest": stdlib_root_digest,
+      "ok": ok,
+      "files": files,
+      "preimage_sha256": preimage_sha256
     });
 
     let out = canonical_json_bytes(&dig);
@@ -201,9 +198,18 @@ sm.insert("col".to_string(), J::Number((cl as u64).into()));
 em.insert("span".to_string(), J::Object(sm));
 }
 fs::write(
-out_dir.join("error.json"),
-serde_json::to_vec(&J::Object(em))?,
-)?;
+      out_dir.join("error.json"),
+      serde_json::to_vec(&J::Object(em))?,
+    )?;
+
+    {
+      let mg = loader.graph.to_json();
+      let b = canonical_json_bytes(&mg);
+      fs::write(out_dir.join("module_graph.json"), &b)?;
+
+      let stdlib_root_digest = loader.stdlib_root_digest();
+      write_m5_digests(&out_dir, runtime_version, trace_format_version, &stdlib_root_digest, false)?;
+    }
 
   if let Some(ev) = &extra_e {
   tracer.error_event_with_e(&code, &msg, ev).ok();

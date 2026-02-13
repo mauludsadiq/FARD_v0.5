@@ -1,8 +1,9 @@
 
 import("std/list") as list
 
-let a = list.range(0, 5)        
-let b = list.repeat("x", 3)     
-let c = list.concat([a, [9], [10]])
-emit({tag: "g56", a: a, b: b, c: c})
-{a: a, b: b, c: c}
+let xs = list.range(0, 10)
+let evens = list.filter(xs, fn(x){ 1 - (x - ((x / 2) * 2)) })
+let sq = list.map(evens, fn(x){ x * x })
+let sum = list.fold(sq, 0, fn(acc, x){ acc + x })
+emit({tag: "g57", sum: sum})
+{sum: sum}
