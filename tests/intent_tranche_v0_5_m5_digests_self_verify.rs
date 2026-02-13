@@ -2,12 +2,94 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::process::Command;
 
-fn run(program_src: &str, outdir: &str, program_path: &str) -> std::process::ExitStatus {
-    let _ = fs::remove_dir_all(outdir);
-    fs::create_dir_all("spec/tmp").expect("MKDIR_TMP_FAIL");
-    fs::write(program_path, program_src.as_bytes()).expect("WRITE_SRC_FAIL");
+use serde_json::Value as J;
+use sha2::{Digest, Sha256};
 
-    Command::new("cargo")
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut h = Sha256::new();
+    h.update(bytes);
+    format!("{:x}", h.finalize())
+}
+
+fn sha256_file(path: &str) -> String {
+    let b = fs::read(path).expect("READ_FILE_FOR_HASH");
+    format!("sha256:{}", sha256_hex(&b))
+}
+
+fn read_json(path: &str) -> J {
+    let b = fs::read(path).expect("READ_JSON_BYTES");
+    serde_json::from_slice(&b).expect("READ_JSON_PARSE")
+}
+
+fn canon_json(v: &J) -> anyhow::Result<String> {
+    use anyhow::Context;
+
+    fn canon_value(v: &J, out: &mut String) -> anyhow::Result<()> {
+        match v {
+            J::Null => {
+                out.push_str("null");
+                Ok(())
+            }
+            J::Bool(b) => {
+                out.push_str(if *b { "true" } else { "false" });
+                Ok(())
+            }
+            J::Number(n) => {
+                let s = n.to_string();
+                if s.contains('+') {
+                    anyhow::bail!("M5_CANON_NUM_PLUS");
+                }
+                if s.starts_with('0') && s.len() > 1 && !s.starts_with("0.") {
+                    anyhow::bail!("M5_CANON_NUM_LEADING_ZERO");
+                }
+                if s.ends_with(".0") {
+                    anyhow::bail!("M5_CANON_NUM_DOT0");
+                }
+                out.push_str(&s);
+                Ok(())
+            }
+            J::String(s) => {
+                out.push_str(&serde_json::to_string(s).context("M5_CANON_STRING_FAIL")?);
+                Ok(())
+            }
+            J::Array(a) => {
+                out.push('[');
+                for (i, x) in a.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    canon_value(x, out)?;
+                }
+                out.push(']');
+                Ok(())
+            }
+            J::Object(m) => {
+                let mut keys: Vec<&String> = m.keys().collect();
+                keys.sort();
+                out.push('{');
+                for (i, k) in keys.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    out.push_str(&serde_json::to_string(k).context("M5_CANON_KEY_ESC_FAIL")?);
+                    out.push(':');
+                    canon_value(&m[*k], out)?;
+                }
+                out.push('}');
+                Ok(())
+            }
+        }
+    }
+
+    let mut out = String::new();
+    canon_value(v, &mut out)?;
+    Ok(out)
+}
+
+fn run_fardrun_ok(program: &str, outdir: &str) {
+    let _ = fs::remove_dir_all(outdir);
+
+    let st = Command::new("cargo")
         .args([
             "run",
             "-q",
@@ -16,42 +98,129 @@ fn run(program_src: &str, outdir: &str, program_path: &str) -> std::process::Exi
             "--",
             "run",
             "--program",
-            program_path,
+            program,
             "--out",
             outdir,
         ])
         .status()
-        .expect("RUNNER_SPAWN_FAIL")
+        .expect("SPAWN_FARDRUN");
+
+    assert!(st.success(), "FARDRUN_EXPECTED_OK");
 }
 
-fn assert_exists(p: &str) {
-    assert!(fs::metadata(p).is_ok(), "MISSING {}", p);
+fn run_fardrun_err(program: &str, outdir: &str) {
+    let _ = fs::remove_dir_all(outdir);
+
+    let st = Command::new("cargo")
+        .args([
+            "run",
+            "-q",
+            "--bin",
+            "fardrun",
+            "--",
+            "run",
+            "--program",
+            program,
+            "--out",
+            outdir,
+        ])
+        .status()
+        .expect("SPAWN_FARDRUN");
+
+    assert!(!st.success(), "FARDRUN_EXPECTED_ERR");
+    assert!(fs::metadata(outdir).is_ok(), "OUTDIR_MISSING_ON_ERR");
+    assert!(
+        fs::metadata(format!("{}/digests.json", outdir)).is_ok(),
+        "DIGESTS_MISSING_ON_ERR"
+    );
 }
 
-fn sha256_bytes_hex(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let mut h = Sha256::new();
-    h.update(bytes);
-    format!("{:x}", h.finalize())
+fn verify_bundle(outdir: &str) {
+    let st = Command::new("cargo")
+        .args([
+            "run",
+            "-q",
+            "--bin",
+            "fardverify",
+            "--",
+            "bundle",
+            "--out",
+            outdir,
+        ])
+        .status()
+        .expect("SPAWN_FARDVERIFY_BUNDLE");
+    assert!(st.success(), "BUNDLE_VERIFY_EXPECTED_PASS");
 }
 
-fn sha256_file_hex(path: &str) -> String {
-    let b = fs::read(path).expect("READ_FAIL");
-    sha256_bytes_hex(&b)
-}
+fn assert_digests_self_verify(outdir: &str) {
+    let dig = read_json(&format!("{}/digests.json", outdir));
+    let dobj = dig.as_object().expect("DIGESTS_NOT_OBJECT");
 
-fn must_str(v: &serde_json::Value, k: &str) -> String {
-    v.get(k)
-        .and_then(|x| x.as_str())
-        .unwrap_or_else(|| panic!("MISSING_STR {}", k))
-        .to_string()
-}
+    let ok = dobj
+        .get("ok")
+        .expect("M5_MISSING_ok")
+        .as_bool()
+        .expect("M5_ok_NOT_BOOL");
 
-fn must_obj(v: &serde_json::Value, k: &str) -> serde_json::Map<String, serde_json::Value> {
-    v.get(k)
-        .and_then(|x| x.as_object())
-        .unwrap_or_else(|| panic!("MISSING_OBJ {}", k))
-        .clone()
+    let runtime_version = dobj
+        .get("runtime_version")
+        .expect("M5_MISSING_runtime_version")
+        .as_str()
+        .expect("M5_runtime_version_NOT_STR")
+        .to_string();
+
+    let trace_format_version = dobj
+        .get("trace_format_version")
+        .expect("M5_MISSING_trace_format_version")
+        .as_str()
+        .expect("M5_trace_format_version_NOT_STR")
+        .to_string();
+
+    let stdlib_root_digest = dobj
+        .get("stdlib_root_digest")
+        .expect("M5_MISSING_stdlib_root_digest")
+        .as_str()
+        .expect("M5_stdlib_root_digest_NOT_STR")
+        .to_string();
+
+    let preimage_sha256 = dobj
+        .get("preimage_sha256")
+        .expect("M5_MISSING_preimage_sha256")
+        .as_str()
+        .expect("M5_preimage_sha256_NOT_STR")
+        .to_string();
+
+    let files_obj = dobj
+        .get("files")
+        .expect("M5_MISSING_files")
+        .as_object()
+        .expect("M5_files_NOT_OBJECT");
+
+    let mut files: BTreeMap<String, String> = BTreeMap::new();
+    for (k, v) in files_obj.iter() {
+        let h = v.as_str().expect("M5_file_hash_NOT_STR").to_string();
+        files.insert(k.clone(), h);
+    }
+
+    for (name, want) in files.iter() {
+        let got = sha256_file(&format!("{}/{}", outdir, name));
+        assert_eq!(want, &got, "M5_FILE_HASH_MISMATCH {}", name);
+    }
+
+    let preimage = serde_json::json!({
+      "files": files,
+      "ok": ok,
+      "runtime_version": runtime_version,
+      "stdlib_root_digest": stdlib_root_digest,
+      "trace_format_version": trace_format_version
+    });
+
+    let canon = canon_json(&preimage).expect("M5_CANON_JSON_FAIL");
+    let expected = format!("sha256:{}", sha256_hex(canon.as_bytes()));
+    assert_eq!(
+        expected, preimage_sha256,
+        "EXPECTED_M5_PREIMAGE_SHA256_MATCH"
+    );
 }
 
 #[test]
@@ -59,63 +228,9 @@ fn m5_digests_self_verify_ok() {
     let outdir = "out/m5_digest_verify_ok";
     let program = "spec/tmp/m5_digest_verify_ok.fard";
 
-    let st = run(
-        r#"
-import("std/result") as result
-result.ok(1)
-"#,
-        outdir,
-        program,
-    );
-    assert!(st.success(), "RUNNER_NONZERO");
-
-    assert_exists("out/m5_digest_verify_ok/trace.ndjson");
-    assert_exists("out/m5_digest_verify_ok/module_graph.json");
-    assert_exists("out/m5_digest_verify_ok/digests.json");
-    assert_exists("out/m5_digest_verify_ok/result.json");
-
-    let dig_b = fs::read("out/m5_digest_verify_ok/digests.json").expect("READ_DIGESTS_FAIL");
-    let dig: serde_json::Value = serde_json::from_slice(&dig_b).expect("DIGESTS_JSON_PARSE_FAIL");
-
-    let runtime_version = must_str(&dig, "runtime_version");
-    let trace_format_version = must_str(&dig, "trace_format_version");
-    let stdlib_root_digest = must_str(&dig, "stdlib_root_digest");
-    let ok = dig
-        .get("ok")
-        .and_then(|x| x.as_bool())
-        .expect("MISSING_BOOL ok");
-    assert!(ok, "EXPECTED_OK_TRUE");
-
-    let files = must_obj(&dig, "files");
-
-    // Ensure stable order for preimage reproduction (BTreeMap)
-    let mut file_map: BTreeMap<String, String> = BTreeMap::new();
-    for (k, v) in files.iter() {
-        let s = v.as_str().unwrap_or_else(|| panic!("files[{}] not str", k));
-        file_map.insert(k.clone(), s.to_string());
-    }
-
-    // recompute file hashes
-    for (name, want) in file_map.iter() {
-        let p = format!("{}/{}", outdir, name);
-        let got = format!("sha256:{}", sha256_file_hex(&p));
-        assert_eq!(&got, want, "FILE_DIGEST_MISMATCH {}", name);
-    }
-
-    // recompute preimage hash
-    // preimage format must match runtime's write_m5_digests exactly.
-    let mut pre = String::new();
-    pre.push_str("cid_run_v0\n");
-    pre.push_str(&format!("runtime_version={}\n", runtime_version));
-    pre.push_str(&format!("trace_format_version={}\n", trace_format_version));
-    pre.push_str(&format!("stdlib_root_digest={}\n", stdlib_root_digest));
-    pre.push_str(&format!("ok={}\n", if ok { "true" } else { "false" }));
-    for (name, h) in file_map.iter() {
-        pre.push_str(&format!("{}={}\n", name, h));
-    }
-    let pre_h = format!("sha256:{}", sha256_bytes_hex(pre.as_bytes()));
-    let want_pre = must_str(&dig, "preimage_sha256");
-    assert_eq!(pre_h, want_pre, "PREIMAGE_HASH_MISMATCH");
+    run_fardrun_ok(program, outdir);
+    verify_bundle(outdir);
+    assert_digests_self_verify(outdir);
 }
 
 #[test]
@@ -123,35 +238,7 @@ fn m5_digests_self_verify_err() {
     let outdir = "out/m5_digest_verify_err";
     let program = "spec/tmp/m5_digest_verify_err.fard";
 
-    let st = run(
-        r#"
-import("std/result") as result
-let _ = result.err({code:"E", msg:"x"})?
-result.ok(0)
-"#,
-        outdir,
-        program,
-    );
-    assert!(!st.success(), "EXPECTED_NONZERO");
-
-    assert_exists("out/m5_digest_verify_err/trace.ndjson");
-    assert_exists("out/m5_digest_verify_err/module_graph.json");
-    assert_exists("out/m5_digest_verify_err/digests.json");
-    assert_exists("out/m5_digest_verify_err/error.json");
-
-    let dig_b = fs::read("out/m5_digest_verify_err/digests.json").expect("READ_DIGESTS_FAIL");
-    let dig: serde_json::Value = serde_json::from_slice(&dig_b).expect("DIGESTS_JSON_PARSE_FAIL");
-
-    let ok = dig
-        .get("ok")
-        .and_then(|x| x.as_bool())
-        .expect("MISSING_BOOL ok");
-    assert!(!ok, "EXPECTED_OK_FALSE");
-
-    let files = must_obj(&dig, "files");
-    assert!(files.contains_key("error.json"), "FILES_MISSING_error.json");
-    assert!(
-        !files.contains_key("result.json"),
-        "FILES_SHOULD_NOT_INCLUDE_result.json"
-    );
+    run_fardrun_err(program, outdir);
+    verify_bundle(outdir);
+    assert_digests_self_verify(outdir);
 }
