@@ -99,7 +99,7 @@ fn run_fard(name: &str, src: &str, expect_ok: bool) -> String {
 }
 
 fn assert_m3_trace_closure(lines: &[String]) {
-    let allowed: BTreeSet<&str> = ["emit", "module_resolve", "artifact_in", "artifact_out", "error", "grow_node"]
+    let allowed: BTreeSet<&str> = ["emit","module_resolve","module_graph","artifact_in","artifact_out","error","grow_node"]
         .into_iter()
         .collect();
 
@@ -120,9 +120,9 @@ fn assert_m3_trace_closure(lines: &[String]) {
             "module_resolve" => {
                 let _name = req_str(obj, "name");
                 let _kind = req_str(obj, "kind");
-                let _cid = req_str(obj, "cid");
+                let _cid  = req_str(obj, "cid");
                 assert_exact_keys(obj, &["t", "name", "kind", "cid"]);
-            }
+                }
             "artifact_in" => {
                 let _name = req_str(obj, "name");
                 let _path = req_str(obj, "path");
@@ -162,6 +162,10 @@ fn assert_m3_trace_closure(lines: &[String]) {
                 let _message = req_str(obj, "message");
                 assert!(obj.contains_key("e"), "required field missing: e");
                 assert_exact_keys(obj, &["t","code","message","e"]);
+            }
+            "module_graph" => {
+                let _cid = req_str(obj, "cid");
+                assert_exact_keys(obj, &["t","cid"]);
             }
             _ => panic!("unreachable: allowed set mismatch"),
         }
