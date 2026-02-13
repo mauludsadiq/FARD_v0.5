@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
+use std::process::Command;
 
 use serde_json::Value as J;
 use sha2::{Digest, Sha256};
@@ -65,6 +66,14 @@ fn read_json(path: &str) -> J {
 #[test]
 fn m5_preimage_canonicalization_matches_verifier() {
   let outdir = "out/m5_ok_bundle";
+
+  let _ = fs::remove_dir_all(outdir);
+
+  let st = Command::new("cargo")
+    .args(["run","-q","--bin","fardrun","--","run","--program","spec/tmp/m5_ok_bundle.fard","--out",outdir])
+    .status()
+    .expect("SPAWN_FARDRUN");
+  assert!(st.success(), "FARDRUN_FAILED");
 
   // digests.json is produced by fardrun; this test asserts the preimage
   // hash is consistent with the canonical-json preimage definition.
