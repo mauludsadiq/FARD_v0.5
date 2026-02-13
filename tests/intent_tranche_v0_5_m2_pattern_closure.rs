@@ -152,9 +152,9 @@ let f_ok = f(rec) in
 #[test]
 fn m2_pattern_mismatch_errors_are_frozen() {
     let prog_let_mismatch = r#"
-let _x = let {a: y} = {b: 1} in y in
-0
-"#;
+  let _ = let {a: y} = {b: 1} in y in
+  0
+  "#;
     let e1 = run_fard_err(prog_let_mismatch);
     assert!(
         e1.contains("ERROR_PAT_MISMATCH"),
