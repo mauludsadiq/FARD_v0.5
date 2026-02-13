@@ -25,25 +25,140 @@ fn write_json(p: &Path, v: &J) -> Result<()> {
     Ok(())
 }
 
+fn canon_json(v: &J) -> Result<String> {
+    fn canon_value(v: &J, out: &mut String) -> Result<()> {
+        match v {
+            J::Null => {
+                out.push_str("null");
+                Ok(())
+            }
+            J::Bool(b) => {
+                out.push_str(if *b { "true" } else { "false" });
+                Ok(())
+            }
+            J::Number(n) => {
+                let s = n.to_string();
+                if s.contains('+') {
+                    bail!("M5_CANON_NUM_PLUS");
+                }
+                if s.starts_with('0') && s.len() > 1 && !s.starts_with("0.") {
+                    bail!("M5_CANON_NUM_LEADING_ZERO");
+                }
+                if s.ends_with(".0") {
+                    bail!("M5_CANON_NUM_DOT0");
+                }
+                out.push_str(&s);
+                Ok(())
+            }
+            J::String(s) => {
+                out.push_str(&serde_json::to_string(s).context("M5_CANON_STRING_FAIL")?);
+                Ok(())
+            }
+            J::Array(a) => {
+                out.push('[');
+                for (i, x) in a.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    canon_value(x, out)?;
+                }
+                out.push(']');
+                Ok(())
+            }
+            J::Object(m) => {
+                let mut keys: Vec<&String> = m.keys().collect();
+                keys.sort();
+                out.push('{');
+                for (i, k) in keys.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    out.push_str(&serde_json::to_string(k).context("M5_CANON_KEY_ESC_FAIL")?);
+                    out.push(':');
+                    canon_value(&m[*k], out)?;
+                }
+                out.push('}');
+                Ok(())
+            }
+        }
+    }
+
+    let mut out = String::new();
+    canon_value(v, &mut out)?;
+    Ok(out)
+}
+
 fn usage() -> ! {
-    eprintln!("usage: fardlock gen --root <app_root> --registry <registry_dir> --out <out_dir>");
+    eprintln!("usage:");
+    eprintln!("  fardlock gen --root <app_root> --registry <registry_dir> --out <out_dir>");
+    eprintln!("  fardlock show-preimage --out <run_out_dir>");
     std::process::exit(2);
 }
 
-fn main() -> Result<()> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.len() < 1 {
-        usage();
+fn get_out(args: &[String]) -> Result<PathBuf> {
+    let mut out: Option<PathBuf> = None;
+    let mut i = 0usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--out" => {
+                i += 1;
+                let v = args.get(i).ok_or_else(|| anyhow!("missing --out value"))?;
+                out = Some(PathBuf::from(v));
+            }
+            _ => {}
+        }
+        i += 1;
     }
-    if args[0] != "gen" {
-        usage();
-    }
+    out.ok_or_else(|| anyhow!("missing --out"))
+}
 
+fn cmd_show_preimage(args: &[String]) -> Result<()> {
+    let outdir = get_out(args)?;
+    let dig = read_json(&outdir.join("digests.json"))?;
+    let dobj = dig
+        .as_object()
+        .ok_or_else(|| anyhow!("DIGESTS_NOT_OBJECT"))?;
+
+    let files = dobj
+        .get("files")
+        .ok_or_else(|| anyhow!("M5_MISSING_files"))?
+        .clone();
+    let ok = dobj
+        .get("ok")
+        .ok_or_else(|| anyhow!("M5_MISSING_ok"))?
+        .clone();
+    let runtime_version = dobj
+        .get("runtime_version")
+        .ok_or_else(|| anyhow!("M5_MISSING_runtime_version"))?
+        .clone();
+    let stdlib_root_digest = dobj
+        .get("stdlib_root_digest")
+        .ok_or_else(|| anyhow!("M5_MISSING_stdlib_root_digest"))?
+        .clone();
+    let trace_format_version = dobj
+        .get("trace_format_version")
+        .ok_or_else(|| anyhow!("M5_MISSING_trace_format_version"))?
+        .clone();
+
+    let preimage = serde_json::json!({
+      "files": files,
+      "ok": ok,
+      "runtime_version": runtime_version,
+      "stdlib_root_digest": stdlib_root_digest,
+      "trace_format_version": trace_format_version
+    });
+
+    let canon = canon_json(&preimage)?;
+    print!("{}", canon);
+    Ok(())
+}
+
+fn cmd_gen(args: &[String]) -> Result<()> {
     let mut root: Option<PathBuf> = None;
     let mut registry: Option<PathBuf> = None;
     let mut out: Option<PathBuf> = None;
 
-    let mut i = 1;
+    let mut i = 0usize;
     while i < args.len() {
         match args[i].as_str() {
             "--root" => {
@@ -56,7 +171,7 @@ fn main() -> Result<()> {
                 i += 1;
                 registry = Some(PathBuf::from(
                     args.get(i)
-                        .ok_or_else(|| anyhow!("unused --registry value"))?,
+                        .ok_or_else(|| anyhow!("missing --registry value"))?,
                 ));
             }
             "--out" => {
@@ -103,7 +218,6 @@ fn main() -> Result<()> {
     let src = fs::read_to_string(&entry_path)
         .with_context(|| format!("missing entry file: {}", entry_path.display()))?;
 
-    // parse imports of the form: import("pkg:name@ver/mod") as X
     let re = Regex::new(r#"import\("pkg:([a-zA-Z0-9_\-]+)@([0-9]+\.[0-9]+\.[0-9]+)/([^"]+)"\)"#)?;
     let mut modules: BTreeMap<String, J> = BTreeMap::new();
     let mut packages: BTreeMap<String, String> = BTreeMap::new();
@@ -114,7 +228,6 @@ fn main() -> Result<()> {
         let mod_id = cap.get(3).unwrap().as_str();
 
         let base = registry_dir.join("pkgs").join(name).join(ver);
-        // e.g. std/math        let base = root.join("pkgs").join("pkgs").join(name).join(ver);
         let pkg_record = read_json(&base.join("package.json"))
             .with_context(|| format!("missing package record for {name}@{ver}"))?;
         let pkg_digest = pkg_record
@@ -144,22 +257,21 @@ fn main() -> Result<()> {
         );
     }
 
-    // registry root digest (commit to the digests map deterministically)
     let reg_commit = json!({"schema":"fard.registry_commit.v0_1","packages":packages});
     let reg_digest = sha256_bytes(&serde_json::to_vec(&reg_commit)?);
 
     write_json(
         &out.join("fard.lock.json"),
         &json!({
-            "schema": "fard.lock.v0_1",
-              "package": { "name": app_pkg_name, "version": app_pkg_ver },
-            "app_entry": entry,
-            "registry_root_digest": reg_digest,
-            "packages": reg_commit.get("packages").cloned().unwrap_or(json!({})),
-            "modules": modules
+          "schema": "fard.lock.v0_1",
+          "package": { "name": app_pkg_name, "version": app_pkg_ver },
+          "app_entry": entry,
+          "registry_root_digest": reg_digest,
+          "packages": reg_commit.get("packages").cloned().unwrap_or(json!({})),
+          "modules": modules
         }),
     )?;
-    // emit CID file for lock bytes
+
     let lock_path = out.join("fard.lock.json");
     let lock_bytes = fs::read(&lock_path)
         .with_context(|| format!("missing lock file after write: {}", lock_path.display()))?;
@@ -167,4 +279,21 @@ fn main() -> Result<()> {
     fs::write(out.join("fard.lock.json.cid"), format!("{}\n", lock_cid))?;
 
     Ok(())
+}
+
+fn main() -> Result<()> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.is_empty() {
+        usage();
+    }
+    let sub = args[0].as_str();
+    let rest = &args[1..];
+
+    match sub {
+        "gen" => cmd_gen(rest),
+        "show-preimage" => cmd_show_preimage(rest),
+        _ => {
+            usage();
+        }
+    }
 }
