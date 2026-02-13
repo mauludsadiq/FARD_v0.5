@@ -1,0 +1,18 @@
+{"v":"0.5-m4","modules":{
+  "std/result":{"exports":["ok","err","andThen","map","mapErr","orElse","unwrapOr","unwrapOrElse"]},
+  "std/option":{"exports":["andThen","map","toResult","unwrapOr","unwrapOrElse"]},
+  "std/list":{"exports":["get","push","map","filter","fold","slice","take","drop","chunk","flatMap","groupBy","sortBy","stableSortBy","uniqueBy","sort_int","sort_by_int_key","dedupe_sorted_int","hist_int"]},
+  "std/rec":{"exports":["empty","keys","values","has","get","getOr","getOrErr","set","remove","merge","select","rename","update"]},
+  "std/str":{"exports":["len","concat","contains","startsWith","endsWith","join","split","slice","replace","padLeft","padRight"]},
+  "std/json":{"exports":["pathGet","pathSet"]},
+  "std/http":{"exports":["okOr","post"]},
+  "std/fs":{"exports":["writeAll"]},
+  "std/path":{"exports":["joinAll"]},
+  "std/null":{"exports":["guardNotNull","coalesce"]},
+  "std/int":{"exports":["clamp"]},
+  "std/schema":{"exports":["check"]},
+  "std/flow":{"exports":["pipe"]},
+  "std/grow":{"exports":["unfold","unfold_tree"]},
+  "std/map":{"exports":["get","set"]},
+  "std/time":{"exports":["add","sub"]}
+}}

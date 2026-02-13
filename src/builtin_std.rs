@@ -1,0 +1,18 @@
+pub static BUILTIN_STD_EXPORTS: &[(&str, &[&str])] = &[
+  ("std/flow", &["pipe"]),
+  ("std/fs", &["writeAll"]),
+  ("std/grow", &["unfold","unfold_tree"]),
+  ("std/http", &["okOr","post"]),
+  ("std/int", &["clamp"]),
+  ("std/json", &["pathGet","pathSet"]),
+  ("std/list", &["chunk","dedupe_sorted_int","drop","filter","flatMap","fold","get","groupBy","hist_int","map","push","slice","sortBy","sort_by_int_key","sort_int","stableSortBy","take","uniqueBy"]),
+  ("std/map", &["get","set"]),
+  ("std/null", &["coalesce","guardNotNull"]),
+  ("std/option", &["andThen","map","toResult","unwrapOr","unwrapOrElse"]),
+  ("std/path", &["joinAll"]),
+  ("std/rec", &["empty","get","getOr","getOrErr","has","keys","merge","remove","rename","select","set","update","values"]),
+  ("std/result", &["andThen","err","map","mapErr","ok","orElse","unwrapOr","unwrapOrElse"]),
+  ("std/schema", &["check"]),
+  ("std/str", &["concat","contains","endsWith","join","len","padLeft","padRight","replace","slice","split","startsWith"]),
+  ("std/time", &["add","sub"]),
+];
