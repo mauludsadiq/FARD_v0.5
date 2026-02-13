@@ -2,34 +2,58 @@ use std::fs;
 use std::process::Command;
 
 fn run_runner(program_src: &str, outdir: &str, program_path: &str) -> std::process::ExitStatus {
-  let _ = fs::remove_dir_all(outdir);
-  fs::create_dir_all("spec/tmp").expect("MKDIR_TMP_FAIL");
-  fs::write(program_path, program_src.as_bytes()).expect("WRITE_SRC_FAIL");
-  Command::new("cargo")
-    .args(["run","-q","--bin","fardrun","--","run","--program",program_path,"--out",outdir])
-    .status()
-    .expect("RUNNER_SPAWN_FAIL")
+    let _ = fs::remove_dir_all(outdir);
+    fs::create_dir_all("spec/tmp").expect("MKDIR_TMP_FAIL");
+    fs::write(program_path, program_src.as_bytes()).expect("WRITE_SRC_FAIL");
+    Command::new("cargo")
+        .args([
+            "run",
+            "-q",
+            "--bin",
+            "fardrun",
+            "--",
+            "run",
+            "--program",
+            program_path,
+            "--out",
+            outdir,
+        ])
+        .status()
+        .expect("RUNNER_SPAWN_FAIL")
 }
 
 fn run_verify_bundle(outdir: &str) -> std::process::ExitStatus {
-  Command::new("cargo")
-    .args(["run","-q","--bin","fardverify","--","bundle","--out",outdir])
-    .status()
-    .expect("VERIFY_SPAWN_FAIL")
+    Command::new("cargo")
+        .args([
+            "run",
+            "-q",
+            "--bin",
+            "fardverify",
+            "--",
+            "bundle",
+            "--out",
+            outdir,
+        ])
+        .status()
+        .expect("VERIFY_SPAWN_FAIL")
 }
 
 #[test]
 fn m5_missing_file_fails() {
-  let out = "out/m5_missing_file";
-  let p = "spec/tmp/m5_missing_file.fard";
-  let st = run_runner(r#"
+    let out = "out/m5_missing_file";
+    let p = "spec/tmp/m5_missing_file.fard";
+    let st = run_runner(
+        r#"
 import("std/result") as result
 result.ok(3)
-"#, out, p);
-  assert!(st.success(), "RUNNER_NONZERO");
+"#,
+        out,
+        p,
+    );
+    assert!(st.success(), "RUNNER_NONZERO");
 
-  fs::remove_file(format!("{}/module_graph.json", out)).expect("RM_MODULE_GRAPH_FAIL");
+    fs::remove_file(format!("{}/module_graph.json", out)).expect("RM_MODULE_GRAPH_FAIL");
 
-  let vst = run_verify_bundle(out);
-  assert!(!vst.success(), "EXPECTED_VERIFY_NONZERO");
+    let vst = run_verify_bundle(out);
+    assert!(!vst.success(), "EXPECTED_VERIFY_NONZERO");
 }

@@ -110,17 +110,16 @@ fn write_m5_digests(
     files.insert("trace.ndjson".to_string(), trace_h.clone());
     files.insert("module_graph.json".to_string(), modg_h.clone());
     files.insert(leaf_name.to_string(), leaf_h.clone());
-      let preimage = serde_json::json!({
-        "files": files,
-        "ok": ok,
-        "runtime_version": runtime_version,
-        "stdlib_root_digest": stdlib_root_digest,
-        "trace_format_version": trace_format_version
-      });
-
-      let canon = canon_json(&preimage)?;
-      let preimage_sha256 = format!("sha256:{}", sha256_bytes_hex(canon.as_bytes()));
-let dig = serde_json::json!({
+    let preimage = serde_json::json!({
+      "files": files,
+      "ok": ok,
+      "runtime_version": runtime_version,
+      "stdlib_root_digest": stdlib_root_digest,
+      "trace_format_version": trace_format_version
+    });
+    let canon = canon_json(&preimage)?;
+    let preimage_sha256 = format!("sha256:{}", sha256_bytes_hex(canon.as_bytes()));
+    let dig = serde_json::json!({
       "runtime_version": runtime_version,
       "trace_format_version": trace_format_version,
       "stdlib_root_digest": stdlib_root_digest,
