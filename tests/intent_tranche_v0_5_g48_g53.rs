@@ -101,19 +101,19 @@ fn assert_err_msg_contains(err: &serde_json::Value, needle: &str) {
 
 #[test]
 fn g48_pipe_value_to_callable() {
-    let (res, _out) = assert_ok_run("fn id(x) { x }\n1 | id\n");
+    let (res, _out) = assert_ok_run("fn id(x) { x }\n1 |> id\n");
     assert_result_eq(&res, serde_json::json!(1));
 }
 
 #[test]
 fn g48_pipe_value_to_call_with_args() {
-    let (res, _out) = assert_ok_run("fn pair(a, b) { [a, b] }\n1 | pair(9)\n");
+    let (res, _out) = assert_ok_run("fn pair(a, b) { [a, b] }\n1 |> pair(9)\n");
     assert_result_eq(&res, serde_json::json!([1, 9]));
 }
 
 #[test]
 fn g48_pipe_chain_left_assoc() {
-    let (res, _out) = assert_ok_run("fn inc(x) { x + 1 }\nfn dbl(x) { x * 2 }\n3 | inc | dbl\n");
+    let (res, _out) = assert_ok_run("fn inc(x) { x + 1 }\nfn dbl(x) { x * 2 }\n3 |> inc |> dbl\n");
     assert_result_eq(&res, serde_json::json!(8));
 }
 
@@ -298,9 +298,8 @@ let xs = [5,1,7,2]
 
 let a =
   xs
-  | id
-  | pair(9)
-
+  |> id
+  |> pair(9)
 let b =
   match 7 {
     x if x > 6 => "big",

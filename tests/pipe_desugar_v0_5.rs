@@ -60,7 +60,7 @@ fn read_json(path: &PathBuf) -> serde_json::Value {
 
 #[test]
 fn pipe_desugar_a_value_to_callable() {
-    let (code, _stdout, _stderr, out) = run_prog("fn id(x) { x }\n1 | id\n");
+    let (code, _stdout, _stderr, out) = run_prog("fn id(x) { x }\n1 |> id\n");
     assert_eq!(code, 0);
 
     let err = out.join("error.json");
@@ -73,7 +73,7 @@ fn pipe_desugar_a_value_to_callable() {
 
 #[test]
 fn pipe_desugar_b_value_to_call_with_args() {
-    let (code, _stdout, _stderr, out) = run_prog("fn pair(a, b) { [a, b] }\n1 | pair(9)\n");
+    let (code, _stdout, _stderr, out) = run_prog("fn pair(a, b) { [a, b] }\n1 |> pair(9)\n");
     assert_eq!(code, 0);
 
     let err = out.join("error.json");
