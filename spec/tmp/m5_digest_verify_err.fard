@@ -1,0 +1,4 @@
+
+import("std/result") as result
+let _ = result.err({code:"E", msg:"x"})?
+result.ok(0)
