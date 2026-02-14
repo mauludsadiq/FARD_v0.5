@@ -1,7 +1,7 @@
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT"
 
-OUTDIR="out/golden_bundle_v1"
+OUTDIR="out/golden_bundle_v1_4857"
 SPEC_DIR="spec/v1_0/golden_bundle/v1"
 mkdir -p "$OUTDIR"
 mkdir -p "$SPEC_DIR"
