@@ -1,0 +1,29 @@
+FARD 1.0 TRACE VOCABULARY AND SCHEMAS (SPEC ARTIFACT)
+
+SCOPE
+This document freezes the trace vocabulary and per-kind schemas already enforced by the M2 trace gates and associated verifier logic.
+
+NORMATIVE NOTE
+The authoritative vocabulary is the runtime verifier source. This file is frozen text, but must be kept byte-aligned with the verifier-defined vocabulary and per-kind keysets.
+
+TRACE LINE CANONICAL SHAPE (FROZEN)
+Each trace line is one canonical JSON object, single-line, newline-terminated.
+Canonical JSON means:
+- Deterministic key ordering as enforced by the canon gate
+- No extra keys beyond the schema for that kind
+- Stable ordering constraints across kinds as enforced by the ordering gate
+
+COMMON REQUIRED KEYS (FROZEN)
+Every trace event record includes:
+- t : string (event kind tag)
+- Additional keys depend on t
+
+VOCABULARY (FROZEN)
+The set of allowed t values is enforced by the trace vocabulary gate.
+
+PER-KIND SCHEMAS (FROZEN)
+For each allowed t, the exact keyset and value-type constraints are enforced by the trace schema gate.
+
+HOW TO REFREEZE FROM CODE (MECHANICAL)
+Run: bash tools/freeze_trace_vocab_and_schemas.sh
+This tool extracts the current authoritative vocabulary and schema text from the verifier sources into this spec file.

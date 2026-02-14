@@ -1,0 +1,128 @@
+FARD 1.0 CANONICAL GRAMMAR (SPEC ARTIFACT)
+
+SCOPE
+This document freezes the surface grammar that corresponds to the currently passing v0.5 tranches (G48–G60, M1–M6) and the v1.0 ontology/surface gates (G11–G20, M4 keyset gates).
+
+NON-GOAL
+This document does not introduce new behavior. It only freezes what is already enforced by gates and tests.
+
+LEXICAL FORMS (FROZEN)
+Identifiers
+- ASCII letters, underscore, digits (digits not as first character)
+- Unicode identifiers allowed (see tranche m6_a3_ident_unicode)
+Reserved words (frozen set)
+- As enforced by tranche m6_a3_reserved_words
+
+Numbers (frozen)
+- Integers: optional leading '-' then nonzero digit followed by digits, or '0'
+- Rejects leading zero forms (except literal 0)
+- Rejects plus prefix
+- Rejects scientific notation
+- Float forms exist only if explicitly allowed by the current tokenizer tranche (see m6_a5_numbers_float_forms)
+Bounds for BigInt are enforced by m6_a5_numbers_bigint_bounds
+
+Strings (frozen)
+- Double-quoted
+- Supports standard escapes as enforced by m6_a4_string_escapes
+- Rejects invalid escapes and unterminated strings
+
+Comments (frozen)
+- Line and block comments exist (see m6_a2_comments_line_and_block)
+- Block comments may be nested (see m6_a2_comments_nesting)
+- Unterminated block comment is a parse error
+
+TOP LEVEL (FROZEN)
+Program := Item*
+Item :=
+  ExportDecl
+| ImportDecl
+| FnDecl
+| LetDecl
+| Expr
+
+ExportDecl := "export" ExportList
+ExportList := "[" (Ident ("," Ident)*)? "]"
+
+ImportDecl := "import" ModulePath ("as" Ident)?
+ModulePath := Ident ("/" Ident)*
+
+FnDecl := "fn" Ident FnParams FnBody
+FnParams := "(" (Pattern ("," Pattern)*)? ")"
+FnBody := "{" Expr "}"
+
+LetDecl := "let" Pattern "=" Expr
+
+EXPRESSION FORMS (FROZEN)
+Expr :=
+  Literal
+| Ident
+| ListLiteral
+| RecordLiteral
+| Lambda
+| IfExpr
+| MatchExpr
+| CallExpr
+| PostfixExpr
+| UnaryExpr
+| BinaryExpr
+| PipeExpr
+| LetExprBlock
+
+Literal := Number | String | Bool | Null
+Bool := "true" | "false"
+
+ListLiteral := "[" (Expr ("," Expr)*)? "]"
+RecordLiteral := "{" (Field ("," Field)*)? "}"
+Field := Ident ":" Expr
+
+Lambda := "lambda" "(" (Ident ("," Ident)*)? ")" "{" Expr "}"
+
+IfExpr := "if" Expr "{" Expr "}" "else" "{" Expr "}"
+
+MatchExpr := "match" Expr "{" MatchArm ("," MatchArm)* "}"
+MatchArm := Pattern ("if" Expr)? "=>" Expr
+
+CallExpr := PostfixExpr "(" (Expr ("," Expr)*)? ")"
+PostfixExpr := Primary ( "." Ident | "?" )*
+Primary := Literal | Ident | "(" Expr ")" | ListLiteral | RecordLiteral | Lambda | IfExpr | MatchExpr
+
+PipeExpr (frozen rewrite)
+PipeExpr := Expr "|>" PipeRhs ("|>" PipeRhs)*
+PipeRhs := PostfixExpr | CallExpr
+Rewrite rule (normative):
+- A |> f        desugars to f(A)
+- A |> f(x,y)   desugars to f(A,x,y)
+- Chains associate left-to-right (see m6_c5_pipeline_associativity)
+
+Operator precedence and associativity (frozen)
+Highest
+- Postfix: field access (.) and qmark postfix (?)
+- Call: ( ... )
+- Unary: prefix '-' and other unary as enforced
+- Multiplicative: * /
+- Additive: + -
+- Comparisons: < > <= >=
+- Equality: == != (exact tokens as enforced)
+- Boolean: and binds tighter than or
+- Pipe binds tighter than comparisons and equality in the ways enforced by m6_b4 and m6_b2
+Parentheses override precedence
+
+PATTERNS (FROZEN)
+Pattern :=
+  Ident
+| "_"
+| Literal
+| ListPattern
+| RecordPattern
+
+ListPattern := "[" (Pattern ("," Pattern)*)? ("," "..." Ident)? "]"
+RecordPattern := "{" (Ident ("," Ident)*)? "}"
+
+Pattern semantics closure is enforced by M2 tests:
+- Duplicate bindings rejected deterministically
+- Mismatch errors frozen
+
+WHITESPACE (FROZEN)
+- Newlines and whitespace are not semantically meaningful except as token separators (m6_a1)
+- Top-level item boundaries are stable under whitespace/newlines (m6_a1_newline_equivalence_top_level_items)
+

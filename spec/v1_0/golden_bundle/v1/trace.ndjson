@@ -1,0 +1,3 @@
+{"cid":"sha256:2d128f8f8ea9368d1d88d2ca9a6b1202e3e1a2cf5fd974a11b3a697cca1db448","kind":"std","name":"std/list","t":"module_resolve"}
+{"t":"emit","v":{"a":[0,1,2,3,4],"b":["x","x","x"],"c":[0,1,2,3,4,9,10],"tag":"g56"}}
+{"cid":"sha256:068a6323b48d4e4c2fa2fbab1476d458c61033dee93dd7805e44a3a90fe3f65c","t":"module_graph"}

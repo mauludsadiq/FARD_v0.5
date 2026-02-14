@@ -1,0 +1,35 @@
+FARD 1.0 NO SEMANTIC CHANGES POLICY (VERSIONED CONTRACT)
+
+PURPOSE
+Freeze meaning. Future releases may add features, but they must not change the meaning of already-valid programs under a declared compatibility band.
+
+DEFINITIONS
+- Program bytes: exact UTF-8 bytes of the source program.
+- Stdlib bytes: exact bytes of the builtin std surface declared by the surface ontology.
+- Distribution identity tuple: (runtime_version, trace_format_version, stdlib_root_digest) or an equivalent tuple defined by the spec.
+- Semantic outputs: byte-identical result.json and trace.ndjson, plus the run bundle file set and digests.
+
+CONTRACT STATEMENT (NORMATIVE)
+Given:
+1) identical program bytes
+2) identical stdlib bytes (as defined by stdlib_root_digest)
+3) identical distribution identity tuple
+
+Then:
+- result.json bytes are identical
+- trace.ndjson bytes are identical
+- run bundle file set and digests are identical
+
+ALLOWED CHANGES (ONLY IF VERSIONED)
+- Additive extensions that are behind a new version gate and do not affect interpretation of programs that already parse and run under the older version.
+- New trace event kinds only if trace_format_version increments and older format remains supported or explicitly deprecated with a stated cutoff.
+
+DISALLOWED CHANGES (BREAKING)
+- Any change that alters parse, precedence, evaluation order, error codes, error messages, trace ordering, trace keysets, canonical JSON ordering, module graph emission semantics, or bundle digest rules for programs that were valid under the frozen band.
+
+MECHANICAL ENFORCEMENT
+- Gates and golden artifacts must be updated only under an explicit version bump.
+- A version bump must include new golden bundles and a migration note.
+
+VERSION
+This contract is FARD 1.0.
