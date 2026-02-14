@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(dead_code))]
+
 use std::collections::{BTreeMap, BTreeSet};
 
 fn expect_only_keys(
