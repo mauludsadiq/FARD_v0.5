@@ -648,6 +648,8 @@ impl Lex {
             }
         }
         if c.is_ascii_digit() {
+            // NOTE: `c` is peeked (not consumed). Anchor at current index.
+            let start = self.i;
             let mut n: i64 = 0;
             while let Some(d) = self.peek() {
                 if d.is_ascii_digit() {
@@ -656,6 +658,10 @@ impl Lex {
                 } else {
                     break;
                 }
+            }
+            let len = self.i - start;
+            if len > 1 && self.s[start] == '0' {
+                bail!("ERROR_PARSE leading zero integer literal");
             }
             return Ok(Tok::Num(n));
         }
@@ -702,7 +708,7 @@ impl Lex {
         } else {
             None
         };
-        for op in ["==", "<=", ">=", "&&", "||", "->", "=>"] {
+        for op in ["==", "<=", ">=", "&&", "||", "->", "=>", "|>"] {
             if two.as_deref() == Some(op) {
                 self.i += 2;
                 return Ok(Tok::Sym(op.to_string()));
@@ -1379,7 +1385,7 @@ impl Parser {
     }
     fn parse_pipe(&mut self) -> Result<Expr> {
         let mut e = self.parse_postfix()?;
-        while self.eat_sym("|") {
+        while self.eat_sym("|>") {
             let rhs = self.parse_postfix()?;
             e = match rhs {
                 Expr::Call(f, mut args) => {
