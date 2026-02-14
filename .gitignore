@@ -31,3 +31,8 @@ match
 use
 \}
 src/bin/faPassword
+
+# spec/tmp is scratch; keep only canonical fixtures tracked
+spec/tmp/*
+!spec/tmp/m5_digest_verify_ok.fard
+!spec/tmp/m5_digest_verify_err.fard
