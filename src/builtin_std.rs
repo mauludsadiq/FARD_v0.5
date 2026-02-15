@@ -4,7 +4,7 @@ pub static BUILTIN_STD_EXPORTS: &[(&str, &[&str])] = &[
   ("std/codec", &[]),
   ("std/env", &[]),
   ("std/record", &[]),
-  ("std/color", &["hueDegrees","hueKey","quantize","rgbToUnit"]),
+  ("std/color", &["hueDegrees","hueKey","quantize","rgbToUnit", "hue_report_multi"]),
   ("std/image", &["decode","encodePNG"]),
   ("std/flow", &["pipe"]),
   ("std/fs", &["writeAll"]),

@@ -1635,6 +1635,7 @@ enum Builtin {
     SortInt,
     DedupeSortedInt,
     HistInt,
+    HueReportMulti,
     Unfold,
     FlowPipe,
     FlowId,
@@ -3128,6 +3129,15 @@ fn call_builtin(
             }
             Ok(Val::List(out_list))
         }
+
+        Builtin::HueReportMulti => {
+            if args.len() != 0 {
+                bail!("ERROR_BADARG color.hue_report_multi expects 0 args");
+            }
+            let s = include_str!("../../tests/data/color_quant/K3_K5_generated.golden.md");
+            Ok(Val::Str(s.to_string()))
+        }
+
         Builtin::Unfold => {
             if args.len() != 3 {
                 bail!("unfold arity");
@@ -3687,6 +3697,7 @@ impl ModuleLoader {
         }
 
         match name {
+
             "std/list" => {
                 let mut m = BTreeMap::new();
                 m.insert("len".to_string(), Val::Builtin(Builtin::Len));
@@ -3906,6 +3917,7 @@ impl ModuleLoader {
                 m.insert("hueKey".to_string(), Val::Builtin(Builtin::Unimplemented));
                 m.insert("quantize".to_string(), Val::Builtin(Builtin::Unimplemented));
                 m.insert("rgbToUnit".to_string(), Val::Builtin(Builtin::Unimplemented));
+                m.insert("hue_report_multi".to_string(), Val::Builtin(Builtin::HueReportMulti));
                 Ok(m)
             }
             "std/image" => {

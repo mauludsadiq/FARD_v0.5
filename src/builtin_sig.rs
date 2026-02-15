@@ -33,6 +33,7 @@ pub fn builtin_sig_table() -> BTreeMap<String, BuiltinSig> {
     ins(&mut m, "std/list", "sort_int", 1, true);
     ins(&mut m, "std/list", "dedupe_sorted_int", 1, true);
     ins(&mut m, "std/list", "hist_int", 1, true);
+    ins(&mut m, "std/color", "hue_report_multi", 0, true);
 
     // std/result
     ins(&mut m, "std/result", "ok", 1, false);

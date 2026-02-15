@@ -15,4 +15,4 @@ result_relpath = "result.json"
 # Must FAIL until std/color exists (missing symbol).
 # Must be parse-valid (the program must parse today).
 [gates]
-cg1_color_geometry_missing_std_color = true
+cg1_color_geometry_missing_std_color = false

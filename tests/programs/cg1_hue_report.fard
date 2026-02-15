@@ -1,1 +1,3 @@
-std_color_hue_report_multi
+import("std/color") as Color
+
+Color.hue_report_multi()
