@@ -1,5 +1,11 @@
 pub static BUILTIN_STD_EXPORTS: &[(&str, &[&str])] = &[
   ("std/artifact", &["bytes","cid_of_bytes","in","out"]),
+  ("std/bytes", &["from_utf8","len","to_utf8"]),
+  ("std/codec", &[]),
+  ("std/env", &[]),
+  ("std/record", &[]),
+  ("std/color", &["hueDegrees","hueKey","quantize","rgbToUnit"]),
+  ("std/image", &["decode","encodePNG"]),
   ("std/flow", &["pipe"]),
   ("std/fs", &["writeAll"]),
   ("std/grow", &["unfold","unfold_tree"]),
