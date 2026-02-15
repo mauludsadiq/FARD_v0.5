@@ -8,3 +8,11 @@ args = []
 lock_relpath = "lock.json"
 trace_relpath = "trace.ndjson"
 result_relpath = "result.json"
+
+
+
+# CG1: Color Geometry Closure
+# Must FAIL until std/color exists (missing symbol).
+# Must be parse-valid (the program must parse today).
+[gates]
+cg1_color_geometry_missing_std_color = true

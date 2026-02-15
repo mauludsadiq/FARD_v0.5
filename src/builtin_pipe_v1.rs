@@ -89,5 +89,14 @@ pub fn stage_allowlist_v1() -> BTreeSet<&'static str> {
     // Stage: std/schema
     s.insert("std/schema::check");
 
+    // Stage: std/color (CQ0)
+    s.insert("std/color::hueDegrees");
+    s.insert("std/color::hueKey");
+    s.insert("std/color::quantize");
+    s.insert("std/color::rgbToUnit");
+
+    // Stage: std/image (CQ0)
+    s.insert("std/image::encodePNG");
+
     s
 }

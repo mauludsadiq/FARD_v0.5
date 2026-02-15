@@ -229,6 +229,27 @@ fn run_one_gate(cfg: &fard_v0_5_language_gate::Config, gate: &Gate) -> Result<bo
             println!("PASS");
             Ok(true)
         }
+        
+        "cg1_color_geometry" => {
+            let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+            match fard_v0_5_language_gate::gates::cg1_color_geometry::run(cfg, root) {
+                Ok(()) => {
+                    // Until std_color exists, CG1 must NOT pass.
+                    println!("XPASS: CG1 unexpectedly passed (std_color may have landed or behavior changed)");
+                    Ok(false)
+                }
+                Err(e) => {
+                    // Expected failure mode until std_color exists.
+                    if e.contains("unbound var: std_color_hue_report_multi") {
+                        println!("XFAIL: std_color not implemented yet (expected)");
+                        Ok(true)
+                    } else {
+                        println!("FAIL: {}", e);
+                        Ok(false)
+                    }
+                }
+            }
+        }
 
         other => {
             println!("FAIL: unknown gate kind: {other}");

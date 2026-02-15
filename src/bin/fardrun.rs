@@ -3122,7 +3122,7 @@ fn call_builtin(
             let mut out_list: Vec<Val> = Vec::new();
             for (v, c) in m {
                 let mut rec = BTreeMap::new();
-                rec.insert("k".to_string(), Val::Int(v));
+                rec.insert("v".to_string(), Val::Int(v));
                 rec.insert("count".to_string(), Val::Int(c));
                 out_list.push(Val::Rec(rec));
             }
@@ -3900,6 +3900,21 @@ impl ModuleLoader {
                 Ok(m)
             }
 
+            "std/color" => {
+                let mut m = BTreeMap::new();
+                m.insert("hueDegrees".to_string(), Val::Builtin(Builtin::Unimplemented));
+                m.insert("hueKey".to_string(), Val::Builtin(Builtin::Unimplemented));
+                m.insert("quantize".to_string(), Val::Builtin(Builtin::Unimplemented));
+                m.insert("rgbToUnit".to_string(), Val::Builtin(Builtin::Unimplemented));
+                Ok(m)
+            }
+            "std/image" => {
+                let mut m = BTreeMap::new();
+                m.insert("decode".to_string(), Val::Builtin(Builtin::Unimplemented));
+                m.insert("encodePNG".to_string(), Val::Builtin(Builtin::Unimplemented));
+                Ok(m)
+            }
+
             _ => bail!("unknown std module: {name}"),
         }
     }
@@ -3914,9 +3929,11 @@ impl ModuleLoader {
     }
 
     fn stdlib_root_digest(&self) -> String {
-        let names: [&str; 20] = [
+        let names: [&str; 22] = [
             "std/artifact",
             "std/bytes",
+            "std/color",
+            "std/image",
             "std/codec",
             "std/env",
             "std/flow",
