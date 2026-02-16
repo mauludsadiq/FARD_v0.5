@@ -36,7 +36,7 @@ fn cg1_color_geometry_hue_report_matches_golden_bytes() {
         .arg("--program")
         .arg(&program_path)
         .arg("--out")
-        .arg(&out_path)
+        .arg(&out_dir)
         .output()
         .expect("failed to invoke fardrun");
 
