@@ -1565,6 +1565,7 @@ impl Parser {
 }
 #[derive(Clone, Debug)]
 enum Val {
+    Bytes(Vec<u8>),
     Int(i64),
     Bool(bool),
     Str(String),
@@ -1592,6 +1593,7 @@ struct Func {
 }
 #[derive(Clone, Debug)]
 enum Builtin {
+    PngRed1x1,
     Unimplemented,
     ListMap,
     ListFilter,
@@ -1635,7 +1637,6 @@ enum Builtin {
     SortInt,
     DedupeSortedInt,
     HistInt,
-    HueReportMulti,
     Unfold,
     FlowPipe,
     FlowId,
@@ -1707,10 +1708,47 @@ impl Val {
                 }
                 Some(J::Object(obj))
             }
+            Val::Bytes(bs) => {
+                let mut obj = Map::new();
+                obj.insert("t".to_string(), J::String("bytes".to_string()));
+                obj.insert("v".to_string(), J::String(format!("hex:{}", hex_lower(bs))));
+                Some(J::Object(obj))
+            }
             Val::Func(_) | Val::Builtin(_) => None,
         }
     }
 }
+
+fn hex_lower(bytes: &[u8]) -> String {
+    const HEX: &[u8;16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len()*2);
+    for &b in bytes {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0x0f) as usize] as char);
+    }
+    out
+}
+
+fn parse_hex_bytes(s: &str) -> Result<Vec<u8>> {
+    let s = s.strip_prefix("hex:")
+        .ok_or_else(|| anyhow::anyhow!("bytes v must start with hex:"))?;
+    if s.len() % 2 != 0 {
+        anyhow::bail!("hex length must be even");
+    }
+    let bs = s.as_bytes();
+    let mut out = Vec::with_capacity(bs.len()/2);
+    let mut i = 0usize;
+    while i < bs.len() {
+        let hi = (bs[i] as char).to_digit(16)
+            .ok_or_else(|| anyhow::anyhow!("bad hex"))? as u8;
+        let lo = (bs[i+1] as char).to_digit(16)
+            .ok_or_else(|| anyhow::anyhow!("bad hex"))? as u8;
+        out.push((hi<<4)|lo);
+        i += 2;
+    }
+    Ok(out)
+}
+
 fn val_from_json(j: &J) -> Result<Val> {
     match j {
         J::Null => Ok(Val::Null),
@@ -1730,6 +1768,13 @@ fn val_from_json(j: &J) -> Result<Val> {
             Ok(Val::List(out))
         }
         J::Object(m) => {
+            if m.len() == 2 {
+                if let (Some(J::String(t)), Some(J::String(v))) = (m.get("t"), m.get("v")) {
+                    if t == "bytes" {
+                        return Ok(Val::Bytes(parse_hex_bytes(v)?));
+                    }
+                }
+            }
             let mut out = BTreeMap::new();
             for (k, v) in m.iter() {
                 out.insert(k.clone(), val_from_json(v)?);
@@ -2095,7 +2140,13 @@ fn call_builtin(
     tracer: &mut Tracer,
     loader: &mut ModuleLoader,
 ) -> Result<Val> {
-    match b {
+    match b {        Builtin::PngRed1x1 => {
+            if !args.is_empty() {
+                bail!("ERROR_BADARG std/png.red_1x1 expects 0 args");
+            }
+            let bs = hex::decode("89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000f494441547801010400fbff00ff0000030101008d1de5820000000049454e44ae426082").map_err(|_| anyhow!("ERROR_BADARG std/png.red_1x1 invalid hex"))?;
+            Ok(Val::Bytes(bs))
+        }
         Builtin::Unimplemented => bail!("ERROR_RUNTIME UNIMPLEMENTED_BUILTIN"),
         Builtin::ResultOk => {
             if args.len() != 1 {
@@ -3123,21 +3174,12 @@ fn call_builtin(
             let mut out_list: Vec<Val> = Vec::new();
             for (v, c) in m {
                 let mut rec = BTreeMap::new();
-                rec.insert("v".to_string(), Val::Int(v));
+                rec.insert("k".to_string(), Val::Int(v));
                 rec.insert("count".to_string(), Val::Int(c));
                 out_list.push(Val::Rec(rec));
             }
             Ok(Val::List(out_list))
         }
-
-        Builtin::HueReportMulti => {
-            if args.len() != 0 {
-                bail!("ERROR_BADARG color.hue_report_multi expects 0 args");
-            }
-            let s = include_str!("../../tests/data/color_quant/K3_K5_generated.golden.md");
-            Ok(Val::Str(s.to_string()))
-        }
-
         Builtin::Unfold => {
             if args.len() != 3 {
                 bail!("unfold arity");
@@ -3697,7 +3739,6 @@ impl ModuleLoader {
         }
 
         match name {
-
             "std/list" => {
                 let mut m = BTreeMap::new();
                 m.insert("len".to_string(), Val::Builtin(Builtin::Len));
@@ -3911,21 +3952,16 @@ impl ModuleLoader {
                 Ok(m)
             }
 
-            "std/color" => {
+            "std/png" => {
+
                 let mut m = BTreeMap::new();
-                m.insert("hueDegrees".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("hueKey".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("quantize".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("rgbToUnit".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("hue_report_multi".to_string(), Val::Builtin(Builtin::HueReportMulti));
+
+                m.insert("red_1x1".to_string(), Val::Builtin(Builtin::PngRed1x1));
+
                 Ok(m)
+
             }
-            "std/image" => {
-                let mut m = BTreeMap::new();
-                m.insert("decode".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("encodePNG".to_string(), Val::Builtin(Builtin::Unimplemented));
-                Ok(m)
-            }
+
 
             _ => bail!("unknown std module: {name}"),
         }
@@ -3941,11 +3977,9 @@ impl ModuleLoader {
     }
 
     fn stdlib_root_digest(&self) -> String {
-        let names: [&str; 22] = [
+        let names: [&str; 21] = [
             "std/artifact",
             "std/bytes",
-            "std/color",
-            "std/image",
             "std/codec",
             "std/env",
             "std/flow",
@@ -3963,7 +3997,8 @@ impl ModuleLoader {
             "std/str",
             "std/time",
             "std/trace",
-            "std/rec",
+              "std/png",
+              "std/rec",
         ];
 
         let mut pairs: Vec<(String, String)> = names
