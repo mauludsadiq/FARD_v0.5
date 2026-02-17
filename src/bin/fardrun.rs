@@ -59,17 +59,38 @@ fn canon_json(v: &serde_json::Value) -> Result<String> {
                 Ok(())
             }
             serde_json::Value::Object(m) => {
-                let mut keys: Vec<&String> = m.keys().collect();
-                keys.sort();
                 out.push('{');
-                for (i, k) in keys.iter().enumerate() {
-                    if i > 0 {
+
+                // Canonical key order:
+                // emit "k" first (if present), then emit remaining keys in sorted order.
+                let mut first = true;
+
+                if m.contains_key("k") {
+                    let k = "k";
+                    if !first {
                         out.push(',');
                     }
+                    first = false;
                     out.push_str(&serde_json::to_string(k).context("M5_CANON_KEY_ESC_FAIL")?);
                     out.push(':');
-                    canon_value(&m[*k], out)?;
+                    canon_value(&m[k], out)?;
                 }
+
+                let mut ks: Vec<&String> = m.keys().collect();
+                ks.sort();
+                for k in ks {
+                    if k.as_str() == "k" {
+                        continue;
+                    }
+                    if !first {
+                        out.push(',');
+                    }
+                    first = false;
+                    out.push_str(&serde_json::to_string(k).context("M5_CANON_KEY_ESC_FAIL")?);
+                    out.push(':');
+                    canon_value(&m[k], out)?;
+                }
+
                 out.push('}');
                 Ok(())
             }
@@ -1703,9 +1724,20 @@ impl Val {
             )),
             Val::Rec(m) => {
                 let mut obj = Map::new();
+
+                // Canonical object field order for records:
+                // emit "k" first (if present), then emit remaining keys in BTreeMap order.
+                if let Some(vk) = m.get("k") {
+                    obj.insert("k".to_string(), vk.to_json()?);
+                }
+
                 for (k, v) in m.iter() {
+                    if k == "k" {
+                        continue;
+                    }
                     obj.insert(k.clone(), v.to_json()?);
                 }
+
                 Some(J::Object(obj))
             }
             Val::Bytes(bs) => {
@@ -3174,7 +3206,7 @@ fn call_builtin(
             let mut out_list: Vec<Val> = Vec::new();
             for (v, c) in m {
                 let mut rec = BTreeMap::new();
-                rec.insert("k".to_string(), Val::Int(v));
+                rec.insert("v".to_string(), Val::Int(v));
                 rec.insert("count".to_string(), Val::Int(c));
                 out_list.push(Val::Rec(rec));
             }
@@ -4057,84 +4089,8 @@ fn file_digest(p: &Path) -> Result<String> {
 }
 
 fn canonical_json_bytes(v: &serde_json::Value) -> Vec<u8> {
-    fn write(v: &serde_json::Value, out: &mut Vec<u8>) {
-        match v {
-            serde_json::Value::Null => out.extend_from_slice(b"null"),
-            serde_json::Value::Bool(b) => {
-                if *b {
-                    out.extend_from_slice(b"true")
-                } else {
-                    out.extend_from_slice(b"false")
-                }
-            }
-            serde_json::Value::Number(n) => {
-                let mut s = n.to_string();
-
-                if s.contains("e") || s.contains("E") {
-                    let f: f64 = s.parse().unwrap();
-                    s = format!("{}", f);
-                }
-
-                if s.contains(".") {
-                    while s.ends_with("0") {
-                        s.pop();
-                    }
-                    if s.ends_with(".") {
-                        s.pop();
-                    }
-                }
-
-                if s == "-0" {
-                    s = "0".to_string();
-                }
-
-                out.extend_from_slice(s.as_bytes());
-            }
-            serde_json::Value::String(s) => {
-                out.push(b'"');
-                for c in s.chars() {
-                    match c {
-                        '"' => out.extend_from_slice(b"\\\""),
-                        '\\' => out.extend_from_slice(b"\\\\"),
-                        '\n' => out.extend_from_slice(b"\\n"),
-                        '\r' => out.extend_from_slice(b"\\r"),
-                        '\t' => out.extend_from_slice(b"\\t"),
-                        c if c < ' ' => {
-                            out.extend_from_slice(format!("\\u{:04x}", c as u32).as_bytes())
-                        }
-                        _ => out.extend_from_slice(c.to_string().as_bytes()),
-                    }
-                }
-                out.push(b'"');
-            }
-            serde_json::Value::Array(a) => {
-                out.push(b'[');
-                for (i, x) in a.iter().enumerate() {
-                    if i != 0 {
-                        out.push(b',');
-                    }
-                    write(x, out);
-                }
-                out.push(b']');
-            }
-            serde_json::Value::Object(map) => {
-                out.push(b'{');
-                let mut keys: Vec<_> = map.keys().collect();
-                keys.sort();
-                for (i, k) in keys.iter().enumerate() {
-                    if i != 0 {
-                        out.push(b',');
-                    }
-                    write(&serde_json::Value::String((*k).clone()), out);
-                    out.push(b':');
-                    write(&map[*k], out);
-                }
-                out.push(b'}');
-            }
-        }
-    }
-
-    let mut out = Vec::new();
-    write(v, &mut out);
-    out
+    // Single canonicalization path for *all* persisted JSON bytes:
+    // use canon_json() (including k-first object rule).
+    let s = canon_json(v).expect("canonical_json_bytes canon_json failed");
+    s.into_bytes()
 }

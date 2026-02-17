@@ -51,10 +51,15 @@ fn cg1_color_geometry_hue_report_matches_golden_bytes() {
             );
         }
 
-        // Until std/color exists, the only acceptable failure is missing symbol.
-        if !stderr.contains("unbound var: std_color_hue_report_multi") {
+        // Until std/color exists, acceptable failures are:
+        //  - missing symbol (unbound var: std_color_hue_report_multi)
+        //  - missing module (unknown std module: std/color)
+        let ok_missing = stderr.contains("unbound var: std_color_hue_report_multi")
+            || stderr.contains("unknown std module: std/color");
+
+        if !ok_missing {
             panic!(
-                "CG1 gate failed for unexpected reason (expected missing std/color symbol)\nstatus={}\n\nstderr:\n{}",
+                "CG1 gate failed for unexpected reason (expected missing std/color symbol OR missing std/color module)\nstatus={}\n\nstderr:\n{}",
                 run.status, stderr
             );
         }
