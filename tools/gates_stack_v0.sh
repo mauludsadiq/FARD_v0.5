@@ -51,4 +51,8 @@ cargo test --manifest-path crates/valuecore/Cargo.toml --test gate9_valuecore_js
 echo
 echo "== Gate 10 (valuecore canonical value cid) =="
 cargo test --manifest-path crates/valuecore/Cargo.toml --test gate10_valuecore_value_cid
+
+echo
+echo "== Gate 11 (valuecore canonical-only decode) =="
+cargo test --manifest-path crates/valuecore/Cargo.toml --test gate11_valuecore_decode_canonical_only
 echo "[PASS] gates_stack_v0"
