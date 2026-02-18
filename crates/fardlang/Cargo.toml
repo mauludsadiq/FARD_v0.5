@@ -5,3 +5,5 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
+
+valuecore = { path = "../valuecore" }
