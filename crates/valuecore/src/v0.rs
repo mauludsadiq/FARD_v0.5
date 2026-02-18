@@ -257,7 +257,6 @@ fn parse_hex_bytes(s: &str) -> Result<Vec<u8>> {
         match c {
             b'0'..=b'9' => Ok(c - b'0'),
             b'a'..=b'f' => Ok(c - b'a' + 10),
-            b'A'..=b'F' => Ok(c - b'A' + 10),
             _ => Err(anyhow!("ERROR_JSON invalid hex char")),
         }
     };
@@ -312,16 +311,32 @@ fn decode_value(j: &serde_json::Value) -> Result<V> {
             let v = obj.get("v").ok_or_else(|| anyhow!("ERROR_JSON missing v"))?;
             let arr = v.as_array().ok_or_else(|| anyhow!("ERROR_JSON map v must be array"))?;
             let mut out = Vec::with_capacity(arr.len());
+
+            // Gate 11: canonical-only decode
+            // - keys must be strictly increasing (lex order)
+            // - no duplicate keys
+            let mut prev_key: Option<String> = None;
+
             for pair in arr {
                 let p = pair.as_array().ok_or_else(|| anyhow!("ERROR_JSON map pair must be array"))?;
                 if p.len() != 2 {
                     return Err(anyhow!("ERROR_JSON map pair len must be 2"));
                 }
                 let k = expect_str(&p[0])?.to_string();
+
+                if let Some(pk) = &prev_key {
+                    match k.as_str().cmp(pk.as_str()) {
+                        Ordering::Greater => {}
+                        Ordering::Equal => return Err(anyhow!("ERROR_JSON duplicate map key")),
+                        Ordering::Less => return Err(anyhow!("ERROR_JSON non-canonical map key order")),
+                    }
+                }
+                prev_key = Some(k.clone());
+
                 let val = decode_value(&p[1])?;
                 out.push((k, val));
             }
-            out.sort_by(|a, b| a.0.cmp(&b.0));
+
             Ok(V::Map(out))
         }
         "ok" => {
