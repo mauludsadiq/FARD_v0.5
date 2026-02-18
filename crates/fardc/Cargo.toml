@@ -13,4 +13,5 @@ hex = "0.4"
 valuecore = { path = "../valuecore" }
 
 [dev-dependencies]
+tempfile = "3"
 pretty_assertions = "1"

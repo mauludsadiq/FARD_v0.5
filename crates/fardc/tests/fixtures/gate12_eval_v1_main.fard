@@ -1,0 +1,9 @@
+module main
+
+fn main(): int {
+  let a = 10
+  let b = 3
+  let q = div(a, b)
+  let r = rem(a, b)
+  add(mul(q, b), r)
+}

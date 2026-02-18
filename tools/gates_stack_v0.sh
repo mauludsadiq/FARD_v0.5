@@ -55,4 +55,8 @@ cargo test --manifest-path crates/valuecore/Cargo.toml --test gate10_valuecore_v
 echo
 echo "== Gate 11 (valuecore canonical-only decode) =="
 cargo test --manifest-path crates/valuecore/Cargo.toml --test gate11_valuecore_decode_canonical_only
+
+echo
+echo "== Gate 12 (eval integration frozen runid) =="
+cargo test --manifest-path crates/fardc/Cargo.toml --test gate12_eval_integration_v1
 echo "[PASS] gates_stack_v0"
