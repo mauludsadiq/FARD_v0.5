@@ -226,12 +226,20 @@ name = "fardc"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "fardlang",
  "hex",
  "pretty_assertions",
  "serde",
  "serde_json",
  "sha2",
  "valuecore",
+]
+
+[[package]]
+name = "fardlang"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
 ]
 
 [[package]]

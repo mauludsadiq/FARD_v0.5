@@ -25,5 +25,6 @@ members = [
   "crates/witnesscore",
   "crates/abirunner",
   "crates/registry",
-  "crates/fardc"
+  "crates/fardc",
+  "crates/fardlang",
 ]

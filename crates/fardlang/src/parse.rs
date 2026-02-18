@@ -1,0 +1,360 @@
+use anyhow::{bail, Result};
+use crate::ast::*;
+use crate::lex::{Lexer, Tok};
+
+pub fn parse_module(bytes: &[u8]) -> Result<Module> {
+    let mut lx = Lexer::new(bytes);
+
+    expect(&mut lx, Tok::KwModule)?;
+    let name = parse_modpath(&mut lx)?;
+
+    let mut imports = Vec::new();
+    let mut fact_imports = Vec::new();
+    let mut effects = Vec::new();
+    let mut types = Vec::new();
+    let mut fns = Vec::new();
+
+    loop {
+        let t = lx.next()?;
+        match t {
+            Tok::Eof => break,
+            Tok::KwImport => {
+                // either "import path.to.mod as alias" OR "import x: Run("sha256:...")"
+                match lx.next()? {
+                    Tok::Ident(n) => {
+                        let nxt = lx.next()?;
+                        match nxt {
+                            Tok::Colon => {
+                                expect(&mut lx, Tok::KwRun)?;
+                                expect(&mut lx, Tok::LParen)?;
+                                let rid = match lx.next()? {
+                                    Tok::Text(s) => s,
+                                    _ => bail!("ERROR_PARSE expected Run(\"...\")"),
+                                };
+                                expect(&mut lx, Tok::RParen)?;
+                                fact_imports.push(FactImportDecl { name: n, run_id: rid });
+                            }
+                            Tok::Dot => {
+                                // parse rest of modpath
+                                let mut parts = vec![n];
+                                parts.push(parse_ident_after_dot(&mut lx)?);
+                                while peek_is(&mut lx, Tok::Dot)? {
+                                    lx.next()?;
+                                    parts.push(parse_ident(&mut lx)?);
+                                }
+                                let path = ModPath(parts);
+                                let mut alias = None;
+                                if peek_is(&mut lx, Tok::KwAs)? {
+                                    lx.next()?;
+                                    alias = Some(parse_ident(&mut lx)?);
+                                }
+                                imports.push(ImportDecl { path, alias });
+                            }
+                            Tok::KwAs => {
+                                let alias = Some(parse_ident(&mut lx)?);
+                                imports.push(ImportDecl { path: ModPath(vec![n]), alias });
+                            }
+                            _ => {
+                                // single ident modpath
+                                let path = ModPath(vec![n]);
+                                // push back isn't supported; treat as no-alias import
+                                imports.push(ImportDecl { path, alias: None });
+                                // we consumed one extra token; reject for now
+                                bail!("ERROR_PARSE malformed import");
+                            }
+                        }
+                    }
+                    _ => bail!("ERROR_PARSE expected ident after import"),
+                }
+            }
+            Tok::KwEffect => effects.push(parse_effect(&mut lx)?),
+            Tok::KwPub | Tok::KwType | Tok::KwFn => {
+                // allow pub prefix
+                let mut is_pub = false;
+                let head = if t == Tok::KwPub {
+                    is_pub = true;
+                    lx.next()?
+                } else {
+                    t
+                };
+                match head {
+                    Tok::KwType => types.push(parse_type_decl(&mut lx, is_pub)?),
+                    Tok::KwFn => fns.push(parse_fn_decl(&mut lx, is_pub)?),
+                    _ => bail!("ERROR_PARSE expected type or fn after pub"),
+                }
+            }
+            _ => bail!("ERROR_PARSE unexpected token at top-level"),
+        }
+    }
+
+    Ok(Module { name, imports, fact_imports, effects, types, fns })
+}
+
+fn parse_modpath(lx: &mut Lexer<'_>) -> Result<ModPath> {
+    let mut parts = vec![parse_ident(lx)?];
+    while peek_is(lx, Tok::Dot)? {
+        lx.next()?;
+        parts.push(parse_ident(lx)?);
+    }
+    Ok(ModPath(parts))
+}
+
+fn parse_ident_after_dot(lx: &mut Lexer<'_>) -> Result<String> {
+    // after having consumed a Dot token already
+    parse_ident(lx)
+}
+
+fn parse_ident(lx: &mut Lexer<'_>) -> Result<String> {
+    match lx.next()? {
+        Tok::Ident(s) => Ok(s),
+        _ => bail!("ERROR_PARSE expected ident"),
+    }
+}
+
+fn parse_effect(lx: &mut Lexer<'_>) -> Result<EffectDecl> {
+    let name = parse_ident(lx)?;
+    expect(lx, Tok::LParen)?;
+    let mut params = Vec::new();
+    if !peek_is(lx, Tok::RParen)? {
+        loop {
+            let p = parse_ident(lx)?;
+            expect(lx, Tok::Colon)?;
+            let t = parse_type(lx)?;
+            params.push((p, t));
+            if peek_is(lx, Tok::Comma)? { lx.next()?; continue; }
+            break;
+        }
+    }
+    expect(lx, Tok::RParen)?;
+    expect(lx, Tok::Colon)?;
+    let ret = parse_type(lx)?;
+    Ok(EffectDecl { name, params, ret })
+}
+
+fn parse_type_decl(lx: &mut Lexer<'_>, is_pub: bool) -> Result<TypeDecl> {
+    let name = parse_ident(lx)?;
+    let params = parse_type_params(lx)?;
+    expect(lx, Tok::Eq)?;
+
+    // record type: { a: int, b: text }
+    // sum type:   | None | Some(value: T)
+    let body = if peek_is(lx, Tok::LBrace)? {
+        lx.next()?;
+        let mut fields = Vec::new();
+        if !peek_is(lx, Tok::RBrace)? {
+            loop {
+                let f = parse_ident(lx)?;
+                expect(lx, Tok::Colon)?;
+                let t = parse_type(lx)?;
+                fields.push((f, t));
+                if peek_is(lx, Tok::Comma)? { lx.next()?; continue; }
+                break;
+            }
+        }
+        expect(lx, Tok::RBrace)?;
+        TypeBody::Record(fields)
+    } else {
+        let mut vars = Vec::new();
+        loop {
+            if peek_is(lx, Tok::Pipe)? { lx.next()?; }
+            let vname = parse_ident(lx)?;
+            let mut fields = Vec::new();
+            if peek_is(lx, Tok::LParen)? {
+                lx.next()?;
+                if !peek_is(lx, Tok::RParen)? {
+                    loop {
+                        let f = parse_ident(lx)?;
+                        expect(lx, Tok::Colon)?;
+                        let t = parse_type(lx)?;
+                        fields.push((f, t));
+                        if peek_is(lx, Tok::Comma)? { lx.next()?; continue; }
+                        break;
+                    }
+                }
+                expect(lx, Tok::RParen)?;
+            }
+            vars.push(Variant { name: vname, fields });
+            if peek_is(lx, Tok::Pipe)? { continue; }
+            break;
+        }
+        TypeBody::Sum(vars)
+    };
+
+    Ok(TypeDecl { name, params, body, is_pub })
+}
+
+fn parse_fn_decl(lx: &mut Lexer<'_>, is_pub: bool) -> Result<FnDecl> {
+    let name = parse_ident(lx)?;
+    let _tparams = parse_type_params(lx)?; // accepted, ignored here
+    expect(lx, Tok::LParen)?;
+    let mut params = Vec::new();
+    if !peek_is(lx, Tok::RParen)? {
+        loop {
+            let p = parse_ident(lx)?;
+            expect(lx, Tok::Colon)?;
+            let t = parse_type(lx)?;
+            params.push((p, t));
+            if peek_is(lx, Tok::Comma)? { lx.next()?; continue; }
+            break;
+        }
+    }
+    expect(lx, Tok::RParen)?;
+
+    let mut ret = None;
+    if peek_is(lx, Tok::Colon)? {
+        lx.next()?;
+        ret = Some(parse_type(lx)?);
+    }
+
+    let mut uses = Vec::new();
+    if peek_is(lx, Tok::KwUses)? {
+        lx.next()?;
+        expect(lx, Tok::LBrack)?;
+        if !peek_is(lx, Tok::RBrack)? {
+            loop {
+                uses.push(parse_ident(lx)?);
+                if peek_is(lx, Tok::Comma)? { lx.next()?; continue; }
+                break;
+            }
+        }
+        expect(lx, Tok::RBrack)?;
+    }
+
+    let body = parse_block(lx)?;
+    Ok(FnDecl { name, params, ret, uses, body, is_pub })
+}
+
+fn parse_block(lx: &mut Lexer<'_>) -> Result<Block> {
+    expect(lx, Tok::LBrace)?;
+    let mut stmts = Vec::new();
+    let mut tail = None;
+
+    loop {
+        if peek_is(lx, Tok::RBrace)? { lx.next()?; break; }
+        if peek_is(lx, Tok::KwLet)? {
+            lx.next()?;
+            let name = parse_ident(lx)?;
+            expect(lx, Tok::Eq)?;
+            let expr = parse_expr(lx)?;
+            stmts.push(Stmt::Let { name, expr });
+            continue;
+        }
+
+        // either stmt expr or tail expr; we treat last expr before '}' as tail if next is '}'
+        let e = parse_expr(lx)?;
+        if peek_is(lx, Tok::RBrace)? {
+            tail = Some(Box::new(e));
+            lx.next()?;
+            break;
+        } else {
+            stmts.push(Stmt::Expr(e));
+        }
+    }
+
+    Ok(Block { stmts, tail })
+}
+
+fn parse_expr(lx: &mut Lexer<'_>) -> Result<Expr> {
+    // minimal expression set for v1 bootstrap: literals, ident, call, if
+    if peek_is(lx, Tok::KwIf)? {
+        lx.next()?;
+        let c = Box::new(parse_expr(lx)?);
+        let t = parse_block(lx)?;
+        expect(lx, Tok::KwElse)?;
+        let e = parse_block(lx)?;
+        return Ok(Expr::If { c, t: Box::new(t), e: Box::new(e) });
+    }
+
+    match lx.next()? {
+        Tok::KwUnit => Ok(Expr::Unit),
+        Tok::KwTrue => Ok(Expr::Bool(true)),
+        Tok::KwFalse => Ok(Expr::Bool(false)),
+        Tok::Int(s) => Ok(Expr::Int(s)),
+        Tok::Text(s) => Ok(Expr::Text(s)),
+        Tok::BytesHex(h) => Ok(Expr::BytesHex(h)),
+        Tok::Ident(id) => {
+            if peek_is(lx, Tok::LParen)? {
+                lx.next()?;
+                let mut args = Vec::new();
+                if !peek_is(lx, Tok::RParen)? {
+                    loop {
+                        args.push(parse_expr(lx)?);
+                        if peek_is(lx, Tok::Comma)? { lx.next()?; continue; }
+                        break;
+                    }
+                }
+                expect(lx, Tok::RParen)?;
+                Ok(Expr::Call { f: id, args })
+            } else {
+                Ok(Expr::Ident(id))
+            }
+        }
+        _ => bail!("ERROR_PARSE unsupported expression"),
+    }
+}
+
+fn parse_type_params(lx: &mut Lexer<'_>) -> Result<Vec<String>> {
+    let mut out = Vec::new();
+    if !peek_is(lx, Tok::Lt)? { return Ok(out); }
+    lx.next()?;
+    loop {
+        out.push(parse_ident(lx)?);
+        if peek_is(lx, Tok::Comma)? { lx.next()?; continue; }
+        break;
+    }
+    expect(lx, Tok::Gt)?;
+    Ok(out)
+}
+
+fn parse_type(lx: &mut Lexer<'_>) -> Result<Type> {
+    match lx.next()? {
+        Tok::Ident(s) => Ok(match s.as_str() {
+            "unit" => Type::Unit,
+            "bool" => Type::Bool,
+            "int" => Type::Int,
+            "bytes" => Type::Bytes,
+            "text" => Type::Text,
+            "Value" => Type::Value,
+            "List" => {
+                expect(lx, Tok::Lt)?;
+                let t = parse_type(lx)?;
+                expect(lx, Tok::Gt)?;
+                Type::List(Box::new(t))
+            }
+            "Map" => {
+                expect(lx, Tok::Lt)?;
+                let k = parse_type(lx)?;
+                expect(lx, Tok::Comma)?;
+                let v = parse_type(lx)?;
+                expect(lx, Tok::Gt)?;
+                Type::Map(Box::new(k), Box::new(v))
+            }
+            _ => {
+                let args = if peek_is(lx, Tok::Lt)? {
+                    lx.next()?;
+                    let mut a = Vec::new();
+                    loop {
+                        a.push(parse_type(lx)?);
+                        if peek_is(lx, Tok::Comma)? { lx.next()?; continue; }
+                        break;
+                    }
+                    expect(lx, Tok::Gt)?;
+                    a
+                } else { Vec::new() };
+                Type::Named { name: s, args }
+            }
+        }),
+        _ => bail!("ERROR_PARSE expected type"),
+    }
+}
+
+fn expect(lx: &mut Lexer<'_>, want: Tok) -> Result<()> {
+    let got = lx.next()?;
+    if got == want { Ok(()) } else { bail!("ERROR_PARSE expected {:?} got {:?}", want, got) }
+}
+fn peek_is(lx: &mut Lexer<'_>, want: Tok) -> Result<bool> {
+    let m = lx.mark();
+    let t = lx.next()?;
+    lx.reset(m);
+    Ok(t == want)
+}
