@@ -2,6 +2,11 @@ use anyhow::{bail, Context, Result};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::collections::BTreeMap;
+
+use fardlang::check::check_module as check_module_lang;
+use fardlang::eval::{eval_block, Env};
+use fardlang::parse::parse_module as parse_module_lang;
 
 mod ast;
 mod canon;
@@ -96,6 +101,43 @@ fn main() -> Result<()> {
     write_text(&out.join("imports.json"), r#"{"t":"list","v":[]}"#)?;
     write_text(&out.join("effects.json"), r#"{"t":"list","v":[]}"#)?;
     fs::create_dir_all(out.join("facts")).ok();
+
+
+    // result.json
+    //
+    // Policy:
+    // - v1 sources (module header): parse/check/eval via fardlang, write computed result.json
+    // - legacy sources (Gate5 frozen; start with `fn`): keep historical behavior (unit result.json)
+    let result_bytes: Vec<u8> = match parse_module_lang(&raw) {
+        Ok(m_lang) => {
+            check_module_lang(&m_lang).context("ERROR_CHECK fardc fardlang check_module")?;
+
+            let mut fns: BTreeMap<String, fardlang::ast::FnDecl> = BTreeMap::new();
+            for d in &m_lang.fns {
+                fns.insert(d.name.clone(), d.clone());
+            }
+
+            let main_decl = fns
+                .get("main")
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("ERROR_EVAL missing main"))?;
+
+            let mut env = Env::with_fns(fns);
+            let v = eval_block(&main_decl.body, &mut env).context("ERROR_EVAL fardc eval main")?;
+            valuecore::v0::encode_json(&v)
+        }
+        Err(e) => {
+            let msg = format!("{:#}", e);
+            if msg.contains("expected KwModule") {
+                valuecore::v0::encode_json(&valuecore::v0::V::Unit)
+            } else {
+                return Err(e).context("ERROR_PARSE fardc fardlang parse_module");
+            }
+        }
+    };
+
+    fs::write(out.join("result.json"), &result_bytes)
+        .with_context(|| format!("ERROR_IO write {}", out.join("result.json").display()))?;
 
     // program.json: points to source CID
     let program = format!(
