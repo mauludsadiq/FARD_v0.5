@@ -43,4 +43,12 @@ cargo test --manifest-path crates/valuecore/Cargo.toml --test gate8_valuecore_di
 echo
 echo "== Gate 9 (valuecore canonical eq + total order) =="
 cargo test --manifest-path crates/valuecore/Cargo.toml --test gate9_valuecore_eq_order
+
+echo
+echo "== Gate 9 (valuecore json rejects invalid shapes) =="
+cargo test --manifest-path crates/valuecore/Cargo.toml --test gate9_valuecore_json_rejects
+
+echo
+echo "== Gate 10 (valuecore canonical value cid) =="
+cargo test --manifest-path crates/valuecore/Cargo.toml --test gate10_valuecore_value_cid
 echo "[PASS] gates_stack_v0"

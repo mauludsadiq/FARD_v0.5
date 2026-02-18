@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use sha2::{Digest, Sha256};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum V {
@@ -343,4 +344,22 @@ pub fn i64_sub(a: i64, b: i64) -> Result<i64> {
 }
 pub fn i64_mul(a: i64, b: i64) -> Result<i64> {
     a.checked_mul(b).ok_or_else(|| anyhow!("ERROR_OVERFLOW i64_mul"))
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    let d = hasher.finalize();
+    let mut out = String::with_capacity(64);
+    for b in d {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0x0f) as usize] as char);
+    }
+    out
+}
+
+pub fn value_cid(v: &V) -> String {
+    let bytes = encode_json(v);
+    format!("sha256:{}", sha256_hex(&bytes))
 }
