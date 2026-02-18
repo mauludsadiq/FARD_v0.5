@@ -3,6 +3,12 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod ast;
+mod canon;
+mod lex;
+mod modgraph;
+mod parse;
+
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(bytes);
@@ -47,30 +53,31 @@ fn main() -> Result<()> {
     let src = src.ok_or_else(|| anyhow::anyhow!("ERROR_BADARG missing --src"))?;
     let out = out.ok_or_else(|| anyhow::anyhow!("ERROR_BADARG missing --out"))?;
 
-    let src_bytes = fs::read(&src).with_context(|| format!("ERROR_IO read {}", src.display()))?;
-    let hex = sha256_hex(&src_bytes);
+    // 1) Read raw source, parse to AST
+    let raw = fs::read(&src).with_context(|| format!("ERROR_IO read {}", src.display()))?;
+    let m = parse::parse_module(&raw).context("ERROR_PARSE fardc parse_module")?;
+
+    // 2) Canonicalize: stable bytes become the module content-addressed source
+    let canon = canon::print_module(&m);
+    let canon_bytes = canon.as_bytes();
+
+    // 3) CID is sha256(canonical bytes)
+    let hex = sha256_hex(canon_bytes);
     let source_cid = format!("sha256:{}", hex);
-// Layout: bundle/sources/<hex>.src (exact bytes)
+
+    // Layout: bundle/sources/<hex>.src (canonical bytes)
     let sources_dir = out.join("sources");
     fs::create_dir_all(&sources_dir).with_context(|| format!("ERROR_IO mkdir {}", sources_dir.display()))?;
     let src_out = sources_dir.join(format!("{}.src", hex));
-    fs::write(&src_out, &src_bytes).with_context(|| format!("ERROR_IO write {}", src_out.display()))?;
+    fs::write(&src_out, canon_bytes).with_context(|| format!("ERROR_IO write {}", src_out.display()))?;
 
-    // Minimal bundle files
-    // input.json: unit
+    // Minimal bundle files remain identical semantics
     write_text(&out.join("input.json"), r#"{"t":"unit"}"#)?;
-
-    // imports.json: empty list
     write_text(&out.join("imports.json"), r#"{"t":"list","v":[]}"#)?;
-
-    // effects.json: empty list
     write_text(&out.join("effects.json"), r#"{"t":"list","v":[]}"#)?;
-
-    // facts/: empty dir
     fs::create_dir_all(out.join("facts")).ok();
 
-    // program.json: one module main pointing at sha256:<hex>
-    // NOTE: this is ValueCore JSON (normal JSON object with t/v fields).
+    // program.json: points to source CID
     let program = format!(
 r#"{{
   "t": "record",
@@ -88,7 +95,12 @@ r#"{{
 
     write_text(&out.join("program.json"), &program)?;
 
-    // Compiler output: print source_cid
+    // module_graph.json: canonical graph (not used by runner yet, but part of frontend contract)
+    let mg = modgraph::ModuleGraph::single("main", "main", &source_cid);
+    let mg_json = serde_json::to_string_pretty(&mg).unwrap();
+    write_text(&out.join("module_graph.json"), &mg_json)?;
+
+    // Compiler contract (v0): prints CID(canonical module bytes)
     println!("{}", source_cid);
     Ok(())
 }
