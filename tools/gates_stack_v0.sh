@@ -39,4 +39,8 @@ cargo test --manifest-path crates/valuecore/Cargo.toml --test gate7_valuecore_ca
 echo
 echo "== Gate 8 (valuecore division + zero boundary + signed audit) =="
 cargo test --manifest-path crates/valuecore/Cargo.toml --test gate8_valuecore_division_edges
+
+echo
+echo "== Gate 9 (valuecore canonical eq + total order) =="
+cargo test --manifest-path crates/valuecore/Cargo.toml --test gate9_valuecore_eq_order
 echo "[PASS] gates_stack_v0"

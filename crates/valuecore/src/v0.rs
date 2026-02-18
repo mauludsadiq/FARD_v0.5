@@ -13,6 +13,101 @@ pub enum V {
     Err(String),
 }
 
+use std::cmp::Ordering;
+
+fn tag_rank(v: &V) -> u8 {
+    match v {
+        V::Unit => 0,
+        V::Bool(_) => 1,
+        V::Int(_) => 2,
+        V::Text(_) => 3,
+        V::Bytes(_) => 4,
+        V::List(_) => 5,
+        V::Map(_) => 6,
+        V::Ok(_) => 7,
+        V::Err(_) => 8,
+    }
+}
+
+pub fn normalize(v: &V) -> V {
+    match v {
+        V::Unit => V::Unit,
+        V::Bool(b) => V::Bool(*b),
+        V::Int(i) => V::Int(*i),
+        V::Text(s) => V::Text(s.clone()),
+        V::Bytes(bs) => V::Bytes(bs.clone()),
+        V::List(xs) => V::List(xs.iter().map(normalize).collect()),
+        V::Map(kvs) => {
+            let mut out: Vec<(String, V)> = kvs
+                .iter()
+                .map(|(k, val)| (k.clone(), normalize(val)))
+                .collect();
+            out.sort_by(|a, b| a.0.cmp(&b.0));
+            V::Map(out)
+        }
+        V::Ok(x) => V::Ok(Box::new(normalize(x))),
+        V::Err(e) => V::Err(e.clone()),
+    }
+}
+
+pub fn canon_eq(a: &V, b: &V) -> bool {
+    normalize(a) == normalize(b)
+}
+
+pub fn canon_cmp(a: &V, b: &V) -> Ordering {
+    let ra = tag_rank(a);
+    let rb = tag_rank(b);
+    if ra != rb {
+        return ra.cmp(&rb);
+    }
+
+    match (a, b) {
+        (V::Unit, V::Unit) => Ordering::Equal,
+        (V::Bool(x), V::Bool(y)) => x.cmp(y),
+        (V::Int(x), V::Int(y)) => x.cmp(y),
+        (V::Text(x), V::Text(y)) => x.cmp(y),
+        (V::Bytes(x), V::Bytes(y)) => x.cmp(y),
+
+        (V::List(xs), V::List(ys)) => {
+            let n = xs.len().min(ys.len());
+            for i in 0..n {
+                let c = canon_cmp(&xs[i], &ys[i]);
+                if c != Ordering::Equal {
+                    return c;
+                }
+            }
+            xs.len().cmp(&ys.len())
+        }
+
+        (V::Map(xkvs), V::Map(ykvs)) => {
+            let xn = normalize(&V::Map(xkvs.clone()));
+            let yn = normalize(&V::Map(ykvs.clone()));
+            match (xn, yn) {
+                (V::Map(xs), V::Map(ys)) => {
+                    let n = xs.len().min(ys.len());
+                    for i in 0..n {
+                        let kc = xs[i].0.cmp(&ys[i].0);
+                        if kc != Ordering::Equal {
+                            return kc;
+                        }
+                        let vc = canon_cmp(&xs[i].1, &ys[i].1);
+                        if vc != Ordering::Equal {
+                            return vc;
+                        }
+                    }
+                    xs.len().cmp(&ys.len())
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        (V::Ok(x), V::Ok(y)) => canon_cmp(x, y),
+        (V::Err(x), V::Err(y)) => x.cmp(y),
+
+        _ => Ordering::Equal,
+    }
+}
+
 pub fn i64_neg(a: i64) -> Result<i64> {
     a.checked_neg().ok_or_else(|| anyhow!("ERROR_OVERFLOW i64_neg"))
 }
