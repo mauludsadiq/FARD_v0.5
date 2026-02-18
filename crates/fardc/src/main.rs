@@ -7,6 +7,7 @@ mod ast;
 mod canon;
 mod lex;
 mod modgraph;
+mod frontend_v1;
 mod parse;
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -53,13 +54,32 @@ fn main() -> Result<()> {
     let src = src.ok_or_else(|| anyhow::anyhow!("ERROR_BADARG missing --src"))?;
     let out = out.ok_or_else(|| anyhow::anyhow!("ERROR_BADARG missing --out"))?;
 
-    // 1) Read raw source, parse to AST
+    // 1) Read raw source (bytes)
     let raw = fs::read(&src).with_context(|| format!("ERROR_IO read {}", src.display()))?;
-    let m = parse::parse_module(&raw).context("ERROR_PARSE fardc parse_module")?;
 
-    // 2) Canonicalize: stable bytes become the module content-addressed source
-    let canon = canon::print_module(&m);
-    let canon_bytes = canon.as_bytes();
+    // 2) Canonical module bytes:
+    //    - Prefer v1 frontend (syntax-aware, module header required)
+    //    - Fallback to legacy parse/canon for older "fn ..." sources (Gate5 frozen)
+    let canon_bytes_vec: Vec<u8> = match frontend_v1::compile_v1_module_to_canon(&raw) {
+        Ok(v) => {
+            frontend_v1::ensure_min_entry_is_present(&v)?;
+            v
+        }
+        Err(e) => {
+            let msg = format!("{:#}", e);
+            if msg.contains("expected KwModule got KwFn") || msg.contains("expected KwModule") {
+                // legacy sources may start with fn or other non-module leading tokens
+                // v1 requires a module header, so we fallback to legacy canonizer
+            
+                let m = parse::parse_module(&raw).context("ERROR_PARSE fardc parse_module")?;
+                let canon = canon::print_module(&m);
+                canon.into_bytes()
+            } else {
+                return Err(e).context("ERROR_PARSE fardc v1 frontend");
+            }
+        }
+    };
+    let canon_bytes = canon_bytes_vec.as_slice();
 
     // 3) CID is sha256(canonical bytes)
     let hex = sha256_hex(canon_bytes);
