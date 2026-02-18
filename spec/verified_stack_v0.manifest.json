@@ -5,20 +5,25 @@
     "1_valuecore": "crates/valuecore",
     "2_3_witnesscore": "crates/witnesscore",
     "4_registry": "crates/registry",
-    "5_abirunner": "crates/abirunner"
+    "5_abirunner": "crates/abirunner",
+    "6_fardc": "crates/fardc"
   },
   "gates": [
     { "id": "GATE1_VECTOR0_ABI", "test": "crates/abirunner/tests/vector0_abi.rs" },
     { "id": "GATE2_VECTORA_EFFECT_SAT", "test": "crates/abirunner/tests/vectorA_abi.rs" },
     { "id": "GATE3_MISSING_FACT_PRECEDENCE", "test": "crates/abirunner/tests/vectorB_missing_fact_precedence.rs" },
-    { "id": "GATE4_REGISTRY_ROUNDTRIP", "test": "crates/abirunner/tests/registry_roundtrip.rs" }
+    { "id": "GATE4_REGISTRY_ROUNDTRIP", "test": "crates/abirunner/tests/registry_roundtrip.rs" },
+    { "id": "GATE5_FARDC_COMPILE_TO_BUNDLE", "test": "crates/fardc/tests/gate5_compile_to_bundle.rs" }
   ],
   "frozen": {
-    "vectorA_runid": "sha256:3415a772daf4fcc74216cf3cec989aa6fab4ee566b9304c97897b94ee59be610"
+    "vectorA_runid": "sha256:3415a772daf4fcc74216cf3cec989aa6fab4ee566b9304c97897b94ee59be610",
+    "gate5_witness_runid": "sha256:ab7ebe0282b3bce23992bdb672a547d9eb152bef5434cc726284ac4301c63478",
+    "gate5_source_cid": "sha256:053cec7ca391f54effc090ee6f7fff72b912a04a8a38b2466946edbf924f55bf"
   },
   "notes": [
     "Vector0 RunID and exact ENC(W*) are frozen in its gate test.",
-    "VectorA exact ENC(W*) is frozen in its gate test.",
-    "Registry stores witness bytes under RunID and retrieval preserves byte identity."
+    "VectorA exact ENC(W*) and RunID are frozen in its gate test; effect SAT is text(VDIG(value)).",
+    "Registry stores witness bytes under RunID and retrieval preserves byte identity.",
+    "fardc v0 prints source CID (sha256 of main module bytes), emits a bundle, and abirun deterministically produces the frozen witness RunID for that bundle."
   ]
 }

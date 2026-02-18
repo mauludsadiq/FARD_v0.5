@@ -18,3 +18,12 @@ regex = "1"
 [dev-dependencies]
 pretty_assertions = "1"
 tempfile = "3.25.0"
+
+[workspace]
+members = [
+  "crates/valuecore",
+  "crates/witnesscore",
+  "crates/abirunner",
+  "crates/registry",
+  "crates/fardc"
+]
