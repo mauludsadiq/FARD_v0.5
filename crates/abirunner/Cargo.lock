@@ -9,6 +9,7 @@ dependencies = [
  "anyhow",
  "hex",
  "pretty_assertions",
+ "registry",
  "sha2",
  "valuecore",
  "witnesscore",
@@ -164,6 +165,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "21b2ebcf727b7760c461f091f9f0f539b77b8e87f2fd88131e7f1b433b3cece4"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "registry"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
 ]
 
 [[package]]

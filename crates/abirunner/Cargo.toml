@@ -12,6 +12,7 @@ valuecore = { path = "../valuecore" }
 witnesscore = { path = "../witnesscore" }
 
 [dev-dependencies]
+registry = { path = "../registry" }
 pretty_assertions = "1"
 
 [[bin]]
