@@ -29,7 +29,6 @@ cargo test --manifest-path crates/fardc/Cargo.toml --test gate6_v1_canon_module_
 echo
 
 
-cargo test --manifest-path crates/fardc/Cargo.toml --test gate6_v1_canon_module_bytes
 
 echo
 echo "[PASS] gates_stack_v0"
