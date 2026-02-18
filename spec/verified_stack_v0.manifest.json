@@ -1,0 +1,24 @@
+{
+  "name": "FARD Spec Stack v0 — Verified Implementation Manifest",
+  "date": "2026-02-18",
+  "layers": {
+    "1_valuecore": "crates/valuecore",
+    "2_3_witnesscore": "crates/witnesscore",
+    "4_registry": "crates/registry",
+    "5_abirunner": "crates/abirunner"
+  },
+  "gates": [
+    { "id": "GATE1_VECTOR0_ABI", "test": "crates/abirunner/tests/vector0_abi.rs" },
+    { "id": "GATE2_VECTORA_EFFECT_SAT", "test": "crates/abirunner/tests/vectorA_abi.rs" },
+    { "id": "GATE3_MISSING_FACT_PRECEDENCE", "test": "crates/abirunner/tests/vectorB_missing_fact_precedence.rs" },
+    { "id": "GATE4_REGISTRY_ROUNDTRIP", "test": "crates/abirunner/tests/registry_roundtrip.rs" }
+  ],
+  "frozen": {
+    "vectorA_runid": "sha256:3415a772daf4fcc74216cf3cec989aa6fab4ee566b9304c97897b94ee59be610"
+  },
+  "notes": [
+    "Vector0 RunID and exact ENC(W*) are frozen in its gate test.",
+    "VectorA exact ENC(W*) is frozen in its gate test.",
+    "Registry stores witness bytes under RunID and retrieval preserves byte identity."
+  ]
+}
