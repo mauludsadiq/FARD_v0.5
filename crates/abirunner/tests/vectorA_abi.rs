@@ -4,7 +4,7 @@ use std::process::Command;
 use valuecore::{dec, vdig};
 
 #[test]
-fn abi_vectorA_single_effect_sat_is_digest_and_matches_frozen() {
+fn abi_vector_a_single_effect_sat_is_digest_and_matches_frozen() {
     let bundle = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/vectorA/bundle");
 
     let out = Command::new(env!("CARGO_BIN_EXE_abirun"))

@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 fn parse_runid(runid: &str) -> Result<(&str, &str)> {
     // Expect: "sha256:<64hex>"
