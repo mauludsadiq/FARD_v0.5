@@ -31,4 +31,8 @@ echo
 
 
 echo
+
+echo
+echo "== Gate 7 (valuecore canon json + overflow) =="
+cargo test --manifest-path crates/valuecore/Cargo.toml --test gate7_valuecore_canon_json
 echo "[PASS] gates_stack_v0"

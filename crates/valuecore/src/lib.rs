@@ -1,3 +1,4 @@
+// ValueCore crate
 pub mod canon_hex;
 pub mod canon_int;
 pub mod canon_str;
@@ -10,3 +11,6 @@ pub use dec::{dec, DecodeError};
 pub use enc::enc;
 pub use value::{Value, ValueTag};
 pub use vdig::{cid, vdig};
+
+
+pub mod v0;
