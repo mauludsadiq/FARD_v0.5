@@ -35,4 +35,8 @@ echo
 echo
 echo "== Gate 7 (valuecore canon json + overflow) =="
 cargo test --manifest-path crates/valuecore/Cargo.toml --test gate7_valuecore_canon_json
+
+echo
+echo "== Gate 8 (valuecore division + zero boundary + signed audit) =="
+cargo test --manifest-path crates/valuecore/Cargo.toml --test gate8_valuecore_division_edges
 echo "[PASS] gates_stack_v0"

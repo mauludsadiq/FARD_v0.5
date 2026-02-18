@@ -13,6 +13,24 @@ pub enum V {
     Err(String),
 }
 
+pub fn i64_neg(a: i64) -> Result<i64> {
+    a.checked_neg().ok_or_else(|| anyhow!("ERROR_OVERFLOW i64_neg"))
+}
+
+pub fn i64_div(a: i64, b: i64) -> Result<i64> {
+    if b == 0 {
+        return Err(anyhow!("ERROR_DIV_ZERO i64_div"));
+    }
+    a.checked_div(b).ok_or_else(|| anyhow!("ERROR_OVERFLOW i64_div"))
+}
+
+pub fn i64_rem(a: i64, b: i64) -> Result<i64> {
+    if b == 0 {
+        return Err(anyhow!("ERROR_DIV_ZERO i64_rem"));
+    }
+    a.checked_rem(b).ok_or_else(|| anyhow!("ERROR_OVERFLOW i64_rem"))
+}
+
 fn hex_lower(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
