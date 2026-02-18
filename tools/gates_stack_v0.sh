@@ -22,5 +22,14 @@ echo
 echo "== Gate 5 (fardc -> bundle -> abirun) =="
 cargo test --manifest-path crates/fardc/Cargo.toml --test gate5_compile_to_bundle
 
+
+echo
+echo "== Gate 6 (v1 canon bytes) =="
+cargo test --manifest-path crates/fardc/Cargo.toml --test gate6_v1_canon_module_bytes
+echo
+
+
+cargo test --manifest-path crates/fardc/Cargo.toml --test gate6_v1_canon_module_bytes
+
 echo
 echo "[PASS] gates_stack_v0"
