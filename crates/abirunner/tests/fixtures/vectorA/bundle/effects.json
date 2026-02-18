@@ -1,0 +1,15 @@
+{
+  "t": "list",
+  "v": [
+    {
+      "t": "record",
+      "v": [
+        ["kind",  { "t": "text", "v": "read/file" }],
+        ["req",   { "t": "record", "v": [
+          ["path", { "t": "text", "v": "hello.txt" }]
+        ]}],
+        ["value", { "t": "bytes", "v": "68656c6c6f0a" }]
+      ]
+    }
+  ]
+}

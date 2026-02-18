@@ -36,3 +36,9 @@ src/bin/faPassword
 spec/tmp/*
 !spec/tmp/m5_digest_verify_ok.fard
 !spec/tmp/m5_digest_verify_err.fard
+
+# local run outputs
+/_out_*/
+
+_out_*/
+_out*/

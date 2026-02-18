@@ -40,6 +40,8 @@ pub struct GatesCfg {
     pub require_trace_file: bool,
     #[serde(default = "default_true")]
     pub require_result_file: bool,
+    #[serde(default = "default_true")]
+    pub cg1_color_geometry_missing_std_color: bool,
 }
 
 fn default_true() -> bool {
@@ -298,3 +300,6 @@ pub fn matches_any_regex(text: &str, patterns: &[String]) -> Result<bool> {
 
 pub mod cli;
 pub mod digest;
+
+
+pub mod gates;

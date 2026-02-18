@@ -32,9 +32,17 @@ pub fn builtin_sig_table() -> BTreeMap<String, BuiltinSig> {
     ins(&mut m, "std/list", "sort_by_int_key", 2, true);
     ins(&mut m, "std/list", "sort_int", 1, true);
     ins(&mut m, "std/list", "dedupe_sorted_int", 1, true);
+    ins(&mut m, "std/bytes", "empty", 0, true);
+    ins(&mut m, "std/bytes", "from_u8_list", 1, true);
+    ins(&mut m, "std/bytes", "len", 1, true);
+    ins(&mut m, "std/bytes", "concat", 2, true);
+    ins(&mut m, "std/bytes", "push_u8", 2, true);
+    ins(&mut m, "std/bytes", "u32be", 1, true);
+    ins(&mut m, "std/bytes", "crc32", 1, true);
+    ins(&mut m, "std/bytes", "adler32", 1, true);
+    ins(&mut m, "std/png", "red_1x1", 0, true);
     ins(&mut m, "std/list", "hist_int", 1, true);
-
-    // std/result
+// std/result
     ins(&mut m, "std/result", "ok", 1, false);
     ins(&mut m, "std/result", "andThen", 2, true);
     ins(&mut m, "std/result", "err", 1, false);

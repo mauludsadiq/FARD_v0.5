@@ -229,6 +229,34 @@ fn run_one_gate(cfg: &fard_v0_5_language_gate::Config, gate: &Gate) -> Result<bo
             println!("PASS");
             Ok(true)
         }
+        
+        "cg1_color_geometry" => {
+            let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+            match fard_v0_5_language_gate::gates::cg1_color_geometry::run(cfg, root) {
+                Ok(()) => {
+                    if cfg.gates.cg1_color_geometry_missing_std_color {
+                        // When the flag is true, CG1 is expected to FAIL (missing std/color).
+                        println!("XPASS: CG1 unexpectedly passed (std_color may have landed or behavior changed)");
+                        Ok(false)
+                    } else {
+                        // When the flag is false, CG1 is expected to PASS.
+                        println!("PASS");
+                        Ok(true)
+                    }
+                }
+                Err(e) => {
+                    if cfg.gates.cg1_color_geometry_missing_std_color {
+                        // When the flag is true, failure is expected.
+                        println!("XFAIL: {}", e);
+                        Ok(true)
+                    } else {
+                        // When the flag is false, failure is an actual failure.
+                        println!("FAIL: {}", e);
+                        Ok(false)
+                    }
+                }
+            }
+        }
 
         other => {
             println!("FAIL: unknown gate kind: {other}");

@@ -213,12 +213,12 @@ list.hist_int([2,2,1])"#;
     let arr = res["result"].as_array().unwrap();
     assert!(arr.len() >= 1);
     for it in arr {
-        assert!(it.get("k").is_some(), "hist_int element missing k: {it}");
+        assert!(it.get("v").is_some(), "hist_int element missing k: {it}");
         assert!(
             it.get("count").is_some(),
             "hist_int element missing count: {it}"
         );
-        assert!(it["k"].is_i64(), "hist_int k must be int: {it}");
+        assert!(it["v"].is_i64(), "hist_int v must be int: {it}");
         assert!(it["count"].is_i64(), "hist_int count must be int: {it}");
     }
 }

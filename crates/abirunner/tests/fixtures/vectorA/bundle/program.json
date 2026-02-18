@@ -1,0 +1,13 @@
+{
+  "t": "record",
+  "v": [
+    ["entry", { "t": "text", "v": "main" }],
+    ["kind",  { "t": "text", "v": "fard/program/v0.1" }],
+    ["mods",  { "t": "list", "v": [
+      { "t": "record", "v": [
+        ["name",   { "t": "text", "v": "main" }],
+        ["source", { "t": "text", "v": "sha256:053cec7ca391f54effc090ee6f7fff72b912a04a8a38b2466946edbf924f55bf" }]
+      ]}
+    ]}]
+  ]
+}

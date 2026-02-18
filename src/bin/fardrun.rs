@@ -59,17 +59,38 @@ fn canon_json(v: &serde_json::Value) -> Result<String> {
                 Ok(())
             }
             serde_json::Value::Object(m) => {
-                let mut keys: Vec<&String> = m.keys().collect();
-                keys.sort();
                 out.push('{');
-                for (i, k) in keys.iter().enumerate() {
-                    if i > 0 {
+
+                // Canonical key order:
+                // emit "k" first (if present), then emit remaining keys in sorted order.
+                let mut first = true;
+
+                if m.contains_key("k") {
+                    let k = "k";
+                    if !first {
                         out.push(',');
                     }
+                    first = false;
                     out.push_str(&serde_json::to_string(k).context("M5_CANON_KEY_ESC_FAIL")?);
                     out.push(':');
-                    canon_value(&m[*k], out)?;
+                    canon_value(&m[k], out)?;
                 }
+
+                let mut ks: Vec<&String> = m.keys().collect();
+                ks.sort();
+                for k in ks {
+                    if k.as_str() == "k" {
+                        continue;
+                    }
+                    if !first {
+                        out.push(',');
+                    }
+                    first = false;
+                    out.push_str(&serde_json::to_string(k).context("M5_CANON_KEY_ESC_FAIL")?);
+                    out.push(':');
+                    canon_value(&m[k], out)?;
+                }
+
                 out.push('}');
                 Ok(())
             }
@@ -1565,6 +1586,7 @@ impl Parser {
 }
 #[derive(Clone, Debug)]
 enum Val {
+    Bytes(Vec<u8>),
     Int(i64),
     Bool(bool),
     Str(String),
@@ -1592,6 +1614,7 @@ struct Func {
 }
 #[derive(Clone, Debug)]
 enum Builtin {
+    PngRed1x1,
     Unimplemented,
     ListMap,
     ListFilter,
@@ -1701,15 +1724,63 @@ impl Val {
             )),
             Val::Rec(m) => {
                 let mut obj = Map::new();
+
+                // Canonical object field order for records:
+                // emit "k" first (if present), then emit remaining keys in BTreeMap order.
+                if let Some(vk) = m.get("k") {
+                    obj.insert("k".to_string(), vk.to_json()?);
+                }
+
                 for (k, v) in m.iter() {
+                    if k == "k" {
+                        continue;
+                    }
                     obj.insert(k.clone(), v.to_json()?);
                 }
+
+                Some(J::Object(obj))
+            }
+            Val::Bytes(bs) => {
+                let mut obj = Map::new();
+                obj.insert("t".to_string(), J::String("bytes".to_string()));
+                obj.insert("v".to_string(), J::String(format!("hex:{}", hex_lower(bs))));
                 Some(J::Object(obj))
             }
             Val::Func(_) | Val::Builtin(_) => None,
         }
     }
 }
+
+fn hex_lower(bytes: &[u8]) -> String {
+    const HEX: &[u8;16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len()*2);
+    for &b in bytes {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0x0f) as usize] as char);
+    }
+    out
+}
+
+fn parse_hex_bytes(s: &str) -> Result<Vec<u8>> {
+    let s = s.strip_prefix("hex:")
+        .ok_or_else(|| anyhow::anyhow!("bytes v must start with hex:"))?;
+    if s.len() % 2 != 0 {
+        anyhow::bail!("hex length must be even");
+    }
+    let bs = s.as_bytes();
+    let mut out = Vec::with_capacity(bs.len()/2);
+    let mut i = 0usize;
+    while i < bs.len() {
+        let hi = (bs[i] as char).to_digit(16)
+            .ok_or_else(|| anyhow::anyhow!("bad hex"))? as u8;
+        let lo = (bs[i+1] as char).to_digit(16)
+            .ok_or_else(|| anyhow::anyhow!("bad hex"))? as u8;
+        out.push((hi<<4)|lo);
+        i += 2;
+    }
+    Ok(out)
+}
+
 fn val_from_json(j: &J) -> Result<Val> {
     match j {
         J::Null => Ok(Val::Null),
@@ -1729,6 +1800,13 @@ fn val_from_json(j: &J) -> Result<Val> {
             Ok(Val::List(out))
         }
         J::Object(m) => {
+            if m.len() == 2 {
+                if let (Some(J::String(t)), Some(J::String(v))) = (m.get("t"), m.get("v")) {
+                    if t == "bytes" {
+                        return Ok(Val::Bytes(parse_hex_bytes(v)?));
+                    }
+                }
+            }
             let mut out = BTreeMap::new();
             for (k, v) in m.iter() {
                 out.insert(k.clone(), val_from_json(v)?);
@@ -2094,7 +2172,13 @@ fn call_builtin(
     tracer: &mut Tracer,
     loader: &mut ModuleLoader,
 ) -> Result<Val> {
-    match b {
+    match b {        Builtin::PngRed1x1 => {
+            if !args.is_empty() {
+                bail!("ERROR_BADARG std/png.red_1x1 expects 0 args");
+            }
+            let bs = hex::decode("89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000f494441547801010400fbff00ff0000030101008d1de5820000000049454e44ae426082").map_err(|_| anyhow!("ERROR_BADARG std/png.red_1x1 invalid hex"))?;
+            Ok(Val::Bytes(bs))
+        }
         Builtin::Unimplemented => bail!("ERROR_RUNTIME UNIMPLEMENTED_BUILTIN"),
         Builtin::ResultOk => {
             if args.len() != 1 {
@@ -3122,7 +3206,7 @@ fn call_builtin(
             let mut out_list: Vec<Val> = Vec::new();
             for (v, c) in m {
                 let mut rec = BTreeMap::new();
-                rec.insert("k".to_string(), Val::Int(v));
+                rec.insert("v".to_string(), Val::Int(v));
                 rec.insert("count".to_string(), Val::Int(c));
                 out_list.push(Val::Rec(rec));
             }
@@ -3900,6 +3984,17 @@ impl ModuleLoader {
                 Ok(m)
             }
 
+            "std/png" => {
+
+                let mut m = BTreeMap::new();
+
+                m.insert("red_1x1".to_string(), Val::Builtin(Builtin::PngRed1x1));
+
+                Ok(m)
+
+            }
+
+
             _ => bail!("unknown std module: {name}"),
         }
     }
@@ -3914,7 +4009,7 @@ impl ModuleLoader {
     }
 
     fn stdlib_root_digest(&self) -> String {
-        let names: [&str; 20] = [
+        let names: [&str; 21] = [
             "std/artifact",
             "std/bytes",
             "std/codec",
@@ -3934,7 +4029,8 @@ impl ModuleLoader {
             "std/str",
             "std/time",
             "std/trace",
-            "std/rec",
+              "std/png",
+              "std/rec",
         ];
 
         let mut pairs: Vec<(String, String)> = names
@@ -3993,84 +4089,8 @@ fn file_digest(p: &Path) -> Result<String> {
 }
 
 fn canonical_json_bytes(v: &serde_json::Value) -> Vec<u8> {
-    fn write(v: &serde_json::Value, out: &mut Vec<u8>) {
-        match v {
-            serde_json::Value::Null => out.extend_from_slice(b"null"),
-            serde_json::Value::Bool(b) => {
-                if *b {
-                    out.extend_from_slice(b"true")
-                } else {
-                    out.extend_from_slice(b"false")
-                }
-            }
-            serde_json::Value::Number(n) => {
-                let mut s = n.to_string();
-
-                if s.contains("e") || s.contains("E") {
-                    let f: f64 = s.parse().unwrap();
-                    s = format!("{}", f);
-                }
-
-                if s.contains(".") {
-                    while s.ends_with("0") {
-                        s.pop();
-                    }
-                    if s.ends_with(".") {
-                        s.pop();
-                    }
-                }
-
-                if s == "-0" {
-                    s = "0".to_string();
-                }
-
-                out.extend_from_slice(s.as_bytes());
-            }
-            serde_json::Value::String(s) => {
-                out.push(b'"');
-                for c in s.chars() {
-                    match c {
-                        '"' => out.extend_from_slice(b"\\\""),
-                        '\\' => out.extend_from_slice(b"\\\\"),
-                        '\n' => out.extend_from_slice(b"\\n"),
-                        '\r' => out.extend_from_slice(b"\\r"),
-                        '\t' => out.extend_from_slice(b"\\t"),
-                        c if c < ' ' => {
-                            out.extend_from_slice(format!("\\u{:04x}", c as u32).as_bytes())
-                        }
-                        _ => out.extend_from_slice(c.to_string().as_bytes()),
-                    }
-                }
-                out.push(b'"');
-            }
-            serde_json::Value::Array(a) => {
-                out.push(b'[');
-                for (i, x) in a.iter().enumerate() {
-                    if i != 0 {
-                        out.push(b',');
-                    }
-                    write(x, out);
-                }
-                out.push(b']');
-            }
-            serde_json::Value::Object(map) => {
-                out.push(b'{');
-                let mut keys: Vec<_> = map.keys().collect();
-                keys.sort();
-                for (i, k) in keys.iter().enumerate() {
-                    if i != 0 {
-                        out.push(b',');
-                    }
-                    write(&serde_json::Value::String((*k).clone()), out);
-                    out.push(b':');
-                    write(&map[*k], out);
-                }
-                out.push(b'}');
-            }
-        }
-    }
-
-    let mut out = Vec::new();
-    write(v, &mut out);
-    out
+    // Single canonicalization path for *all* persisted JSON bytes:
+    // use canon_json() (including k-first object rule).
+    let s = canon_json(v).expect("canonical_json_bytes canon_json failed");
+    s.into_bytes()
 }

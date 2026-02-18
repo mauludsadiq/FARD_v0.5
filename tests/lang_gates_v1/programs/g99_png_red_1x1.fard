@@ -1,0 +1,4 @@
+import("std/png") as Png
+
+let result = Png.red_1x1()
+result
