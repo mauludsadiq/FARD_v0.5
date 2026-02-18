@@ -19,4 +19,8 @@ echo "== Gate 4 (Registry round-trip) =="
 cargo test --manifest-path crates/abirunner/Cargo.toml --test registry_roundtrip
 
 echo
+echo "== Gate 5 (fardc -> bundle -> abirun) =="
+cargo test --manifest-path crates/fardc/Cargo.toml --test gate5_compile_to_bundle
+
+echo
 echo "[PASS] gates_stack_v0"
