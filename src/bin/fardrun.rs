@@ -527,6 +527,8 @@ impl Tracer {
 }
 #[derive(Clone, Debug)]
 enum Tok {
+    OrOr,
+
     Kw(String),
     Ident(String),
     Num(i64),
@@ -729,7 +731,12 @@ impl Lex {
         } else {
             None
         };
-        for op in ["==", "<=", ">=", "&&", "||", "->", "=>", "|>"] {
+        if two.as_deref() == Some("||") {
+            self.i += 2;
+            return Ok(Tok::OrOr);
+        }
+
+        for op in ["==", "<=", ">=", "&&", "->", "=>", "|>"] {
             if two.as_deref() == Some(op) {
                 self.i += 2;
                 return Ok(Tok::Sym(op.to_string()));
@@ -738,7 +745,7 @@ impl Lex {
         let one = self.bump().unwrap();
         let sym = match one {
             '(' | ')' | '{' | '}' | '[' | ']' | ',' | ':' | '.' | '+' | '-' | '*' | '/' | '='
-            | '|' | '<' | '>' | '?' => one.to_string(),
+            | '%' | '|' | '<' | '>' | '?' => one.to_string(),
             _ => bail!("unexpected char: {one}"),
         };
         Ok(Tok::Sym(sym))
@@ -1733,6 +1740,7 @@ impl Env {
     }
 }
 impl Val {
+    #[allow(dead_code)]
     fn to_vc_json(&self) -> Option<J> {
         match self {
             Val::Int(n) => Some(serde_json::json!({"t":"int","v":*n})),
@@ -2229,7 +2237,7 @@ fn call_builtin(
         }
 
         Builtin::IntAdd => {
-            if (args.len() != 2) {
+            if args.len() != 2 {
                 bail!("ERROR_BADARG int.add expects 2 args");
             }
             let a = match &args[0] {
@@ -2247,7 +2255,7 @@ fn call_builtin(
         }
 
         Builtin::IntEq => {
-            if (args.len() != 2) {
+            if args.len() != 2 {
                 bail!("ERROR_BADARG int.eq expects 2 args");
             }
             let a = match &args[0] {
