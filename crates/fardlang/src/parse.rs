@@ -305,10 +305,152 @@ fn parse_block(lx: &mut Lexer<'_>) -> Result<Block> {
     Ok(Block { stmts, tail })
 }
 fn parse_expr(lx: &mut Lexer<'_>) -> Result<Expr> {
-    parse_postfix(lx)
+    parse_or(lx)
 }
 
-fn parse_postfix(lx: &mut Lexer<'_>) -> Result<Expr> {
+fn parse_or(lx: &mut Lexer<'_>) -> Result<Expr> {
+    let mut lhs = parse_and(lx)?;
+    while peek_is(lx, Tok::OrOr)? {
+        expect(lx, Tok::OrOr)?;
+        let rhs = parse_and(lx)?;
+        lhs = Expr::BinOp {
+            op: BinOp::Or,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        };
+    }
+    Ok(lhs)
+}
+
+fn parse_and(lx: &mut Lexer<'_>) -> Result<Expr> {
+    let mut lhs = parse_cmp(lx)?;
+    while peek_is(lx, Tok::AndAnd)? {
+        expect(lx, Tok::AndAnd)?;
+        let rhs = parse_cmp(lx)?;
+        lhs = Expr::BinOp {
+            op: BinOp::And,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        };
+    }
+    Ok(lhs)
+}
+
+fn parse_cmp(lx: &mut Lexer<'_>) -> Result<Expr> {
+    let mut lhs = parse_add(lx)?;
+    loop {
+        let op = if peek_is(lx, Tok::EqEq)? {
+            Some(BinOp::Eq)
+        } else if peek_is(lx, Tok::Le)? {
+            Some(BinOp::Le)
+        } else if peek_is(lx, Tok::Ge)? {
+            Some(BinOp::Ge)
+        } else if peek_is(lx, Tok::Lt)? {
+            Some(BinOp::Lt)
+        } else if peek_is(lx, Tok::Gt)? {
+            Some(BinOp::Gt)
+        } else {
+            None
+        };
+
+        let Some(op) = op else {
+            break;
+        };
+
+        match op {
+            BinOp::Eq => expect(lx, Tok::EqEq)?,
+            BinOp::Le => expect(lx, Tok::Le)?,
+            BinOp::Ge => expect(lx, Tok::Ge)?,
+            BinOp::Lt => expect(lx, Tok::Lt)?,
+            BinOp::Gt => expect(lx, Tok::Gt)?,
+            _ => unreachable!(),
+        }
+
+        let rhs = parse_add(lx)?;
+        lhs = Expr::BinOp {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        };
+    }
+    Ok(lhs)
+}
+
+fn parse_add(lx: &mut Lexer<'_>) -> Result<Expr> {
+    let mut lhs = parse_mul(lx)?;
+    loop {
+        let op = if peek_is(lx, Tok::Plus)? {
+            Some(BinOp::Add)
+        } else if peek_is(lx, Tok::Minus)? {
+            Some(BinOp::Sub)
+        } else {
+            None
+        };
+
+        let Some(op) = op else {
+            break;
+        };
+
+        match op {
+            BinOp::Add => expect(lx, Tok::Plus)?,
+            BinOp::Sub => expect(lx, Tok::Minus)?,
+            _ => unreachable!(),
+        }
+
+        let rhs = parse_mul(lx)?;
+        lhs = Expr::BinOp {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        };
+    }
+    Ok(lhs)
+}
+
+fn parse_mul(lx: &mut Lexer<'_>) -> Result<Expr> {
+    let mut lhs = parse_unary(lx)?;
+    loop {
+        let op = if peek_is(lx, Tok::Star)? {
+            Some(BinOp::Mul)
+        } else if peek_is(lx, Tok::Slash)? {
+            Some(BinOp::Div)
+        } else if peek_is(lx, Tok::Percent)? {
+            Some(BinOp::Rem)
+        } else {
+            None
+        };
+
+        let Some(op) = op else {
+            break;
+        };
+
+        match op {
+            BinOp::Mul => expect(lx, Tok::Star)?,
+            BinOp::Div => expect(lx, Tok::Slash)?,
+            BinOp::Rem => expect(lx, Tok::Percent)?,
+            _ => unreachable!(),
+        }
+
+        let rhs = parse_unary(lx)?;
+        lhs = Expr::BinOp {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        };
+    }
+    Ok(lhs)
+}
+
+fn parse_unary(lx: &mut Lexer<'_>) -> Result<Expr> {
+    if peek_is(lx, Tok::Minus)? {
+        expect(lx, Tok::Minus)?;
+        let e = parse_unary(lx)?;
+        return Ok(Expr::UnaryMinus(Box::new(e)));
+    }
+    parse_primary(lx)
+}
+
+fn parse_primary(lx: &mut Lexer<'_>) -> Result<Expr> {
     // minimal expression set for v1 bootstrap: literals, ident, call, if, list
     if peek_is(lx, Tok::KwIf)? {
         lx.next()?;
@@ -330,6 +472,12 @@ fn parse_postfix(lx: &mut Lexer<'_>) -> Result<Expr> {
         Tok::Int(s) => Ok(Expr::Int(s)),
         Tok::Text(s) => Ok(Expr::Text(s)),
         Tok::BytesHex(h) => Ok(Expr::BytesHex(h)),
+
+        Tok::LParen => {
+            let e = parse_expr(lx)?;
+            expect(lx, Tok::RParen)?;
+            Ok(e)
+        }
 
         Tok::LBrack => {
             let mut items = Vec::new();
@@ -385,6 +533,7 @@ fn parse_postfix(lx: &mut Lexer<'_>) -> Result<Expr> {
         _ => bail!("ERROR_PARSE unsupported expression"),
     }
 }
+
 fn parse_type_params(lx: &mut Lexer<'_>) -> Result<Vec<String>> {
     let mut out = Vec::new();
     if !peek_is(lx, Tok::Lt)? {
