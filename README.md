@@ -194,4 +194,4 @@ is identical.
 
 ## License
 
-MIT
+MUI
