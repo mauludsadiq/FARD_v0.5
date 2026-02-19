@@ -37,6 +37,17 @@ pub enum Tok {
     Eq,
     Pipe,
 
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
+
+    EqEq,
+    Le,
+    Ge,
+    AndAnd,
+    OrOr,
     Eof,
 }
 
@@ -110,9 +121,6 @@ impl<'a> Lexer<'a> {
 
     fn lex_int(&mut self) -> Result<String> {
         let mut v = Vec::new();
-        if self.peek() == Some(b'-') {
-            v.push(self.bump().unwrap());
-        }
         let mut any = false;
         while let Some(b) = self.peek() {
             if matches!(b, b'0'..=b'9') {
@@ -175,6 +183,73 @@ impl<'a> Lexer<'a> {
     pub fn next(&mut self) -> Result<Tok> {
         self.skip_ws_and_comments();
         match self.peek() {
+            // lex_ops_dispatch_v1 begin
+            Some(b'<') => {
+                self.bump();
+                if self.peek() == Some(b'=') {
+                    self.bump();
+                    Ok(Tok::Le)
+                } else {
+                    Ok(Tok::Lt)
+                }
+            }
+            Some(b'>') => {
+                self.bump();
+                if self.peek() == Some(b'=') {
+                    self.bump();
+                    Ok(Tok::Ge)
+                } else {
+                    Ok(Tok::Gt)
+                }
+            }
+            Some(b'+') => {
+                self.bump();
+                Ok(Tok::Plus)
+            }
+            Some(b'-') => {
+                self.bump();
+                Ok(Tok::Minus)
+            }
+            Some(b'*') => {
+                self.bump();
+                Ok(Tok::Star)
+            }
+            Some(b'/') => {
+                self.bump();
+                Ok(Tok::Slash)
+            }
+            Some(b'%') => {
+                self.bump();
+                Ok(Tok::Percent)
+            }
+            Some(b'=') => {
+                self.bump();
+                if self.peek() == Some(b'=') {
+                    self.bump();
+                    Ok(Tok::EqEq)
+                } else {
+                    Ok(Tok::Eq)
+                }
+            }
+            Some(b'&') => {
+                self.bump();
+                if self.peek() == Some(b'&') {
+                    self.bump();
+                    Ok(Tok::AndAnd)
+                } else {
+                    bail!("ERROR_PARSE expected &&");
+                }
+            }
+            Some(b'|') => {
+                self.bump();
+                if self.peek() == Some(b'|') {
+                    self.bump();
+                    Ok(Tok::OrOr)
+                } else {
+                    Ok(Tok::Pipe)
+                }
+            }
+            // lex_ops_dispatch_v1 end
             None => Ok(Tok::Eof),
             Some(b'(') => {
                 self.bump();
@@ -200,14 +275,6 @@ impl<'a> Lexer<'a> {
                 self.bump();
                 Ok(Tok::RBrack)
             }
-            Some(b'<') => {
-                self.bump();
-                Ok(Tok::Lt)
-            }
-            Some(b'>') => {
-                self.bump();
-                Ok(Tok::Gt)
-            }
             Some(b':') => {
                 self.bump();
                 Ok(Tok::Colon)
@@ -220,19 +287,12 @@ impl<'a> Lexer<'a> {
                 self.bump();
                 Ok(Tok::Dot)
             }
-            Some(b'=') => {
-                self.bump();
-                Ok(Tok::Eq)
-            }
-            Some(b'|') => {
-                self.bump();
-                Ok(Tok::Pipe)
-            }
             Some(b'"') => Ok(Tok::Text(self.lex_text()?)),
+            Some(b'0'..=b'9') => Ok(Tok::Int(self.lex_int()?)),
+
             Some(b'b') if self.s.get(self.i + 1) == Some(&b'"') => {
                 Ok(Tok::BytesHex(self.lex_bytes_hex()?))
             }
-            Some(b'-') | Some(b'0'..=b'9') => Ok(Tok::Int(self.lex_int()?)),
             Some(b) if Self::is_ident_start(b) => {
                 let id = self.lex_ident()?;
                 Ok(match id.as_str() {
