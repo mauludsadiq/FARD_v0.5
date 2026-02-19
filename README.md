@@ -1,168 +1,197 @@
-# FARD v0.5 — Language Gate (pass/fail)
+# FARD v0.5
 
-This repo is a **compiler-team style “language gate”**: a strict suite of pass/fail checks that declares:
+FARD is a programming language with traceable execution. Every program
+that runs produces a cryptographic witness proving what code ran, what
+it received, and what it returned. The witness is a value, encoded as
+canonical bytes, identified by its hash.
 
-> ✅ “FARD is now a programming language”
+Traceability is not a feature. It is an invariant of every execution.
 
-…once (and only once) every gate turns green.
+## Architecture
 
-There is **no prose-based evaluation** here. The suite is **programs + assertions**.
-
-## What this repo contains
-
-- `tests/gate/programs/*.fard` — the gate programs
-- `tests/gate/gates.json` — the gate spec (what to run, what must hold)
-- `src/bin/gaterun.rs` — Rust gate runner (executes your existing FARD runner, checks artifacts)
-- `fard_gate.toml` — config pointing to your local FARD runner and artifact paths
-
-This does **not** ship a FARD interpreter. It validates your interpreter/toolchain.
-
----
-
-## Quickstart
-
-### 1) Point the gate runner at your FARD runner
-
-Edit `fard_gate.toml`:
-
-- `runner.cmd` — command vector to execute your runner
-- `runner.args` — base args before the gate runner appends `--program <path> --out <dir>`
-- `artifacts.*_relpath` — where your runner writes `trace.ndjson` + `result.json`
-
-Default is set to a placeholder:
-
-```toml
-[runner]
-cmd = ["python", "-m", "fard.toolchain.fardrun_v0_4"]
-args = ["run"]
-
-[artifacts]
-trace_relpath = "trace.ndjson"
-result_relpath = "result.json"
-lock_relpath = "fard.lock.json"
+```
+Layer 5  Execution ABI v0        bundle → ENC(W*) on stdout
+Layer 4  Registry Semantics v0   content-addressed witness storage
+Layer 3  Composition Semantics   executions link by verified RunID
+Layer 2  Artifact Semantics      same (program, input, deps) → same RunID
+Layer 1  Value Core v0           same value → same bytes → same hash
 ```
 
-If your runner is a single binary, use:
+Each layer depends only on the one below. The entire system reduces to
+one primitive: `CID(bytes) = "sha256:" || hex(SHA256(bytes))`.
 
-```toml
-cmd = ["./target/debug/fardrun"]
-```
+## Crates
 
-### 2) Run the gate suite
+|Crate        |Purpose                                                             |
+|-------------|--------------------------------------------------------------------|
+|`valuecore`  |Value encoding, decoding, hashing (Layer 1)                         |
+|`witnesscore`|Witness construction and identity projection (Layer 2/3)            |
+|`abirunner`  |Bundle runner — pure function from bundle to witness bytes (Layer 5)|
+|`registry`   |Content-addressed storage by CID (Layer 4)                          |
+|`fardc`      |Compiler — .fard source to bundle                                   |
+|`fardlang`   |Parser, canonical printer, effect checker, evaluator                |
+|`fardcli`    |Developer CLI (`fard run`)                                          |
+
+## Quick Start
+
+Build everything:
 
 ```bash
-cargo run --bin gaterun
+cargo build
 ```
 
-You should see a table like:
+Write a program:
 
-- `PASS G01_core_eval`
-- `FAIL G03_std_list_sort_int ...` (until you implement it)
+```fard
+module main
 
-Exit code:
-- `0` if **all** gates pass
-- nonzero if any gate fails
+fn main(): int {
+  let x = 10
+  let y = mul(x, 3)
+  add(y, rem(x, 3))
+}
+```
 
----
-
-## The definition of “FARD is now a programming language”
-
-**FARD v0.5 passes the gate** if and only if all gates in `tests/gate/gates.json` pass.
-
-This suite is intentionally minimal but **complete**: it gates the required features for FARD to function as a real language, not a demo.
-
-### Gate list (current)
-
-1. **G01_core_eval** — core evaluation surface works
-   - `let`, `fn`, call, `if`, lists, records, dot-get (implemented as `get(x,"k")`)
-   - must produce deterministic final result
-
-2. **G02_modules_export_import** — real module system
-   - `import("lib/math") as M`
-   - `export { pi, square }`
-   - namespace access `M.pi`, `M.square(5)`
-
-3. **G03_trace_parseable** — proof-grade trace
-   - `trace.ndjson` exists
-   - every line parses as JSON
-
-4. **G04_determinism_same_trace_bytes** — determinism contract
-   - same program bytes + same stdlib bytes + same runtime ⇒ identical `trace.ndjson` bytes
-   - gate compares sha256 of `trace.ndjson` across two identical runs
-
-5. **G05_std_list_sort_int** — deterministic sorting in `std/list`
-   - `List.sort_int([3,1,2,1]) -> [1,1,2,3]`
-
-6. **G06_std_list_dedupe_sorted_int** — linear dedupe on sorted list
-   - `dedupe_sorted_int(sort_int(xs))` produces canonical unique list
-
-7. **G07_std_list_hist_int** — integer histogram
-   - `hist_int([5,5,10,0,10,10]) -> [{v:0,count:1},{v:5,count:2},{v:10,count:3}]` (canonical order)
-
-8. **G08_std_grow_unfold** — growth operator required by the ecosystem
-   - `Grow.unfold(seed, fuel, step)` must exist and be deterministic
-   - expected to produce `[0..9]` for the provided step rule
-
-9. **G09_import_cycle_rejected** — module graph correctness
-   - cyclic imports must hard-fail with an explicit error (`IMPORT_CYCLE` or equivalent)
-
-10. **G10_lock_mismatch_rejected** — module locking is enforced
-   - passing an invalid lock file must hard-fail (`LOCK_MISMATCH` or equivalent)
-
----
-
-## Conventions expected from your FARD runner
-
-The gate runner makes only three assumptions (configurable in `fard_gate.toml`):
-
-1) You can run a program via something equivalent to:
+Run it directly:
 
 ```bash
-<runner.cmd...> <runner.args...> --program <path> --out <dir>
+target/debug/fard run program.fard
 ```
 
-2) The run writes:
-- `trace.ndjson` (NDJSON; one JSON object per line)
-- `result.json` (JSON; final result somewhere inside)
+Output:
 
-3) Optional lock enforcement:
+```json
+{"t":"int","v":"31"}
+```
+
+Compile to bundle and run through the trust stack:
 
 ```bash
-<runner...> --program <path> --out <dir> --lock <lock_path>
+target/debug/fardc --src program.fard --out _bundle
+target/debug/abirun _bundle
 ```
 
-If your CLI uses different flags, adapt `run_fard()` in `src/lib.rs` or add a thin wrapper script.
+Output is `ENC(W*)` — the canonical witness bytes. The SHA-256 of those
+bytes is the RunID, the unique identity of this execution.
 
----
+## Gates
 
-## VS Code workflow
+The trust stack is verified by 12 gates. Each gate is a test that
+asserts a specific property of the system by checking exact bytes
+and frozen cryptographic hashes.
 
-1. Open this folder in VS Code
-2. Update `fard_gate.toml` to point at your local FARD runner
-3. Run:
+Run all gates:
 
 ```bash
-cargo run --bin gaterun
+bash tools/gates_stack_v0.sh
 ```
 
-4. Implement missing pieces in your main FARD repo until gates are green.
+### Gate Summary
 
----
+|Gate|Property                                                        |
+|----|----------------------------------------------------------------|
+|1   |ABI Vector 0 — minimal program produces frozen RunID            |
+|2   |Satisfied effect — bundle value becomes witness digest          |
+|3   |Missing fact precedence — import errors before effect errors    |
+|4   |Registry round-trip — PUT/GET preserves CID identity            |
+|5   |Compiler to runner — fardc → bundle → abirun → frozen RunID     |
+|6   |Canonical module bytes — formatting variance, identical CID     |
+|7   |Parse smoke — full language frontend parses correctly           |
+|8   |Canonical printer stability — parse/print/parse round-trip      |
+|9   |Effect checker — undeclared effect use rejected                 |
+|10  |Effect checker — declared effect use accepted                   |
+|11  |Evaluator smoke — let, arithmetic, conditionals, functions      |
+|12  |Evaluator integration — computed result through full trust chain|
 
-## Why these gates (engineering rationale)
+All 12 gates pass. All frozen hashes are machine-verified.
 
-This is the minimum set that makes FARD *language-complete* for your stated goal: rewriting full repos in FARD with deterministic traces.
+## Language
 
-- Without **G02**, you don’t have namespaces / libraries.
-- Without **G03 + G04**, you don’t have auditable proof artifacts.
-- Without **G05–G08**, you can’t express the repository-scale workflows you’ve already been writing (palette enumeration, spectral analysis, etc.).
-- Without **G09**, the module resolver is unsafe.
-- Without **G10**, determinism is not locked to bytes.
+FARD v0.5 is a pure functional language. Programs are organized into
+modules with typed function declarations, effect declarations, and
+algebraic type definitions.
 
----
+### What you can write today
+
+```fard
+module main
+
+fn factorial(n: int, acc: int): int {
+  if eq(n, 0) { acc }
+  else { factorial(sub(n, 1), mul(n, acc)) }
+}
+
+fn main(): int {
+  factorial(10, 1)
+}
+```
+
+```fard
+module main
+
+fn sum_list(xs: list, i: int, acc: int): int {
+  if eq(i, list_len(xs)) { acc }
+  else { sum_list(xs, add(i, 1), add(acc, list_get(xs, i))) }
+}
+
+fn main(): int {
+  let xs = [10, 20, 30, 40]
+  sum_list(xs, 0, 0)
+}
+```
+
+### Language Features
+
+- Module declarations with `module name`
+- Function declarations with typed parameters, return types, and effect clauses
+- Let bindings in blocks
+- Conditionals: `if expr { block } else { block }`
+- List literals: `[a, b, c]`
+- User-defined recursive functions with depth limit (1024)
+- Type declarations: records and sum types
+- Effect declarations with `uses` enforcement
+
+### Builtin Functions
+
+|Function           |Signature         |
+|-------------------|------------------|
+|`add(a, b)`        |int × int → int   |
+|`sub(a, b)`        |int × int → int   |
+|`mul(a, b)`        |int × int → int   |
+|`div(a, b)`        |int × int → int   |
+|`rem(a, b)`        |int × int → int   |
+|`neg(a)`           |int → int         |
+|`eq(a, b)`         |V × V → bool      |
+|`lt(a, b)`         |V × V → bool      |
+|`not(a)`           |bool → bool       |
+|`text_concat(a, b)`|text × text → text|
+|`int_to_text(a)`   |int → text        |
+|`list_len(xs)`     |list → int        |
+|`list_get(xs, i)`  |list × int → V    |
+|`map_get(m, k)`    |map × text → V    |
+
+### Grammar
+
+See `spec/fardlang_grammar_v0.5.txt` for the complete grammar
+matching the current parser.
+
+## Specifications
+
+|Document                          |Contents                          |
+|----------------------------------|----------------------------------|
+|`spec/fard_spec_stack_v0_final.md`|Trust stack specification (frozen)|
+|`spec/fardlang_grammar_v0.5.txt`  |Surface language grammar          |
+|`spec/fard_formal_description.txt`|Formal description of FARD        |
+
+## Determinism
+
+Identical source + identical input + identical effects = identical RunID.
+
+This holds across machines, across implementations, across time. The
+RunID is a pure function of the program, its input, and its environment.
+Change any of these, the RunID changes. Keep them identical, the RunID
+is identical.
 
 ## License
 
-MIT OR Apache-2.0
-
-# wip_marker_20260202_141107
+MIT
