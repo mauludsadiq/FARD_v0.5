@@ -72,6 +72,23 @@ pub enum Stmt {
     Expr(Expr),
 }
 
+// canon_binop_ast_v1 begin
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BinOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+    Eq,
+    Lt,
+    Gt,
+    Le,
+    Ge,
+    And,
+    Or,
+}
+// canon_binop_ast_v1 end
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     Unit,
@@ -81,6 +98,12 @@ pub enum Expr {
     BytesHex(String), // lower/upper accepted; normalized later
     List(Vec<Expr>),
     Ident(String),
+    UnaryMinus(Box<Expr>),
+    BinOp {
+        op: BinOp,
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
     Call {
         f: String,
         args: Vec<Expr>,

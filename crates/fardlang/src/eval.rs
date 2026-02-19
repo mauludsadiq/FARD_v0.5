@@ -65,6 +65,10 @@ pub fn eval_block(block: &Block, env: &mut Env) -> Result<V> {
 
 pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<V> {
     match expr {
+        // eval_operator_close_v1 begin
+        Expr::UnaryMinus(_) => unreachable!("checked: operator not supported"),
+        Expr::BinOp { .. } => unreachable!("checked: operator not supported"),
+        // eval_operator_close_v1 end
         Expr::Unit => Ok(V::Unit),
         Expr::Bool(b) => Ok(V::Bool(*b)),
         Expr::Int(s) => {

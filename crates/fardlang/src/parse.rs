@@ -1,4 +1,5 @@
 use crate::ast::*;
+
 use crate::lex::{Lexer, Tok};
 use anyhow::{bail, Result};
 
@@ -303,8 +304,11 @@ fn parse_block(lx: &mut Lexer<'_>) -> Result<Block> {
 
     Ok(Block { stmts, tail })
 }
-
 fn parse_expr(lx: &mut Lexer<'_>) -> Result<Expr> {
+    parse_postfix(lx)
+}
+
+fn parse_postfix(lx: &mut Lexer<'_>) -> Result<Expr> {
     // minimal expression set for v1 bootstrap: literals, ident, call, if, list
     if peek_is(lx, Tok::KwIf)? {
         lx.next()?;

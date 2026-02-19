@@ -215,6 +215,24 @@ fn print_block(b: &Block) -> String {
 pub fn print_expr_public(e: &Expr) -> String {
     print_expr(e)
 }
+// canon_binop_print_v1 begin
+fn binop_str(op: &BinOp) -> &'static str {
+    match op {
+        BinOp::Add => "+",
+        BinOp::Sub => "-",
+        BinOp::Mul => "*",
+        BinOp::Div => "/",
+        BinOp::Rem => "%",
+        BinOp::Eq => "==",
+        BinOp::Lt => "<",
+        BinOp::Gt => ">",
+        BinOp::Le => "<=",
+        BinOp::Ge => ">=",
+        BinOp::And => "&&",
+        BinOp::Or => "||",
+    }
+}
+// canon_binop_print_v1 end
 
 fn print_expr(e: &Expr) -> String {
     match e {
@@ -236,6 +254,15 @@ fn print_expr(e: &Expr) -> String {
             out
         }
         Expr::Ident(x) => x.clone(),
+        Expr::UnaryMinus(x) => format!("(- {})", print_expr(x)),
+        Expr::BinOp { op, lhs, rhs } => {
+            format!(
+                "({} {} {})",
+                print_expr(lhs),
+                binop_str(op),
+                print_expr(rhs)
+            )
+        }
         Expr::Call { f, args } => {
             let mut s = String::new();
             s.push_str(f);

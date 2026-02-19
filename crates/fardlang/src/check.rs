@@ -59,6 +59,10 @@ fn check_expr(
     e: &Expr,
 ) -> Result<()> {
     match e {
+        // check_operator_close_v1 begin
+        Expr::UnaryMinus(_) => anyhow::bail!("CHECK_OPERATOR_NOT_SUPPORTED"),
+        Expr::BinOp { .. } => anyhow::bail!("CHECK_OPERATOR_NOT_SUPPORTED"),
+        // check_operator_close_v1 end
         Expr::Unit
         | Expr::Bool(_)
         | Expr::Int(_)
