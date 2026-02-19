@@ -1,5 +1,5 @@
-use fardlang::{parse_module};
 use fardlang::canon::canonical_module_string;
+use fardlang::parse_module;
 
 #[test]
 fn canon_is_stable_and_sorts() {

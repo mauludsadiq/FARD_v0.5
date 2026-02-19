@@ -1,5 +1,5 @@
-use fardlang::{parse_module};
 use fardlang::check::check_module;
+use fardlang::parse_module;
 
 #[test]
 fn forbids_undeclared_effect_use() {

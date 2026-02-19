@@ -1,6 +1,6 @@
+use crate::ast::*;
 use anyhow::{bail, Result};
 use std::collections::{BTreeMap, BTreeSet};
-use crate::ast::*;
 
 #[derive(Debug, Clone)]
 pub struct CheckEnv {
@@ -23,13 +23,20 @@ pub fn check_module(m: &Module) -> Result<()> {
 fn check_fn(env: &CheckEnv, f: &FnDecl) -> Result<()> {
     let allowed: BTreeSet<String> = f.uses.iter().cloned().collect();
     let mut vars: BTreeMap<String, ()> = BTreeMap::new();
-    for (p,_) in &f.params { vars.insert(p.clone(), ()); }
+    for (p, _) in &f.params {
+        vars.insert(p.clone(), ());
+    }
 
     check_block(env, &allowed, &mut vars, &f.body)?;
     Ok(())
 }
 
-fn check_block(env: &CheckEnv, allowed: &BTreeSet<String>, vars: &mut BTreeMap<String, ()>, b: &Block) -> Result<()> {
+fn check_block(
+    env: &CheckEnv,
+    allowed: &BTreeSet<String>,
+    vars: &mut BTreeMap<String, ()>,
+    b: &Block,
+) -> Result<()> {
     for s in &b.stmts {
         match s {
             Stmt::Let { name, expr } => {
@@ -45,7 +52,12 @@ fn check_block(env: &CheckEnv, allowed: &BTreeSet<String>, vars: &mut BTreeMap<S
     Ok(())
 }
 
-fn check_expr(env: &CheckEnv, allowed: &BTreeSet<String>, vars: &BTreeMap<String, ()>, e: &Expr) -> Result<()> {
+fn check_expr(
+    env: &CheckEnv,
+    allowed: &BTreeSet<String>,
+    vars: &BTreeMap<String, ()>,
+    e: &Expr,
+) -> Result<()> {
     match e {
         Expr::Unit
         | Expr::Bool(_)
@@ -54,11 +66,16 @@ fn check_expr(env: &CheckEnv, allowed: &BTreeSet<String>, vars: &BTreeMap<String
         | Expr::BytesHex(_)
         | Expr::List(_) => Ok(()),
         Expr::Ident(x) => {
-            if vars.contains_key(x) { Ok(()) }
-            else { Ok(()) } // could be global fn; resolved in lowering phase
+            if vars.contains_key(x) {
+                Ok(())
+            } else {
+                Ok(())
+            } // could be global fn; resolved in lowering phase
         }
         Expr::Call { f, args } => {
-            for a in args { check_expr(env, allowed, vars, a)?; }
+            for a in args {
+                check_expr(env, allowed, vars, a)?;
+            }
             if env.effects.contains(f) && !allowed.contains(f) {
                 bail!("ERROR_EFFECT_NOT_ALLOWED {} not in uses[]", f);
             }

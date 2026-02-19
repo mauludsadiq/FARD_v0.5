@@ -1,6 +1,6 @@
-use fardlang::{parse_module, check};
 use fardlang::canon::print_expr_public as print_expr;
 use fardlang::eval::{eval_block, Env};
+use fardlang::{check, parse_module};
 use valuecore::v0::V;
 
 #[test]

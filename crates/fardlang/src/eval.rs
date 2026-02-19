@@ -68,7 +68,9 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<V> {
         Expr::Unit => Ok(V::Unit),
         Expr::Bool(b) => Ok(V::Bool(*b)),
         Expr::Int(s) => {
-            let i = s.parse::<i64>().map_err(|_| anyhow!("ERROR_BADARG int parse"))?;
+            let i = s
+                .parse::<i64>()
+                .map_err(|_| anyhow!("ERROR_BADARG int parse"))?;
             Ok(V::Int(i))
         }
         Expr::Text(s) => Ok(V::Text(s.clone())),
@@ -135,7 +137,23 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<V> {
 }
 
 fn is_builtin(f: &str) -> bool {
-    matches!(f, "add" | "sub" | "mul" | "div" | "rem" | "neg" | "eq" | "lt" | "not")
+    matches!(
+        f,
+        "add"
+            | "sub"
+            | "mul"
+            | "div"
+            | "rem"
+            | "neg"
+            | "eq"
+            | "lt"
+            | "not"
+            | "list_len"
+            | "list_get"
+            | "text_concat"
+            | "map_get"
+            | "int_to_text"
+    )
 }
 
 fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
@@ -183,6 +201,58 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
             match &args[0] {
                 V::Bool(b) => Ok(V::Bool(!*b)),
                 _ => Err(anyhow!("ERROR_BADARG not expects bool")),
+            }
+        }
+        "list_len" => {
+            if args.len() != 1 {
+                return Err(anyhow!("ERROR_BADARG list_len arity"));
+            }
+            match &args[0] {
+                V::List(xs) => Ok(V::Int(xs.len() as i64)),
+                _ => Err(anyhow!("ERROR_BADARG list_len expects list")),
+            }
+        }
+        "list_get" => {
+            if args.len() != 2 {
+                return Err(anyhow!("ERROR_BADARG list_get arity"));
+            }
+            let idx = match &args[1] {
+                V::Int(i) => *i,
+                _ => return Err(anyhow!("ERROR_BADARG list_get expects int index")),
+            };
+            if idx < 0 {
+                return Err(anyhow!("ERROR_OOB list_get"));
+            }
+            let u = idx as usize;
+            match &args[0] {
+                V::List(xs) => xs
+                    .get(u)
+                    .cloned()
+                    .ok_or_else(|| anyhow!("ERROR_OOB list_get")),
+                _ => Err(anyhow!("ERROR_BADARG list_get expects list")),
+            }
+        }
+        "text_concat" => {
+            if args.len() != 2 {
+                return Err(anyhow!("ERROR_BADARG text_concat arity"));
+            }
+            match (&args[0], &args[1]) {
+                (V::Text(a), V::Text(b)) => {
+                    let mut out = String::with_capacity(a.len() + b.len());
+                    out.push_str(a);
+                    out.push_str(b);
+                    Ok(V::Text(out))
+                }
+                _ => Err(anyhow!("ERROR_BADARG text_concat expects text")),
+            }
+        }
+        "int_to_text" => {
+            if args.len() != 1 {
+                return Err(anyhow!("ERROR_BADARG int_to_text arity"));
+            }
+            match &args[0] {
+                V::Int(i) => Ok(V::Text(i.to_string())),
+                _ => Err(anyhow!("ERROR_BADARG int_to_text expects int")),
             }
         }
         _ => Err(anyhow!("ERROR_EVAL unknown builtin {}", f)),
@@ -236,11 +306,16 @@ fn i64_rem(a: i64, b: i64) -> Result<i64> {
 }
 
 fn i64_neg(a: i64) -> Result<i64> {
-    a.checked_neg().ok_or_else(|| anyhow!("ERROR_OVERFLOW i64_neg"))
+    a.checked_neg()
+        .ok_or_else(|| anyhow!("ERROR_OVERFLOW i64_neg"))
 }
 
 fn decode_hex(s: &str) -> Result<Vec<u8>> {
-    let rest = if let Some(r) = s.strip_prefix("hex:") { r } else { s };
+    let rest = if let Some(r) = s.strip_prefix("hex:") {
+        r
+    } else {
+        s
+    };
     if rest.len() % 2 != 0 {
         return Err(anyhow!("ERROR_BADARG hex length must be even"));
     }

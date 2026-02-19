@@ -81,8 +81,15 @@ pub enum Expr {
     BytesHex(String), // lower/upper accepted; normalized later
     List(Vec<Expr>),
     Ident(String),
-    Call { f: String, args: Vec<Expr> },
-    If { c: Box<Expr>, t: Box<Block>, e: Box<Block> },
+    Call {
+        f: String,
+        args: Vec<Expr>,
+    },
+    If {
+        c: Box<Expr>,
+        t: Box<Block>,
+        e: Box<Block>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

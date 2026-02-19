@@ -1,5 +1,5 @@
-use fardlang::{parse_module, check};
 use fardlang::eval::{eval_block, Env};
+use fardlang::{check, parse_module};
 
 #[test]
 fn recursion_depth_limit_triggers_error() {
@@ -18,9 +18,7 @@ fn main(): int {
     let module = parse_module(src).unwrap();
     check::check_module(&module).unwrap();
 
-    let main_fn = module.fns.iter()
-        .find(|f| f.name == "main")
-        .unwrap();
+    let main_fn = module.fns.iter().find(|f| f.name == "main").unwrap();
 
     let mut env = Env::new();
     env.max_depth = 64;

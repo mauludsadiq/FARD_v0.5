@@ -1,18 +1,27 @@
-use fardlang::ast::{Block, Expr, Stmt, FnDecl, Type};
+use fardlang::ast::{Block, Expr, FnDecl, Stmt, Type};
 use fardlang::eval::{eval_block, Env};
 use std::collections::BTreeMap;
 use valuecore::v0::V;
 
 fn empty_block_tail(e: Expr) -> Block {
-    Block { stmts: vec![], tail: Some(Box::new(e)) }
+    Block {
+        stmts: vec![],
+        tail: Some(Box::new(e)),
+    }
 }
 
 #[test]
 fn eval_let_and_add() {
     let block = Block {
         stmts: vec![
-            Stmt::Let { name: "x".to_string(), expr: Expr::Int("3".to_string()) },
-            Stmt::Let { name: "y".to_string(), expr: Expr::Int("4".to_string()) },
+            Stmt::Let {
+                name: "x".to_string(),
+                expr: Expr::Int("3".to_string()),
+            },
+            Stmt::Let {
+                name: "y".to_string(),
+                expr: Expr::Int("4".to_string()),
+            },
         ],
         tail: Some(Box::new(Expr::Call {
             f: "add".to_string(),
