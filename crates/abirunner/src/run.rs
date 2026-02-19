@@ -4,7 +4,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
 
-use valuecore::{dec, enc, cid, vdig, Value};
+use valuecore::{cid, dec, enc, vdig, Value};
 use witnesscore::{trace_v0_1, witness_v0_1};
 
 pub fn run_bundle_to_stdout(bundle_dir: &Path) -> Result<()> {
@@ -40,7 +40,8 @@ pub fn run_bundle_to_stdout(bundle_dir: &Path) -> Result<()> {
     // EffectBundle := record([("kind",text),("req",V),("value",V)])
     //
     // witness Effect := record([("kind",text),("req",V),("sat",unit|text(VDIG(value)))])
-    let effects = bundle_effects_to_witness_effects(&bundle_effects).context("effects conversion")?;
+    let effects =
+        bundle_effects_to_witness_effects(&bundle_effects).context("effects conversion")?;
 
     // imports -> witness ImportUse entries (runid + vdig(imported_value))
     let imports = imports_to_witness_import_uses(&bundle_imports, &facts_map)?;
@@ -179,7 +180,10 @@ fn facts_to_map(facts: &Vec<(String, Value)>) -> BTreeMap<String, Value> {
 }
 
 // Gate 3 precedence: missing import => ERROR_MISSING_FACT
-fn verify_imports_present(imports: &Vec<String>, facts_map: &BTreeMap<String, Value>) -> Result<()> {
+fn verify_imports_present(
+    imports: &Vec<String>,
+    facts_map: &BTreeMap<String, Value>,
+) -> Result<()> {
     for runid in imports.iter() {
         if !facts_map.contains_key(runid) {
             bail!("ERROR_MISSING_FACT missing import fact {}", runid);
@@ -267,13 +271,14 @@ fn verify_program_sources_present(program: &Value, sources_dir: &Path) -> Result
 
     for m in mods.iter() {
         let src_cid = match m {
-            Value::Record(kvs) => kvs
-                .iter()
-                .find(|(k, _)| k == "source")
-                .and_then(|(_, v)| match v {
-                    Value::Text(s) => Some(s.as_str()),
-                    _ => None,
-                }),
+            Value::Record(kvs) => {
+                kvs.iter()
+                    .find(|(k, _)| k == "source")
+                    .and_then(|(_, v)| match v {
+                        Value::Text(s) => Some(s.as_str()),
+                        _ => None,
+                    })
+            }
             _ => None,
         }
         .ok_or_else(|| anyhow!("ERROR_BAD_BUNDLE mod missing source"))?;

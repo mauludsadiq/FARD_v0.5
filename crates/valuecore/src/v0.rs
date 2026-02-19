@@ -110,21 +110,24 @@ pub fn canon_cmp(a: &V, b: &V) -> Ordering {
 }
 
 pub fn i64_neg(a: i64) -> Result<i64> {
-    a.checked_neg().ok_or_else(|| anyhow!("ERROR_OVERFLOW i64_neg"))
+    a.checked_neg()
+        .ok_or_else(|| anyhow!("ERROR_OVERFLOW i64_neg"))
 }
 
 pub fn i64_div(a: i64, b: i64) -> Result<i64> {
     if b == 0 {
         return Err(anyhow!("ERROR_DIV_ZERO i64_div"));
     }
-    a.checked_div(b).ok_or_else(|| anyhow!("ERROR_OVERFLOW i64_div"))
+    a.checked_div(b)
+        .ok_or_else(|| anyhow!("ERROR_OVERFLOW i64_div"))
 }
 
 pub fn i64_rem(a: i64, b: i64) -> Result<i64> {
     if b == 0 {
         return Err(anyhow!("ERROR_DIV_ZERO i64_rem"));
     }
-    a.checked_rem(b).ok_or_else(|| anyhow!("ERROR_OVERFLOW i64_rem"))
+    a.checked_rem(b)
+        .ok_or_else(|| anyhow!("ERROR_OVERFLOW i64_rem"))
 }
 
 fn hex_lower(bytes: &[u8]) -> String {
@@ -161,7 +164,6 @@ fn push_json_string(out: &mut Vec<u8>, s: &str) {
     out.push(b'"');
 }
 
-
 fn encode_into(out: &mut Vec<u8>, v: &V) {
     match v {
         V::Unit => {
@@ -169,7 +171,11 @@ fn encode_into(out: &mut Vec<u8>, v: &V) {
         }
         V::Bool(b) => {
             out.extend_from_slice(br#"{"t":"bool","v":"#);
-            if *b { out.extend_from_slice(b"true"); } else { out.extend_from_slice(b"false"); }
+            if *b {
+                out.extend_from_slice(b"true");
+            } else {
+                out.extend_from_slice(b"false");
+            }
             out.push(b'}');
         }
         V::Int(i) => {
@@ -191,7 +197,9 @@ fn encode_into(out: &mut Vec<u8>, v: &V) {
         V::List(xs) => {
             out.extend_from_slice(br#"{"t":"list","v":["#);
             for (i, x) in xs.iter().enumerate() {
-                if i != 0 { out.push(b','); }
+                if i != 0 {
+                    out.push(b',');
+                }
                 encode_into(out, x);
             }
             out.extend_from_slice(b"]}");
@@ -202,7 +210,9 @@ fn encode_into(out: &mut Vec<u8>, v: &V) {
 
             out.extend_from_slice(br#"{"t":"map","v":["#);
             for (i, (k, val)) in kvs2.iter().enumerate() {
-                if i != 0 { out.push(b','); }
+                if i != 0 {
+                    out.push(b',');
+                }
                 out.push(b'[');
                 push_json_string(out, k);
                 out.push(b',');
@@ -230,12 +240,16 @@ pub fn encode_json(v: &V) -> Vec<u8> {
     out
 }
 
-fn expect_obj<'a>(j: &'a serde_json::Value) -> Result<&'a serde_json::Map<String, serde_json::Value>> {
-    j.as_object().ok_or_else(|| anyhow!("ERROR_JSON expected object"))
+fn expect_obj<'a>(
+    j: &'a serde_json::Value,
+) -> Result<&'a serde_json::Map<String, serde_json::Value>> {
+    j.as_object()
+        .ok_or_else(|| anyhow!("ERROR_JSON expected object"))
 }
 
 fn expect_str<'a>(j: &'a serde_json::Value) -> Result<&'a str> {
-    j.as_str().ok_or_else(|| anyhow!("ERROR_JSON expected string"))
+    j.as_str()
+        .ok_or_else(|| anyhow!("ERROR_JSON expected string"))
 }
 
 fn expect_i64(j: &serde_json::Value) -> Result<i64> {
@@ -243,11 +257,14 @@ fn expect_i64(j: &serde_json::Value) -> Result<i64> {
 }
 
 fn expect_bool(j: &serde_json::Value) -> Result<bool> {
-    j.as_bool().ok_or_else(|| anyhow!("ERROR_JSON expected bool"))
+    j.as_bool()
+        .ok_or_else(|| anyhow!("ERROR_JSON expected bool"))
 }
 
 fn parse_hex_bytes(s: &str) -> Result<Vec<u8>> {
-    let rest = s.strip_prefix("hex:").ok_or_else(|| anyhow!("ERROR_JSON bytes must be hex:..."))?;
+    let rest = s
+        .strip_prefix("hex:")
+        .ok_or_else(|| anyhow!("ERROR_JSON bytes must be hex:..."))?;
     if rest.len() % 2 != 0 {
         return Err(anyhow!("ERROR_JSON hex length must be even"));
     }
@@ -271,36 +288,51 @@ fn parse_hex_bytes(s: &str) -> Result<Vec<u8>> {
 }
 
 pub fn decode_json(bytes: &[u8]) -> Result<V> {
-    let j: serde_json::Value = serde_json::from_slice(bytes).map_err(|e| anyhow!("ERROR_JSON {}", e))?;
+    let j: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|e| anyhow!("ERROR_JSON {}", e))?;
     decode_value(&j)
 }
 
 fn decode_value(j: &serde_json::Value) -> Result<V> {
     let obj = expect_obj(j)?;
-    let t = obj.get("t").ok_or_else(|| anyhow!("ERROR_JSON missing t"))?;
+    let t = obj
+        .get("t")
+        .ok_or_else(|| anyhow!("ERROR_JSON missing t"))?;
     let t = expect_str(t)?;
 
     match t {
         "unit" => Ok(V::Unit),
         "bool" => {
-            let v = obj.get("v").ok_or_else(|| anyhow!("ERROR_JSON missing v"))?;
+            let v = obj
+                .get("v")
+                .ok_or_else(|| anyhow!("ERROR_JSON missing v"))?;
             Ok(V::Bool(expect_bool(v)?))
         }
         "int" => {
-            let v = obj.get("v").ok_or_else(|| anyhow!("ERROR_JSON missing v"))?;
+            let v = obj
+                .get("v")
+                .ok_or_else(|| anyhow!("ERROR_JSON missing v"))?;
             Ok(V::Int(expect_i64(v)?))
         }
         "text" => {
-            let v = obj.get("v").ok_or_else(|| anyhow!("ERROR_JSON missing v"))?;
+            let v = obj
+                .get("v")
+                .ok_or_else(|| anyhow!("ERROR_JSON missing v"))?;
             Ok(V::Text(expect_str(v)?.to_string()))
         }
         "bytes" => {
-            let v = obj.get("v").ok_or_else(|| anyhow!("ERROR_JSON missing v"))?;
+            let v = obj
+                .get("v")
+                .ok_or_else(|| anyhow!("ERROR_JSON missing v"))?;
             Ok(V::Bytes(parse_hex_bytes(expect_str(v)?)?))
         }
         "list" => {
-            let v = obj.get("v").ok_or_else(|| anyhow!("ERROR_JSON missing v"))?;
-            let arr = v.as_array().ok_or_else(|| anyhow!("ERROR_JSON list v must be array"))?;
+            let v = obj
+                .get("v")
+                .ok_or_else(|| anyhow!("ERROR_JSON missing v"))?;
+            let arr = v
+                .as_array()
+                .ok_or_else(|| anyhow!("ERROR_JSON list v must be array"))?;
             let mut out = Vec::with_capacity(arr.len());
             for x in arr {
                 out.push(decode_value(x)?);
@@ -308,8 +340,12 @@ fn decode_value(j: &serde_json::Value) -> Result<V> {
             Ok(V::List(out))
         }
         "map" => {
-            let v = obj.get("v").ok_or_else(|| anyhow!("ERROR_JSON missing v"))?;
-            let arr = v.as_array().ok_or_else(|| anyhow!("ERROR_JSON map v must be array"))?;
+            let v = obj
+                .get("v")
+                .ok_or_else(|| anyhow!("ERROR_JSON missing v"))?;
+            let arr = v
+                .as_array()
+                .ok_or_else(|| anyhow!("ERROR_JSON map v must be array"))?;
             let mut out = Vec::with_capacity(arr.len());
 
             // Gate 11: canonical-only decode
@@ -318,7 +354,9 @@ fn decode_value(j: &serde_json::Value) -> Result<V> {
             let mut prev_key: Option<String> = None;
 
             for pair in arr {
-                let p = pair.as_array().ok_or_else(|| anyhow!("ERROR_JSON map pair must be array"))?;
+                let p = pair
+                    .as_array()
+                    .ok_or_else(|| anyhow!("ERROR_JSON map pair must be array"))?;
                 if p.len() != 2 {
                     return Err(anyhow!("ERROR_JSON map pair len must be 2"));
                 }
@@ -328,7 +366,9 @@ fn decode_value(j: &serde_json::Value) -> Result<V> {
                     match k.as_str().cmp(pk.as_str()) {
                         Ordering::Greater => {}
                         Ordering::Equal => return Err(anyhow!("ERROR_JSON duplicate map key")),
-                        Ordering::Less => return Err(anyhow!("ERROR_JSON non-canonical map key order")),
+                        Ordering::Less => {
+                            return Err(anyhow!("ERROR_JSON non-canonical map key order"))
+                        }
                     }
                 }
                 prev_key = Some(k.clone());
@@ -340,11 +380,15 @@ fn decode_value(j: &serde_json::Value) -> Result<V> {
             Ok(V::Map(out))
         }
         "ok" => {
-            let v = obj.get("v").ok_or_else(|| anyhow!("ERROR_JSON missing v"))?;
+            let v = obj
+                .get("v")
+                .ok_or_else(|| anyhow!("ERROR_JSON missing v"))?;
             Ok(V::Ok(Box::new(decode_value(v)?)))
         }
         "err" => {
-            let e = obj.get("e").ok_or_else(|| anyhow!("ERROR_JSON missing e"))?;
+            let e = obj
+                .get("e")
+                .ok_or_else(|| anyhow!("ERROR_JSON missing e"))?;
             Ok(V::Err(expect_str(e)?.to_string()))
         }
         _ => Err(anyhow!("ERROR_JSON unknown t {}", t)),
@@ -352,13 +396,16 @@ fn decode_value(j: &serde_json::Value) -> Result<V> {
 }
 
 pub fn i64_add(a: i64, b: i64) -> Result<i64> {
-    a.checked_add(b).ok_or_else(|| anyhow!("ERROR_OVERFLOW i64_add"))
+    a.checked_add(b)
+        .ok_or_else(|| anyhow!("ERROR_OVERFLOW i64_add"))
 }
 pub fn i64_sub(a: i64, b: i64) -> Result<i64> {
-    a.checked_sub(b).ok_or_else(|| anyhow!("ERROR_OVERFLOW i64_sub"))
+    a.checked_sub(b)
+        .ok_or_else(|| anyhow!("ERROR_OVERFLOW i64_sub"))
 }
 pub fn i64_mul(a: i64, b: i64) -> Result<i64> {
-    a.checked_mul(b).ok_or_else(|| anyhow!("ERROR_OVERFLOW i64_mul"))
+    a.checked_mul(b)
+        .ok_or_else(|| anyhow!("ERROR_OVERFLOW i64_mul"))
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {

@@ -1655,6 +1655,8 @@ enum Builtin {
     Len,
     IntParse,
     IntPow,
+    IntAdd,
+    IntEq,
     SortInt,
     DedupeSortedInt,
     HistInt,
@@ -1684,35 +1686,77 @@ impl std::fmt::Display for QmarkPropagateErr {
 
 impl std::error::Error for QmarkPropagateErr {}
 
+use std::sync::{Arc, Mutex};
+
 #[derive(Clone, Debug)]
 struct Env {
-    parent: Option<Box<Env>>,
-    vars: HashMap<String, Val>,
+    inner: Arc<EnvInner>,
 }
+
+#[derive(Debug)]
+struct EnvInner {
+    vars: Mutex<HashMap<String, Val>>,
+    parent: Option<Env>,
+}
+
 impl Env {
     fn new() -> Self {
         Self {
-            parent: None,
-            vars: HashMap::new(),
+            inner: Arc::new(EnvInner {
+                vars: Mutex::new(HashMap::new()),
+                parent: None,
+            }),
         }
     }
+
     fn child(&self) -> Self {
         Self {
-            parent: Some(Box::new(self.clone())),
-            vars: HashMap::new(),
+            inner: Arc::new(EnvInner {
+                vars: Mutex::new(HashMap::new()),
+                parent: Some(self.clone()),
+            }),
         }
     }
+
     fn set(&mut self, k: String, v: Val) {
-        self.vars.insert(k, v);
+        let mut g = self.inner.vars.lock().unwrap();
+        g.insert(k, v);
     }
+
     fn get(&self, k: &str) -> Option<Val> {
-        if let Some(v) = self.vars.get(k) {
-            return Some(v.clone());
+        // lock only for local lookup; drop before recursing to parent
+        if let Some(v) = self.inner.vars.lock().unwrap().get(k).cloned() {
+            return Some(v);
         }
-        self.parent.as_ref().and_then(|p| p.get(k))
+        let parent = self.inner.parent.clone();
+        parent.as_ref().and_then(|p| p.get(k))
     }
 }
 impl Val {
+    fn to_vc_json(&self) -> Option<J> {
+        match self {
+            Val::Int(n) => Some(serde_json::json!({"t":"int","v":*n})),
+            Val::Bool(b) => Some(serde_json::json!({"t":"bool","v":*b})),
+            Val::Str(s) => Some(serde_json::json!({"t":"str","v":s})),
+            Val::Null => Some(serde_json::json!({"t":"null","v":null})),
+            Val::List(xs) => {
+                let mut out: Vec<J> = Vec::with_capacity(xs.len());
+                for x in xs {
+                    out.push(x.to_vc_json()?);
+                }
+                Some(serde_json::json!({"t":"list","v":out}))
+            }
+            Val::Rec(m) => {
+                let mut obj = Map::new();
+                for (k, v) in m.iter() {
+                    obj.insert(k.clone(), v.to_vc_json()?);
+                }
+                Some(serde_json::json!({"t":"rec","v":J::Object(obj)}))
+            }
+            _ => None,
+        }
+    }
+
     fn to_json(&self) -> Option<J> {
         match self {
             Val::Int(n) => Some(J::Number((*n).into())),
@@ -1752,8 +1796,8 @@ impl Val {
 }
 
 fn hex_lower(bytes: &[u8]) -> String {
-    const HEX: &[u8;16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(bytes.len()*2);
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
     for &b in bytes {
         out.push(HEX[(b >> 4) as usize] as char);
         out.push(HEX[(b & 0x0f) as usize] as char);
@@ -1762,20 +1806,23 @@ fn hex_lower(bytes: &[u8]) -> String {
 }
 
 fn parse_hex_bytes(s: &str) -> Result<Vec<u8>> {
-    let s = s.strip_prefix("hex:")
+    let s = s
+        .strip_prefix("hex:")
         .ok_or_else(|| anyhow::anyhow!("bytes v must start with hex:"))?;
     if s.len() % 2 != 0 {
         anyhow::bail!("hex length must be even");
     }
     let bs = s.as_bytes();
-    let mut out = Vec::with_capacity(bs.len()/2);
+    let mut out = Vec::with_capacity(bs.len() / 2);
     let mut i = 0usize;
     while i < bs.len() {
-        let hi = (bs[i] as char).to_digit(16)
+        let hi = (bs[i] as char)
+            .to_digit(16)
             .ok_or_else(|| anyhow::anyhow!("bad hex"))? as u8;
-        let lo = (bs[i+1] as char).to_digit(16)
+        let lo = (bs[i + 1] as char)
+            .to_digit(16)
             .ok_or_else(|| anyhow::anyhow!("bad hex"))? as u8;
-        out.push((hi<<4)|lo);
+        out.push((hi << 4) | lo);
         i += 2;
     }
     Ok(out)
@@ -2172,13 +2219,48 @@ fn call_builtin(
     tracer: &mut Tracer,
     loader: &mut ModuleLoader,
 ) -> Result<Val> {
-    match b {        Builtin::PngRed1x1 => {
+    match b {
+        Builtin::PngRed1x1 => {
             if !args.is_empty() {
                 bail!("ERROR_BADARG std/png.red_1x1 expects 0 args");
             }
             let bs = hex::decode("89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000f494441547801010400fbff00ff0000030101008d1de5820000000049454e44ae426082").map_err(|_| anyhow!("ERROR_BADARG std/png.red_1x1 invalid hex"))?;
             Ok(Val::Bytes(bs))
         }
+
+        Builtin::IntAdd => {
+            if (args.len() != 2) {
+                bail!("ERROR_BADARG int.add expects 2 args");
+            }
+            let a = match &args[0] {
+                Val::Int(n) => *n,
+                _ => bail!("ERROR_BADARG int.add arg0 must be int"),
+            };
+            let b = match &args[1] {
+                Val::Int(n) => *n,
+                _ => bail!("ERROR_BADARG int.add arg1 must be int"),
+            };
+            let out = a
+                .checked_add(b)
+                .ok_or_else(|| anyhow!("ERROR_OVERFLOW int.add overflow"))?;
+            Ok(Val::Int(out))
+        }
+
+        Builtin::IntEq => {
+            if (args.len() != 2) {
+                bail!("ERROR_BADARG int.eq expects 2 args");
+            }
+            let a = match &args[0] {
+                Val::Int(n) => *n,
+                _ => bail!("ERROR_BADARG int.eq arg0 must be int"),
+            };
+            let b = match &args[1] {
+                Val::Int(n) => *n,
+                _ => bail!("ERROR_BADARG int.eq arg1 must be int"),
+            };
+            Ok(Val::Bool(a == b))
+        }
+
         Builtin::Unimplemented => bail!("ERROR_RUNTIME UNIMPLEMENTED_BUILTIN"),
         Builtin::ResultOk => {
             if args.len() != 1 {
@@ -3871,8 +3953,11 @@ impl ModuleLoader {
                 m.insert("decode".to_string(), Val::Builtin(Builtin::JsonDecode));
                 Ok(m)
             }
+
             "std/int" => {
                 let mut m = BTreeMap::new();
+                m.insert("add".to_string(), Val::Builtin(Builtin::IntAdd));
+                m.insert("eq".to_string(), Val::Builtin(Builtin::IntEq));
                 m.insert("parse".to_string(), Val::Builtin(Builtin::IntParse));
                 m.insert("pow".to_string(), Val::Builtin(Builtin::IntPow));
                 Ok(m)
@@ -3985,15 +4070,12 @@ impl ModuleLoader {
             }
 
             "std/png" => {
-
                 let mut m = BTreeMap::new();
 
                 m.insert("red_1x1".to_string(), Val::Builtin(Builtin::PngRed1x1));
 
                 Ok(m)
-
             }
-
 
             _ => bail!("unknown std module: {name}"),
         }
@@ -4029,8 +4111,8 @@ impl ModuleLoader {
             "std/str",
             "std/time",
             "std/trace",
-              "std/png",
-              "std/rec",
+            "std/png",
+            "std/rec",
         ];
 
         let mut pairs: Vec<(String, String)> = names

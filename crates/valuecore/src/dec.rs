@@ -51,29 +51,44 @@ fn decode_value(j: &J) -> Result<Value> {
         }
         ValueTag::Bool => {
             require_keys(obj, &["t", "v"])?;
-            let b = obj.get("v").and_then(|x| x.as_bool()).ok_or_else(|| anyhow!("DECODE_BAD_BOOL"))?;
+            let b = obj
+                .get("v")
+                .and_then(|x| x.as_bool())
+                .ok_or_else(|| anyhow!("DECODE_BAD_BOOL"))?;
             Ok(Value::Bool(b))
         }
         ValueTag::Int => {
             require_keys(obj, &["t", "v"])?;
-            let s = obj.get("v").and_then(|x| x.as_str()).ok_or_else(|| anyhow!("DECODE_BAD_INT"))?;
+            let s = obj
+                .get("v")
+                .and_then(|x| x.as_str())
+                .ok_or_else(|| anyhow!("DECODE_BAD_INT"))?;
             let z = parse_int_string(s)?;
             Ok(Value::Int(z))
         }
         ValueTag::Bytes => {
             require_keys(obj, &["t", "v"])?;
-            let s = obj.get("v").and_then(|x| x.as_str()).ok_or_else(|| anyhow!("DECODE_BAD_HEX"))?;
+            let s = obj
+                .get("v")
+                .and_then(|x| x.as_str())
+                .ok_or_else(|| anyhow!("DECODE_BAD_HEX"))?;
             let b = parse_hex_lower(s)?;
             Ok(Value::Bytes(b))
         }
         ValueTag::Text => {
             require_keys(obj, &["t", "v"])?;
-            let s = obj.get("v").and_then(|x| x.as_str()).ok_or_else(|| anyhow!("DECODE_BAD_TEXT"))?;
+            let s = obj
+                .get("v")
+                .and_then(|x| x.as_str())
+                .ok_or_else(|| anyhow!("DECODE_BAD_TEXT"))?;
             Ok(Value::Text(s.to_string()))
         }
         ValueTag::List => {
             require_keys(obj, &["t", "v"])?;
-            let arr = obj.get("v").and_then(|x| x.as_array()).ok_or_else(|| anyhow!("DECODE_BAD_LIST"))?;
+            let arr = obj
+                .get("v")
+                .and_then(|x| x.as_array())
+                .ok_or_else(|| anyhow!("DECODE_BAD_LIST"))?;
             let mut xs = Vec::with_capacity(arr.len());
             for it in arr {
                 xs.push(decode_value(it)?);
@@ -82,14 +97,22 @@ fn decode_value(j: &J) -> Result<Value> {
         }
         ValueTag::Record => {
             require_keys(obj, &["t", "v"])?;
-            let arr = obj.get("v").and_then(|x| x.as_array()).ok_or_else(|| anyhow!("DECODE_BAD_RECORD"))?;
+            let arr = obj
+                .get("v")
+                .and_then(|x| x.as_array())
+                .ok_or_else(|| anyhow!("DECODE_BAD_RECORD"))?;
             let mut kvs: Vec<(String, Value)> = Vec::with_capacity(arr.len());
             for pair in arr {
-                let p = pair.as_array().ok_or_else(|| anyhow!("DECODE_BAD_RECORD"))?;
+                let p = pair
+                    .as_array()
+                    .ok_or_else(|| anyhow!("DECODE_BAD_RECORD"))?;
                 if p.len() != 2 {
                     bail!("DECODE_BAD_RECORD");
                 }
-                let k = p[0].as_str().ok_or_else(|| anyhow!("DECODE_BAD_RECORD"))?.to_string();
+                let k = p[0]
+                    .as_str()
+                    .ok_or_else(|| anyhow!("DECODE_BAD_RECORD"))?
+                    .to_string();
                 let v = decode_value(&p[1])?;
                 kvs.push((k, v));
             }
@@ -109,9 +132,15 @@ fn decode_value(j: &J) -> Result<Value> {
         }
         ValueTag::Err => {
             require_keys(obj, &["t", "v"])?;
-            let vobj = obj.get("v").and_then(|x| x.as_object()).ok_or_else(|| anyhow!("DECODE_BAD_ERR"))?;
+            let vobj = obj
+                .get("v")
+                .and_then(|x| x.as_object())
+                .ok_or_else(|| anyhow!("DECODE_BAD_ERR"))?;
             require_keys(vobj, &["code", "data"])?;
-            let code = vobj.get("code").and_then(|x| x.as_str()).ok_or_else(|| anyhow!("DECODE_BAD_ERR"))?;
+            let code = vobj
+                .get("code")
+                .and_then(|x| x.as_str())
+                .ok_or_else(|| anyhow!("DECODE_BAD_ERR"))?;
             if code.is_empty() {
                 bail!("DECODE_BAD_ERR");
             }

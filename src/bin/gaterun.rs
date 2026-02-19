@@ -229,7 +229,7 @@ fn run_one_gate(cfg: &fard_v0_5_language_gate::Config, gate: &Gate) -> Result<bo
             println!("PASS");
             Ok(true)
         }
-        
+
         "cg1_color_geometry" => {
             let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
             match fard_v0_5_language_gate::gates::cg1_color_geometry::run(cfg, root) {

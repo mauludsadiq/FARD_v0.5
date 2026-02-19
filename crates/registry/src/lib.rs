@@ -10,7 +10,12 @@ fn parse_runid(runid: &str) -> Result<(&str, &str)> {
     if alg != "sha256" {
         bail!("ERROR_BADARG unsupported alg {}", alg);
     }
-    if hex.len() != 64 || !hex.as_bytes().iter().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f')) {
+    if hex.len() != 64
+        || !hex
+            .as_bytes()
+            .iter()
+            .all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f'))
+    {
         bail!("ERROR_BADARG runid must be 64 lowercase hex");
     }
     Ok((alg, hex))

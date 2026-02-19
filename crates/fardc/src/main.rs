@@ -1,8 +1,8 @@
 use anyhow::{bail, Context, Result};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::collections::BTreeMap;
 
 use fardlang::check::check_module as check_module_lang;
 use fardlang::eval::{eval_block, Env};
@@ -10,9 +10,9 @@ use fardlang::parse::parse_module as parse_module_lang;
 
 mod ast;
 mod canon;
+mod frontend_v1;
 mod lex;
 mod modgraph;
-mod frontend_v1;
 mod parse;
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -43,12 +43,16 @@ fn main() -> Result<()> {
         match args[i].as_str() {
             "--src" => {
                 i += 1;
-                if i >= args.len() { bail!("ERROR_BADARG missing value for --src"); }
+                if i >= args.len() {
+                    bail!("ERROR_BADARG missing value for --src");
+                }
                 src = Some(PathBuf::from(&args[i]));
             }
             "--out" => {
                 i += 1;
-                if i >= args.len() { bail!("ERROR_BADARG missing value for --out"); }
+                if i >= args.len() {
+                    bail!("ERROR_BADARG missing value for --out");
+                }
                 out = Some(PathBuf::from(&args[i]));
             }
             _ => bail!("ERROR_BADARG unknown arg {}", args[i]),
@@ -75,7 +79,7 @@ fn main() -> Result<()> {
             if msg.contains("expected KwModule got KwFn") || msg.contains("expected KwModule") {
                 // legacy sources may start with fn or other non-module leading tokens
                 // v1 requires a module header, so we fallback to legacy canonizer
-            
+
                 let m = parse::parse_module(&raw).context("ERROR_PARSE fardc parse_module")?;
                 let canon = canon::print_module(&m);
                 canon.into_bytes()
@@ -92,16 +96,17 @@ fn main() -> Result<()> {
 
     // Layout: bundle/sources/<hex>.src (canonical bytes)
     let sources_dir = out.join("sources");
-    fs::create_dir_all(&sources_dir).with_context(|| format!("ERROR_IO mkdir {}", sources_dir.display()))?;
+    fs::create_dir_all(&sources_dir)
+        .with_context(|| format!("ERROR_IO mkdir {}", sources_dir.display()))?;
     let src_out = sources_dir.join(format!("{}.src", hex));
-    fs::write(&src_out, canon_bytes).with_context(|| format!("ERROR_IO write {}", src_out.display()))?;
+    fs::write(&src_out, canon_bytes)
+        .with_context(|| format!("ERROR_IO write {}", src_out.display()))?;
 
     // Minimal bundle files remain identical semantics
     write_text(&out.join("input.json"), r#"{"t":"unit"}"#)?;
     write_text(&out.join("imports.json"), r#"{"t":"list","v":[]}"#)?;
     write_text(&out.join("effects.json"), r#"{"t":"list","v":[]}"#)?;
     fs::create_dir_all(out.join("facts")).ok();
-
 
     // result.json
     //
@@ -141,7 +146,7 @@ fn main() -> Result<()> {
 
     // program.json: points to source CID
     let program = format!(
-r#"{{
+        r#"{{
   "t": "record",
   "v": [
     ["entry", {{ "t": "text", "v": "main" }}],
@@ -153,7 +158,9 @@ r#"{{
       ]}}
     ]}}]
   ]
-}}"#, source_cid);
+}}"#,
+        source_cid
+    );
 
     write_text(&out.join("program.json"), &program)?;
 

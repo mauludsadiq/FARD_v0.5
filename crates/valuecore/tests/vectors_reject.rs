@@ -25,7 +25,11 @@ fn dec_rejects_bad_int_strings() {
         br#"{"t":"int","v":" 1"}"#.as_slice(),
     ] {
         let e = dec(b).unwrap_err();
-        assert!(e.code.contains("DECODE_BAD_INT") || e.code.contains("DECODE_BAD_KEYS"), "got {}", e.code);
+        assert!(
+            e.code.contains("DECODE_BAD_INT") || e.code.contains("DECODE_BAD_KEYS"),
+            "got {}",
+            e.code
+        );
     }
 }
 
@@ -37,7 +41,11 @@ fn dec_rejects_bad_hex_or_uppercase() {
         br#"{"t":"bytes","v":"AA"}"#.as_slice(),
     ] {
         let e = dec(b).unwrap_err();
-        assert!(e.code.contains("DECODE_BAD_HEX") || e.code.contains("DECODE_BAD_KEYS"), "got {}", e.code);
+        assert!(
+            e.code.contains("DECODE_BAD_HEX") || e.code.contains("DECODE_BAD_KEYS"),
+            "got {}",
+            e.code
+        );
     }
 }
 

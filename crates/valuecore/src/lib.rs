@@ -12,5 +12,4 @@ pub use enc::enc;
 pub use value::{Value, ValueTag};
 pub use vdig::{cid, vdig};
 
-
 pub mod v0;

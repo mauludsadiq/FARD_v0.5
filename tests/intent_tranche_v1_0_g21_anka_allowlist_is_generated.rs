@@ -24,9 +24,21 @@ fn g21_anka_allowlist_json_matches_generator_output() {
     let committed = "spec/v1_0/anka_policy_allowed_stdlib.v1.json";
     let gen_script = "tools/gen_anka_policy_from_surface.js";
 
-    assert!(PathBuf::from(src_surface).exists(), "g21: missing {}", src_surface);
-    assert!(PathBuf::from(committed).exists(), "g21: missing {}", committed);
-    assert!(PathBuf::from(gen_script).exists(), "g21: missing {}", gen_script);
+    assert!(
+        PathBuf::from(src_surface).exists(),
+        "g21: missing {}",
+        src_surface
+    );
+    assert!(
+        PathBuf::from(committed).exists(),
+        "g21: missing {}",
+        committed
+    );
+    assert!(
+        PathBuf::from(gen_script).exists(),
+        "g21: missing {}",
+        gen_script
+    );
 
     let work = tmpdir("anka_allowlist");
     let gen_path = work.join("anka_policy_allowed_stdlib.v1.json");

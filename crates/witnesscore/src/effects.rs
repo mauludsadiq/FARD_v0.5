@@ -33,7 +33,10 @@ fn extract_kind_req(effect: &Value) -> (&str, &Value) {
                     req = Some(v);
                 }
             }
-            (kind.expect("effect.kind missing or not text"), req.expect("effect.req missing"))
+            (
+                kind.expect("effect.kind missing or not text"),
+                req.expect("effect.req missing"),
+            )
         }
         _ => panic!("effect not record"),
     }

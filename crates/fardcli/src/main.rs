@@ -25,7 +25,9 @@ fn main() {
         process::exit(1);
     });
 
-    let main_fn = module.fns.iter()
+    let main_fn = module
+        .fns
+        .iter()
         .find(|f| f.name == "main")
         .unwrap_or_else(|| {
             eprintln!("error: no main function");

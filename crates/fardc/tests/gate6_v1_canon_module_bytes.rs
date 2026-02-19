@@ -4,8 +4,10 @@ use std::process::Command;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent().unwrap()
-        .parent().unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
         .to_path_buf()
 }
 
@@ -17,29 +19,44 @@ fn gate6_v1_canon_bytes_stable() {
     fs::create_dir_all(&tmp).unwrap();
 
     let src = tmp.join("main.fard");
-    fs::write(&src, r#"
+    fs::write(
+        &src,
+        r#"
 // comment
 module   main
 effect read_file(path: text): bytes
 fn   main()  : int   uses [read_file]   {   unit   }
-"#).unwrap();
+"#,
+    )
+    .unwrap();
 
     let out = tmp.join("bundle");
 
     let exe = root.join("target").join("debug").join("fardc");
     if !exe.exists() {
         Command::new("cargo")
-            .args(["build","--manifest-path","crates/fardc/Cargo.toml"])
+            .args(["build", "--manifest-path", "crates/fardc/Cargo.toml"])
             .current_dir(&root)
-            .status().unwrap();
+            .status()
+            .unwrap();
     }
 
     let o = Command::new(&exe)
-        .args(["--src", src.to_str().unwrap(), "--out", out.to_str().unwrap()])
+        .args([
+            "--src",
+            src.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+        ])
         .current_dir(&root)
-        .output().unwrap();
+        .output()
+        .unwrap();
 
-    assert!(o.status.success(), "fardc failed: {}", String::from_utf8_lossy(&o.stderr));
+    assert!(
+        o.status.success(),
+        "fardc failed: {}",
+        String::from_utf8_lossy(&o.stderr)
+    );
 
     let cid = String::from_utf8_lossy(&o.stdout).trim().to_string();
     assert!(cid.starts_with("sha256:"));

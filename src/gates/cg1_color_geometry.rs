@@ -42,7 +42,9 @@ pub fn run(cfg: &Config, root: &Path) -> Result<(), String> {
         .arg("--out")
         .arg(&run_dir);
 
-    let out = cmd.output().map_err(|e| format!("CG1 invoke failed: {}", e))?;
+    let out = cmd
+        .output()
+        .map_err(|e| format!("CG1 invoke failed: {}", e))?;
 
     let status = out.status.code().unwrap_or(-1);
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -65,16 +67,29 @@ pub fn run(cfg: &Config, root: &Path) -> Result<(), String> {
     }
 
     let result_json_path = run_dir.join("result.json");
-    let result_bytes = fs::read(&result_json_path)
-        .map_err(|e| format!("CG1: missing result.json: {}: {}", result_json_path.display(), e))?;
+    let result_bytes = fs::read(&result_json_path).map_err(|e| {
+        format!(
+            "CG1: missing result.json: {}: {}",
+            result_json_path.display(),
+            e
+        )
+    })?;
 
     let v: serde_json::Value = serde_json::from_slice(&result_bytes)
         .map_err(|e| format!("CG1: invalid result.json: {}", e))?;
 
-    let md = v.get("result").and_then(|x| x.as_str()).ok_or_else(|| "CG1: result not a string".to_string())?;
+    let md = v
+        .get("result")
+        .and_then(|x| x.as_str())
+        .ok_or_else(|| "CG1: result not a string".to_string())?;
 
-    fs::write(&out_path, md.as_bytes())
-        .map_err(|e| format!("CG1: failed writing output file: {}: {}", out_path.display(), e))?;
+    fs::write(&out_path, md.as_bytes()).map_err(|e| {
+        format!(
+            "CG1: failed writing output file: {}: {}",
+            out_path.display(),
+            e
+        )
+    })?;
 
     let produced = fs::read(&out_path)
         .map_err(|e| format!("CG1: output not created: {}: {}", out_path.display(), e))?;

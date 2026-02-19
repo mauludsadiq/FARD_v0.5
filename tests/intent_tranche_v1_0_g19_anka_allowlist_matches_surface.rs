@@ -18,8 +18,16 @@ fn surface_entries_as_map(surface_entries_path: &str) -> BTreeMap<String, BTreeS
     let mut m: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
 
     for e in entries {
-        let module = e.get("module").and_then(|x| x.as_str()).unwrap().to_string();
-        let export = e.get("export").and_then(|x| x.as_str()).unwrap().to_string();
+        let module = e
+            .get("module")
+            .and_then(|x| x.as_str())
+            .unwrap()
+            .to_string();
+        let export = e
+            .get("export")
+            .and_then(|x| x.as_str())
+            .unwrap()
+            .to_string();
         m.entry(module).or_default().insert(export);
     }
 

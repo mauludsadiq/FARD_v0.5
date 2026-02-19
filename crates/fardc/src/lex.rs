@@ -62,10 +62,22 @@ impl<'a> Lexer<'a> {
         self.skip_ws();
         match self.peek() {
             None => Ok(Tok::Eof),
-            Some(b'(') => { self.bump(); Ok(Tok::LParen) }
-            Some(b')') => { self.bump(); Ok(Tok::RParen) }
-            Some(b'{') => { self.bump(); Ok(Tok::LBrace) }
-            Some(b'}') => { self.bump(); Ok(Tok::RBrace) }
+            Some(b'(') => {
+                self.bump();
+                Ok(Tok::LParen)
+            }
+            Some(b')') => {
+                self.bump();
+                Ok(Tok::RParen)
+            }
+            Some(b'{') => {
+                self.bump();
+                Ok(Tok::LBrace)
+            }
+            Some(b'}') => {
+                self.bump();
+                Ok(Tok::RBrace)
+            }
             Some(b) if Self::is_ident_start(b) => {
                 let id = self.lex_ident()?;
                 Ok(match id.as_str() {

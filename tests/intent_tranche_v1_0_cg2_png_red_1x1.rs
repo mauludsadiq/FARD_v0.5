@@ -44,7 +44,10 @@ fn cg2_png_red_1x1_matches_golden_bytes() {
     if !run.status.success() {
         let stderr = String::from_utf8_lossy(&run.stderr);
 
-        if stderr.contains("ERROR_PARSE") || stderr.contains("unexpected char") || stderr.contains("unexpected token") {
+        if stderr.contains("ERROR_PARSE")
+            || stderr.contains("unexpected char")
+            || stderr.contains("unexpected token")
+        {
             panic!(
                 "CG2 gate invalid: program must be parse-valid today\nstatus={}\n\nstderr:\n{}",
                 run.status, stderr

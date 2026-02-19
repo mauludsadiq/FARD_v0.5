@@ -64,7 +64,8 @@ fn gate5_compiler_emits_bundle_and_runner_produces_frozen_witness_runid() {
     let runid_runner = vdig(&w);
 
     // Gate5 freeze: witness RunID for this compiled bundle
-    const FROZEN_RUNID: &str = "sha256:ab7ebe0282b3bce23992bdb672a547d9eb152bef5434cc726284ac4301c63478";
+    const FROZEN_RUNID: &str =
+        "sha256:ab7ebe0282b3bce23992bdb672a547d9eb152bef5434cc726284ac4301c63478";
     assert_eq!(runid_runner, FROZEN_RUNID);
 
     // Sanity: source CID != witness RunID (different objects)

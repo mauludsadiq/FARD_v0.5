@@ -44,7 +44,10 @@ fn cg1_color_geometry_hue_report_matches_golden_bytes() {
         let stderr = String::from_utf8_lossy(&run.stderr);
 
         // Hard requirement: CG1 must be parse-valid today.
-        if stderr.contains("ERROR_PARSE") || stderr.contains("unexpected char") || stderr.contains("unexpected token") {
+        if stderr.contains("ERROR_PARSE")
+            || stderr.contains("unexpected char")
+            || stderr.contains("unexpected token")
+        {
             panic!(
                 "CG1 gate invalid: program must be parse-valid today (fail only due to missing std/color symbol)\nstatus={}\n\nstderr:\n{}",
                 run.status, stderr

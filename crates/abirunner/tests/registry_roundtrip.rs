@@ -30,7 +30,10 @@ fn registry_put_get_roundtrip_cid_matches_runid() {
     let got = registry::get_bytes(&runid).expect("registry get");
 
     // Exact bytes preserved
-    assert_eq!(got, witness_bytes, "retrieved bytes must equal stored bytes");
+    assert_eq!(
+        got, witness_bytes,
+        "retrieved bytes must equal stored bytes"
+    );
 
     // CID(retrieved_bytes) == RunID
     let w2 = dec(&got).expect("decode retrieved witness");

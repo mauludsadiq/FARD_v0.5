@@ -1,5 +1,5 @@
-use std::process::Command;
 use std::path::Path;
+use std::process::Command;
 
 #[test]
 fn bytes_json_roundtrip_smoke() {
@@ -13,13 +13,17 @@ fn bytes_json_roundtrip_smoke() {
     let prog = root.join("spec").join("tmp").join("bytes_roundtrip.fard");
     std::fs::create_dir_all(prog.parent().unwrap()).unwrap();
 
-    std::fs::write(&prog, r#"
+    std::fs::write(
+        &prog,
+        r#"
 let b = {"t":"bytes","v":"hex:ff0000ff"}
 b
-"#).unwrap();
+"#,
+    )
+    .unwrap();
 
     let status = Command::new(bin)
-        .args(["run","--program"])
+        .args(["run", "--program"])
         .arg(&prog)
         .args(["--out"])
         .arg(&outdir)
@@ -27,5 +31,8 @@ b
         .unwrap();
 
     assert!(status.success(), "run failed");
-    assert!(Path::new(&outdir.join("result.json")).exists(), "missing result.json");
+    assert!(
+        Path::new(&outdir.join("result.json")).exists(),
+        "missing result.json"
+    );
 }

@@ -14,32 +14,53 @@ fn enc_unit() {
 
 #[test]
 fn enc_bool() {
-    assert_eq!(String::from_utf8(enc(&Value::Bool(false))).unwrap(), r#"{"t":"bool","v":false}"#);
-    assert_eq!(String::from_utf8(enc(&Value::Bool(true))).unwrap(), r#"{"t":"bool","v":true}"#);
+    assert_eq!(
+        String::from_utf8(enc(&Value::Bool(false))).unwrap(),
+        r#"{"t":"bool","v":false}"#
+    );
+    assert_eq!(
+        String::from_utf8(enc(&Value::Bool(true))).unwrap(),
+        r#"{"t":"bool","v":true}"#
+    );
 }
 
 #[test]
 fn enc_int_canonical_string() {
     let v = Value::Int(BigInt::from(0));
-    assert_eq!(String::from_utf8(enc(&v)).unwrap(), r#"{"t":"int","v":"0"}"#);
+    assert_eq!(
+        String::from_utf8(enc(&v)).unwrap(),
+        r#"{"t":"int","v":"0"}"#
+    );
 
     let v2 = Value::Int(BigInt::from(-12));
-    assert_eq!(String::from_utf8(enc(&v2)).unwrap(), r#"{"t":"int","v":"-12"}"#);
+    assert_eq!(
+        String::from_utf8(enc(&v2)).unwrap(),
+        r#"{"t":"int","v":"-12"}"#
+    );
 }
 
 #[test]
 fn enc_bytes_hex_lower() {
     let v = Value::Bytes(vec![0x00, 0xff]);
-    assert_eq!(String::from_utf8(enc(&v)).unwrap(), r#"{"t":"bytes","v":"00ff"}"#);
+    assert_eq!(
+        String::from_utf8(enc(&v)).unwrap(),
+        r#"{"t":"bytes","v":"00ff"}"#
+    );
 }
 
 #[test]
 fn enc_text_escaping_single_form() {
     let v = Value::Text("a\"b\\c\n".to_string());
-    assert_eq!(String::from_utf8(enc(&v)).unwrap(), r#"{"t":"text","v":"a\"b\\c\n"}"#);
+    assert_eq!(
+        String::from_utf8(enc(&v)).unwrap(),
+        r#"{"t":"text","v":"a\"b\\c\n"}"#
+    );
 
     let v2 = Value::Text("\u{0001}".to_string());
-    assert_eq!(String::from_utf8(enc(&v2)).unwrap(), r#"{"t":"text","v":"\u0001"}"#);
+    assert_eq!(
+        String::from_utf8(enc(&v2)).unwrap(),
+        r#"{"t":"text","v":"\u0001"}"#
+    );
 }
 
 #[test]
@@ -79,10 +100,13 @@ fn record_constructor_duplicate_key_yields_err() {
 
 #[test]
 fn enc_err_shape() {
-    let v = Value::err("ERROR_INEXACT_DIV", Value::record(vec![
-        (s("x"), Value::Int(BigInt::from(1))),
-        (s("y"), Value::Int(BigInt::from(2))),
-    ]));
+    let v = Value::err(
+        "ERROR_INEXACT_DIV",
+        Value::record(vec![
+            (s("x"), Value::Int(BigInt::from(1))),
+            (s("y"), Value::Int(BigInt::from(2))),
+        ]),
+    );
 
     assert_eq!(
         String::from_utf8(enc(&v)).unwrap(),
