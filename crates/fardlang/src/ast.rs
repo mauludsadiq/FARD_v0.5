@@ -79,6 +79,7 @@ pub enum Expr {
     Int(String),      // keep as source string; validation later
     Text(String),     // decoded content
     BytesHex(String), // lower/upper accepted; normalized later
+    List(Vec<Expr>),
     Ident(String),
     Call { f: String, args: Vec<Expr> },
     If { c: Box<Expr>, t: Box<Block>, e: Box<Block> },

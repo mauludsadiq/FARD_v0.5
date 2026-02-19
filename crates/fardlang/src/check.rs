@@ -47,7 +47,12 @@ fn check_block(env: &CheckEnv, allowed: &BTreeSet<String>, vars: &mut BTreeMap<S
 
 fn check_expr(env: &CheckEnv, allowed: &BTreeSet<String>, vars: &BTreeMap<String, ()>, e: &Expr) -> Result<()> {
     match e {
-        Expr::Unit | Expr::Bool(_) | Expr::Int(_) | Expr::Text(_) | Expr::BytesHex(_) => Ok(()),
+        Expr::Unit
+        | Expr::Bool(_)
+        | Expr::Int(_)
+        | Expr::Text(_)
+        | Expr::BytesHex(_)
+        | Expr::List(_) => Ok(()),
         Expr::Ident(x) => {
             if vars.contains_key(x) { Ok(()) }
             else { Ok(()) } // could be global fn; resolved in lowering phase

@@ -188,6 +188,8 @@ fn print_block(b: &Block) -> String {
     s
 }
 
+pub fn print_expr_public(e: &Expr) -> String { print_expr(e) }
+
 fn print_expr(e: &Expr) -> String {
     match e {
         Expr::Unit => "unit".to_string(),
@@ -196,6 +198,15 @@ fn print_expr(e: &Expr) -> String {
         Expr::Int(z) => z.clone(),
         Expr::Text(s) => format!("{:?}", s),     // Rust debug string is stable enough for bootstrap; replaced in Part C
         Expr::BytesHex(h) => format!("b{:?}", h),
+        Expr::List(items) => {
+            let mut out = String::from("[");
+            for (i, it) in items.iter().enumerate() {
+                if i > 0 { out.push_str(", "); }
+                out.push_str(&print_expr(it));
+            }
+            out.push(']');
+            out
+        }
         Expr::Ident(x) => x.clone(),
         Expr::Call { f, args } => {
             let mut s = String::new();

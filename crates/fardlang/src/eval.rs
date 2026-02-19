@@ -7,15 +7,27 @@ use valuecore::v0::{canon_cmp, canon_eq, i64_add, i64_mul, i64_sub, V};
 pub struct Env {
     pub bindings: Vec<(String, V)>,
     pub fns: BTreeMap<String, FnDecl>,
+    pub depth: usize,
+    pub max_depth: usize,
 }
 
 impl Env {
     pub fn new() -> Self {
-        Self { bindings: vec![], fns: BTreeMap::new() }
+        Self {
+            bindings: vec![],
+            fns: BTreeMap::new(),
+            depth: 0,
+            max_depth: 1024,
+        }
     }
 
     pub fn with_fns(fns: BTreeMap<String, FnDecl>) -> Self {
-        Self { bindings: vec![], fns }
+        Self {
+            bindings: vec![],
+            fns,
+            depth: 0,
+            max_depth: 1024,
+        }
     }
 
     fn get(&self, name: &str) -> Option<V> {
@@ -61,6 +73,13 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<V> {
         }
         Expr::Text(s) => Ok(V::Text(s.clone())),
         Expr::BytesHex(h) => Ok(V::Bytes(decode_hex(h)?)),
+        Expr::List(items) => {
+            let mut vs = Vec::with_capacity(items.len());
+            for it in items {
+                vs.push(eval_expr(it, env)?);
+            }
+            Ok(V::List(vs))
+        }
         Expr::Ident(x) => env
             .get(x)
             .ok_or_else(|| anyhow!("ERROR_EVAL unbound ident {}", x)),
@@ -95,8 +114,14 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<V> {
                 return Err(anyhow!("ERROR_BADARG wrong arity for {}", f));
             }
 
+            if env.depth >= env.max_depth {
+                return Err(anyhow!("ERROR_EVAL_DEPTH recursion limit exceeded"));
+            }
+
             // no closures: new child env, only params + all fns (for recursion)
             let mut child = Env::with_fns(env.fns.clone());
+            child.depth = env.depth + 1;
+            child.max_depth = env.max_depth;
 
             for (i, param) in decl.params.iter().enumerate() {
                 let name = param.0.clone(); // (String, Type)

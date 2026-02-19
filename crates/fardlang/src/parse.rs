@@ -255,7 +255,7 @@ fn parse_block(lx: &mut Lexer<'_>) -> Result<Block> {
 }
 
 fn parse_expr(lx: &mut Lexer<'_>) -> Result<Expr> {
-    // minimal expression set for v1 bootstrap: literals, ident, call, if
+    // minimal expression set for v1 bootstrap: literals, ident, call, if, list
     if peek_is(lx, Tok::KwIf)? {
         lx.next()?;
         let c = Box::new(parse_expr(lx)?);
@@ -272,6 +272,37 @@ fn parse_expr(lx: &mut Lexer<'_>) -> Result<Expr> {
         Tok::Int(s) => Ok(Expr::Int(s)),
         Tok::Text(s) => Ok(Expr::Text(s)),
         Tok::BytesHex(h) => Ok(Expr::BytesHex(h)),
+
+        Tok::LBrack => {
+            let mut items = Vec::new();
+
+            // []
+            if peek_is(lx, Tok::RBrack)? {
+                lx.next()?; // consume ']'
+                return Ok(Expr::List(items));
+            }
+
+            // [a, b, c] with optional trailing comma
+            loop {
+                items.push(parse_expr(lx)?);
+
+                if peek_is(lx, Tok::Comma)? {
+                    lx.next()?; // consume ','
+
+                    // allow trailing comma: [a,]
+                    if peek_is(lx, Tok::RBrack)? {
+                        break;
+                    }
+                    continue;
+                }
+
+                break;
+            }
+
+            expect(lx, Tok::RBrack)?;
+            Ok(Expr::List(items))
+        }
+
         Tok::Ident(id) => {
             if peek_is(lx, Tok::LParen)? {
                 lx.next()?;
@@ -289,10 +320,10 @@ fn parse_expr(lx: &mut Lexer<'_>) -> Result<Expr> {
                 Ok(Expr::Ident(id))
             }
         }
+
         _ => bail!("ERROR_PARSE unsupported expression"),
     }
 }
-
 fn parse_type_params(lx: &mut Lexer<'_>) -> Result<Vec<String>> {
     let mut out = Vec::new();
     if !peek_is(lx, Tok::Lt)? { return Ok(out); }
