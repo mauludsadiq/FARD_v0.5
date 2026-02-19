@@ -27,4 +27,5 @@ members = [
   "crates/registry",
   "crates/fardc",
   "crates/fardlang",
+  "crates/fardcli",
 ]
