@@ -92,6 +92,12 @@ pub enum BinOp {
 // canon_binop_ast_v1 end
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
+    RecordLit(Vec<(String, Expr)>),
+    FieldGet {
+        base: Box<Expr>,
+        field: String,
+    },
+
     Unit,
     Bool(bool),
     Int(String),      // keep as source string; validation later

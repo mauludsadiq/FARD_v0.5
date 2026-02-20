@@ -104,5 +104,19 @@ fn check_expr(
             check_block(env, allowed, &mut v2, e)?;
             Ok(())
         }
+
+        Expr::RecordLit(fields) => {
+            for (_k, v) in fields.iter() {
+                check_expr(env, allowed, vars, v)?;
+            }
+            Ok(())
+        }
+        Expr::FieldGet {
+            base,
+            field: _field,
+        } => {
+            check_expr(env, allowed, vars, base)?;
+            Ok(())
+        }
     }
 }
