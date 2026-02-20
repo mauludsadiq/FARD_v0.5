@@ -66,8 +66,19 @@ pub fn eval_block(block: &Block, env: &mut Env) -> Result<V> {
 pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<V> {
     match expr {
         // eval_operator_close_v1 begin
-        Expr::UnaryMinus(_) => unreachable!("checked: operator not supported"),
-        Expr::BinOp { .. } => unreachable!("checked: operator not supported"),
+        Expr::UnaryMinus(x) => {
+            let e2 = crate::desugar::desugar_expr(Expr::UnaryMinus(x.clone()));
+            return eval_expr(&e2, env);
+        }
+
+        Expr::BinOp { op, lhs, rhs } => {
+            let e2 = crate::desugar::desugar_expr(Expr::BinOp {
+                op: op.clone(),
+                lhs: lhs.clone(),
+                rhs: rhs.clone(),
+            });
+            return eval_expr(&e2, env);
+        }
         // eval_operator_close_v1 end
         Expr::Unit => Ok(V::Unit),
         Expr::Bool(b) => Ok(V::Bool(*b)),

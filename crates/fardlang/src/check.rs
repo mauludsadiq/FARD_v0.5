@@ -60,8 +60,19 @@ fn check_expr(
 ) -> Result<()> {
     match e {
         // check_operator_close_v1 begin
-        Expr::UnaryMinus(_) => anyhow::bail!("CHECK_OPERATOR_NOT_SUPPORTED"),
-        Expr::BinOp { .. } => anyhow::bail!("CHECK_OPERATOR_NOT_SUPPORTED"),
+        Expr::UnaryMinus(x) => {
+            let e2 = crate::desugar::desugar_expr(Expr::UnaryMinus(x.clone()));
+            return check_expr(env, allowed, vars, &e2);
+        }
+
+        Expr::BinOp { op, lhs, rhs } => {
+            let e2 = crate::desugar::desugar_expr(Expr::BinOp {
+                op: op.clone(),
+                lhs: lhs.clone(),
+                rhs: rhs.clone(),
+            });
+            return check_expr(env, allowed, vars, &e2);
+        }
         // check_operator_close_v1 end
         Expr::Unit
         | Expr::Bool(_)
