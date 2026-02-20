@@ -451,7 +451,7 @@ fn parse_unary(lx: &mut Lexer<'_>) -> Result<Expr> {
 }
 
 fn parse_primary(lx: &mut Lexer<'_>) -> Result<Expr> {
-    // minimal expression set for v1 bootstrap: literals, ident, call, if, list
+    // minimal expression set for v1 bootstrap: literals, ident, call, if, list, record, field-get
     if peek_is(lx, Tok::KwIf)? {
         lx.next()?;
         let c = Box::new(parse_expr(lx)?);
@@ -465,18 +465,18 @@ fn parse_primary(lx: &mut Lexer<'_>) -> Result<Expr> {
         });
     }
 
-    match lx.next()? {
-        Tok::KwUnit => Ok(Expr::Unit),
-        Tok::KwTrue => Ok(Expr::Bool(true)),
-        Tok::KwFalse => Ok(Expr::Bool(false)),
-        Tok::Int(s) => Ok(Expr::Int(s)),
-        Tok::Text(s) => Ok(Expr::Text(s)),
-        Tok::BytesHex(h) => Ok(Expr::BytesHex(h)),
+    let e = match lx.next()? {
+        Tok::KwUnit => Expr::Unit,
+        Tok::KwTrue => Expr::Bool(true),
+        Tok::KwFalse => Expr::Bool(false),
+        Tok::Int(s) => Expr::Int(s),
+        Tok::Text(s) => Expr::Text(s),
+        Tok::BytesHex(h) => Expr::BytesHex(h),
 
         Tok::LParen => {
             let e = parse_expr(lx)?;
             expect(lx, Tok::RParen)?;
-            Ok(e)
+            e
         }
 
         Tok::LBrack => {
@@ -506,7 +506,36 @@ fn parse_primary(lx: &mut Lexer<'_>) -> Result<Expr> {
             }
 
             expect(lx, Tok::RBrack)?;
-            Ok(Expr::List(items))
+            Expr::List(items)
+        }
+
+        Tok::LBrace => {
+            let mut fields: Vec<(String, Expr)> = vec![];
+
+            // {}
+            if peek_is(lx, Tok::RBrace)? {
+                lx.next()?; // consume '}'
+                Expr::RecordLit(fields)
+            } else {
+                // {a: 1, b: 2,} trailing comma allowed
+                loop {
+                    let k = parse_ident(lx)?;
+                    expect(lx, Tok::Colon)?;
+                    let v = parse_expr(lx)?;
+                    fields.push((k, v));
+
+                    if peek_is(lx, Tok::Comma)? {
+                        lx.next()?; // consume ','
+                        if peek_is(lx, Tok::RBrace)? {
+                            break;
+                        }
+                        continue;
+                    }
+                    break;
+                }
+                expect(lx, Tok::RBrace)?;
+                Expr::RecordLit(fields)
+            }
         }
 
         Tok::Ident(id) => {
@@ -524,14 +553,25 @@ fn parse_primary(lx: &mut Lexer<'_>) -> Result<Expr> {
                     }
                 }
                 expect(lx, Tok::RParen)?;
-                Ok(Expr::Call { f: id, args })
+                Expr::Call { f: id, args }
             } else {
-                Ok(Expr::Ident(id))
+                Expr::Ident(id)
             }
         }
 
         _ => bail!("ERROR_PARSE unsupported expression"),
+    };
+
+    let mut out = e;
+    while peek_is(lx, Tok::Dot)? {
+        lx.next()?; // consume '.'
+        let f = parse_ident(lx)?;
+        out = Expr::FieldGet {
+            base: Box::new(out),
+            field: f,
+        };
     }
+    Ok(out)
 }
 
 fn parse_type_params(lx: &mut Lexer<'_>) -> Result<Vec<String>> {

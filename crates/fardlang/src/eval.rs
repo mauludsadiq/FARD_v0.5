@@ -65,6 +65,34 @@ pub fn eval_block(block: &Block, env: &mut Env) -> Result<V> {
 
 pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<V> {
     match expr {
+        Expr::RecordLit(fs) => {
+            let mut kvs: Vec<(String, V)> = vec![];
+            for (k, v) in fs.iter() {
+                let vv = eval_expr(v, env)?;
+                kvs.push((k.clone(), vv));
+            }
+            Ok(valuecore::v0::normalize(&V::Map(kvs)))
+        }
+        Expr::FieldGet { base, field } => {
+            let b = eval_expr(base, env)?;
+            match b {
+                V::Map(kvs) => {
+                    let nb = valuecore::v0::normalize(&V::Map(kvs));
+                    match nb {
+                        V::Map(xs) => {
+                            for (k, v) in xs {
+                                if k == *field {
+                                    return Ok(v);
+                                }
+                            }
+                            Err(anyhow!("ERROR_OOB record missing field {}", field))
+                        }
+                        _ => unreachable!("normalize(Map) must return Map"),
+                    }
+                }
+                _ => Err(anyhow!("ERROR_BADARG field access expects record")),
+            }
+        }
         // eval_operator_close_v1 begin
         Expr::UnaryMinus(x) => {
             let e2 = crate::desugar::desugar_expr(Expr::UnaryMinus(x.clone()));
