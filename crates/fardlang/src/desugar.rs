@@ -3,6 +3,7 @@ use crate::ast::{BinOp, Expr};
 fn op_name(op: &BinOp) -> &'static str {
     match op {
         BinOp::Add => "add",
+        BinOp::Concat => "text_concat",
         BinOp::Sub => "sub",
         BinOp::Mul => "mul",
         BinOp::Div => "div",

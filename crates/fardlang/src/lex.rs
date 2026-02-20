@@ -2,6 +2,7 @@ use anyhow::{bail, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Tok {
+    PlusPlus,
     KwModule,
     KwImport,
     KwAs,
@@ -204,7 +205,12 @@ impl<'a> Lexer<'a> {
             }
             Some(b'+') => {
                 self.bump();
-                Ok(Tok::Plus)
+                if self.peek() == Some(b'+') {
+                    self.bump();
+                    Ok(Tok::PlusPlus)
+                } else {
+                    Ok(Tok::Plus)
+                }
             }
             Some(b'-') => {
                 self.bump();

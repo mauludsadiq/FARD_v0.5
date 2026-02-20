@@ -75,6 +75,7 @@ pub enum Stmt {
 // canon_binop_ast_v1 begin
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BinOp {
+    Concat,
     Add,
     Sub,
     Mul,

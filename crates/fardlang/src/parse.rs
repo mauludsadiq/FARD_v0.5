@@ -21,7 +21,8 @@ pub fn parse_module(bytes: &[u8]) -> Result<Module> {
             Tok::Eof => break,
             Tok::KwImport => {
                 // either "import path.to.mod as alias" OR "import x: Run("sha256:...")"
-                match lx.next()? {
+                let t = lx.next()?;
+                match t {
                     Tok::Ident(n) => {
                         let nxt = lx.next()?;
                         match nxt {
@@ -379,7 +380,9 @@ fn parse_cmp(lx: &mut Lexer<'_>) -> Result<Expr> {
 fn parse_add(lx: &mut Lexer<'_>) -> Result<Expr> {
     let mut lhs = parse_mul(lx)?;
     loop {
-        let op = if peek_is(lx, Tok::Plus)? {
+        let op = if peek_is(lx, Tok::PlusPlus)? {
+            Some(BinOp::Concat)
+        } else if peek_is(lx, Tok::Plus)? {
             Some(BinOp::Add)
         } else if peek_is(lx, Tok::Minus)? {
             Some(BinOp::Sub)
@@ -393,6 +396,7 @@ fn parse_add(lx: &mut Lexer<'_>) -> Result<Expr> {
 
         match op {
             BinOp::Add => expect(lx, Tok::Plus)?,
+            BinOp::Concat => expect(lx, Tok::PlusPlus)?,
             BinOp::Sub => expect(lx, Tok::Minus)?,
             _ => unreachable!(),
         }
@@ -559,7 +563,7 @@ fn parse_primary(lx: &mut Lexer<'_>) -> Result<Expr> {
             }
         }
 
-        _ => bail!("ERROR_PARSE unsupported expression"),
+        tok => bail!("ERROR_PARSE unsupported expression {:?}", tok),
     };
 
     let mut out = e;

@@ -219,6 +219,7 @@ pub fn print_expr_public(e: &Expr) -> String {
 fn binop_str(op: &BinOp) -> &'static str {
     match op {
         BinOp::Add => "+",
+        BinOp::Concat => "++",
         BinOp::Sub => "-",
         BinOp::Mul => "*",
         BinOp::Div => "/",
@@ -282,5 +283,27 @@ fn print_expr(e: &Expr) -> String {
             print_block(t),
             print_block(e)
         ),
+
+        Expr::RecordLit(fields) => {
+            let mut out = String::new();
+            out.push_str("{");
+            for (j, (k, v)) in fields.iter().enumerate() {
+                if j != 0 {
+                    out.push_str(",");
+                }
+                out.push_str(k);
+                out.push_str(":");
+                out.push_str(&print_expr(v));
+            }
+            out.push_str("}");
+            out
+        }
+        Expr::FieldGet { base, field } => {
+            let mut out = String::new();
+            out.push_str(&print_expr(base));
+            out.push_str(".");
+            out.push_str(field);
+            out
+        }
     }
 }
