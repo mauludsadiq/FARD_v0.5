@@ -15,6 +15,7 @@ pub enum Tok {
     KwLet,
     KwIf,
     KwElse,
+    KwMatch,
     KwTrue,
     KwFalse,
     KwUnit,
@@ -36,6 +37,7 @@ pub enum Tok {
     Comma,
     Dot,
     Eq,
+    FatArrow,
     Pipe,
 
     Plus,
@@ -233,6 +235,9 @@ impl<'a> Lexer<'a> {
                 if self.peek() == Some(b'=') {
                     self.bump();
                     Ok(Tok::EqEq)
+                } else if self.peek() == Some(b'>') {
+                    self.bump();
+                    Ok(Tok::FatArrow)
                 } else {
                     Ok(Tok::Eq)
                 }
@@ -314,6 +319,7 @@ impl<'a> Lexer<'a> {
                     "let" => Tok::KwLet,
                     "if" => Tok::KwIf,
                     "else" => Tok::KwElse,
+                    "match" => Tok::KwMatch,
                     "true" => Tok::KwTrue,
                     "false" => Tok::KwFalse,
                     "unit" => Tok::KwUnit,

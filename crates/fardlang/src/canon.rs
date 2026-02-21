@@ -235,48 +235,67 @@ fn binop_str(op: &BinOp) -> &'static str {
 }
 // canon_binop_print_v1 end
 
-fn print_expr(e: &Expr) -> String {
+fn print_pattern(p: &Pattern) -> String {
+    match p {
+        Pattern::Wild => "_".to_string(),
+        Pattern::Unit => "unit".to_string(),
+        Pattern::Bool(true) => "true".to_string(),
+        Pattern::Bool(false) => "false".to_string(),
+        Pattern::Int(z) => z.clone(),
+        Pattern::Text(s) => format!("{:?}", s),
+        Pattern::BytesHex(h) => format!("b{:?}", h),
+        Pattern::Ident(s) => s.clone(),
+    }
+}
+
+fn print_match_arm(a: &MatchArm) -> String {
+    let mut out = String::new();
+    out.push_str(&print_pattern(&a.pat));
+    out.push_str(" => ");
+    out.push_str(&print_expr(&a.body));
+    out
+}
+
+
+
+    fn print_expr(e: &Expr) -> String {
     match e {
         Expr::Unit => "unit".to_string(),
         Expr::Bool(true) => "true".to_string(),
         Expr::Bool(false) => "false".to_string(),
         Expr::Int(z) => z.clone(),
-        Expr::Text(s) => format!("{:?}", s), // Rust debug string is stable enough for bootstrap; replaced in Part C
+        Expr::Text(s) => format!("{:?}", s), // bootstrap
         Expr::BytesHex(h) => format!("b{:?}", h),
+
         Expr::List(items) => {
             let mut out = String::from("[");
             for (i, it) in items.iter().enumerate() {
-                if i > 0 {
-                    out.push_str(", ");
-                }
+                if i > 0 { out.push_str(", "); }
                 out.push_str(&print_expr(it));
             }
             out.push(']');
             out
         }
+
         Expr::Ident(x) => x.clone(),
         Expr::UnaryMinus(x) => format!("(- {})", print_expr(x)),
+
         Expr::BinOp { op, lhs, rhs } => {
-            format!(
-                "({} {} {})",
-                print_expr(lhs),
-                binop_str(op),
-                print_expr(rhs)
-            )
+            format!("({} {} {})", print_expr(lhs), binop_str(op), print_expr(rhs))
         }
+
         Expr::Call { f, args } => {
             let mut s = String::new();
             s.push_str(f);
             s.push('(');
             for (i, a) in args.iter().enumerate() {
-                if i > 0 {
-                    s.push_str(", ");
-                }
+                if i > 0 { s.push_str(", "); }
                 s.push_str(&print_expr(a));
             }
             s.push(')');
             s
         }
+
         Expr::If { c, t, e } => format!(
             "if {} {{ {} }} else {{ {} }}",
             print_expr(c),
@@ -288,9 +307,7 @@ fn print_expr(e: &Expr) -> String {
             let mut out = String::new();
             out.push_str("{");
             for (j, (k, v)) in fields.iter().enumerate() {
-                if j != 0 {
-                    out.push_str(",");
-                }
+                if j != 0 { out.push_str(","); }
                 out.push_str(k);
                 out.push_str(":");
                 out.push_str(&print_expr(v));
@@ -298,6 +315,7 @@ fn print_expr(e: &Expr) -> String {
             out.push_str("}");
             out
         }
+
         Expr::FieldGet { base, field } => {
             let mut out = String::new();
             out.push_str(&print_expr(base));
@@ -305,5 +323,21 @@ fn print_expr(e: &Expr) -> String {
             out.push_str(field);
             out
         }
+
+        Expr::Match { scrut, arms } => {
+            let mut out = String::new();
+            out.push_str("match ");
+            out.push_str(&print_expr(scrut));
+            out.push_str(" {");
+            for (i, a) in arms.iter().enumerate() {
+                if i != 0 { out.push_str(","); }
+                out.push_str(" ");
+                out.push_str(&print_match_arm(a));
+            }
+            out.push_str(" }");
+            out
+        }
     }
 }
+
+

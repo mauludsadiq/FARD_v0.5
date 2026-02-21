@@ -1,4 +1,4 @@
-use crate::ast::{BinOp, Expr};
+use crate::ast::{BinOp, Expr, MatchArm};
 
 fn op_name(op: &BinOp) -> &'static str {
     match op {
@@ -46,6 +46,14 @@ pub fn desugar_expr(e: Expr) -> Expr {
         Expr::Call { f, args } => Expr::Call {
             f,
             args: args.into_iter().map(desugar_expr).collect(),
+        },
+
+        Expr::Match { scrut, arms } => Expr::Match {
+            scrut: Box::new(desugar_expr(*scrut)),
+            arms: arms
+                .into_iter()
+                .map(|a| MatchArm { pat: a.pat, body: desugar_expr(a.body) })
+                .collect(),
         },
 
         Expr::List(xs) => Expr::List(xs.into_iter().map(desugar_expr).collect()),

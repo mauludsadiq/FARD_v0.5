@@ -111,12 +111,16 @@ fn check_expr(
             }
             Ok(())
         }
-        Expr::FieldGet {
-            base,
-            field: _field,
-        } => {
-            check_expr(env, allowed, vars, base)?;
-            Ok(())
+        Expr::FieldGet { base, field: _field } => {
+                check_expr(env, allowed, vars, base)?;
+                Ok(())
+            }
+            Expr::Match { scrut, arms } => {
+                check_expr(env, allowed, vars, scrut)?;
+                for a in arms {
+                    check_expr(env, allowed, vars, &a.body)?;
+                }
+                Ok(())
+            }
         }
-    }
 }

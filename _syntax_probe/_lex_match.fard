@@ -1,0 +1,4 @@
+module main
+pub fn main(): text {
+  match 2 { 2 => "two", _ => "other" }
+}

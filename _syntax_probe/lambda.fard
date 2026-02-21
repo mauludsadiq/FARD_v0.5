@@ -1,0 +1,5 @@
+module main
+pub fn main(): int {
+  let double = fn(x: int): int { x * 2 };
+  double(5)
+}
