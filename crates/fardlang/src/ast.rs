@@ -91,6 +91,23 @@ pub enum BinOp {
 }
 // canon_binop_ast_v1 end
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Pattern {
+    Wild,
+    Unit,
+    Bool(bool),
+    Int(String),
+    Text(String),
+    BytesHex(String),
+    Ident(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MatchArm {
+    pub pat: Pattern,
+    pub body: Expr,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     RecordLit(Vec<(String, Expr)>),
     FieldGet {
@@ -120,6 +137,7 @@ pub enum Expr {
         t: Box<Block>,
         e: Box<Block>,
     },
+    Match { scrut: Box<Expr>, arms: Vec<MatchArm> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

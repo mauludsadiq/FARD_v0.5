@@ -1,4 +1,4 @@
-use crate::ast::{Block, Expr, FnDecl, Stmt};
+use crate::ast::{Block, Expr, FnDecl, Stmt, Pattern};
 use anyhow::{anyhow, Result};
 use std::collections::BTreeMap;
 use valuecore::v0::{canon_cmp, canon_eq, i64_add, i64_mul, i64_sub, V};
@@ -65,6 +65,19 @@ pub fn eval_block(block: &Block, env: &mut Env) -> Result<V> {
 
 pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<V> {
     match expr {
+        Expr::Match { scrut, arms } => {
+            let sv = eval_expr(scrut, env)?;
+            for a in arms {
+                if pat_matches(&a.pat, &sv) {
+                    let mut child = env.clone();
+                    if let Some((k, v)) = pat_bind(&a.pat, &sv) {
+                        child.set(k, v);
+                    }
+                    return eval_expr(&a.body, &mut child);
+                }
+            }
+            Err(anyhow!("ERROR_MATCH_NO_ARM"))
+        }
         Expr::RecordLit(fs) => {
             let mut kvs: Vec<(String, V)> = vec![];
             for (k, v) in fs.iter() {
@@ -176,6 +189,37 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<V> {
 
             eval_block(&decl.body, &mut child)
         }
+    }
+}
+
+fn pat_matches(p: &Pattern, v: &V) -> bool {
+    match p {
+        Pattern::Wild => true,
+        Pattern::Unit => matches!(v, V::Unit),
+        Pattern::Bool(b) => matches!(v, V::Bool(x) if x == b),
+        Pattern::Int(z) => {
+            if let Ok(i) = z.parse::<i64>() {
+                matches!(v, V::Int(x) if *x == i)
+            } else {
+                false
+            }
+        }
+        Pattern::Text(s) => matches!(v, V::Text(x) if x == s),
+        Pattern::BytesHex(h) => {
+            if let Ok(bs) = decode_hex(h) {
+                matches!(v, V::Bytes(x) if *x == bs)
+            } else {
+                false
+            }
+        }
+        Pattern::Ident(_) => true,
+    }
+}
+
+fn pat_bind(p: &Pattern, v: &V) -> Option<(String, V)> {
+    match p {
+        Pattern::Ident(name) if name != "_" => Some((name.clone(), v.clone())),
+        _ => None,
     }
 }
 

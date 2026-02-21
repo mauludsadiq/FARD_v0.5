@@ -469,6 +469,11 @@ fn parse_primary(lx: &mut Lexer<'_>) -> Result<Expr> {
         });
     }
 
+    if peek_is(lx, Tok::KwMatch)? {
+        lx.next()?;
+        return parse_match_expr(lx);
+    }
+
     let e = match lx.next()? {
         Tok::KwUnit => Expr::Unit,
         Tok::KwTrue => Expr::Bool(true),
@@ -576,6 +581,51 @@ fn parse_primary(lx: &mut Lexer<'_>) -> Result<Expr> {
         };
     }
     Ok(out)
+}
+
+fn parse_match_expr(lx: &mut Lexer<'_>) -> Result<Expr> {
+    let scrut = parse_expr(lx)?;
+    expect(lx, Tok::LBrace)?;
+
+    let mut arms: Vec<MatchArm> = vec![];
+    if !peek_is(lx, Tok::RBrace)? {
+        loop {
+            let pat = parse_pattern(lx)?;
+            expect(lx, Tok::FatArrow)?;
+            let body = parse_expr(lx)?;
+            arms.push(MatchArm { pat, body });
+
+            if peek_is(lx, Tok::Comma)? {
+                lx.next()?;
+                if peek_is(lx, Tok::RBrace)? {
+                    break;
+                }
+                continue;
+            }
+            break;
+        }
+    }
+
+    expect(lx, Tok::RBrace)?;
+    Ok(Expr::Match {
+        scrut: Box::new(scrut),
+        arms,
+    })
+}
+
+fn parse_pattern(lx: &mut Lexer<'_>) -> Result<Pattern> {
+    let t = lx.next()?;
+    Ok(match t {
+        Tok::Ident(s) if s == "_" => Pattern::Wild,
+        Tok::KwUnit => Pattern::Unit,
+        Tok::KwTrue => Pattern::Bool(true),
+        Tok::KwFalse => Pattern::Bool(false),
+        Tok::Int(z) => Pattern::Int(z),
+        Tok::Text(s) => Pattern::Text(s),
+        Tok::BytesHex(h) => Pattern::BytesHex(h),
+        Tok::Ident(s) => Pattern::Ident(s),
+        _ => bail!("ERROR_PARSE expected pattern"),
+    })
 }
 
 fn parse_type_params(lx: &mut Lexer<'_>) -> Result<Vec<String>> {
