@@ -67,7 +67,15 @@ fn canon_json(v: &J) -> Result<String> {
             }
             J::Object(m) => {
                 let mut keys: Vec<&String> = m.keys().collect();
-                keys.sort();
+                keys.sort_by(|a, b| {
+                    if a.as_str() == "t" && b.as_str() != "t" {
+                        return std::cmp::Ordering::Less;
+                    }
+                    if a.as_str() != "t" && b.as_str() == "t" {
+                        return std::cmp::Ordering::Greater;
+                    }
+                    a.cmp(b)
+                });
                 out.push('{');
                 for (i, k) in keys.iter().enumerate() {
                     if i > 0 {

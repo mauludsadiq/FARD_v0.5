@@ -473,10 +473,10 @@ impl Tracer {
         }
 
         let mut m = serde_json::Map::new();
-        m.insert("t".to_string(), J::String("artifact_out".to_string()));
-        m.insert("name".to_string(), J::String(name.to_string()));
         m.insert("cid".to_string(), J::String(cid.to_string()));
+        m.insert("name".to_string(), J::String(name.to_string()));
         m.insert("parents".to_string(), J::Array(plist));
+        m.insert("t".to_string(), J::String("artifact_out".to_string()));
         self.emit_event(J::Object(m))
     }
     fn module_resolve(&mut self, name: &str, kind: &str, cid: &str) -> Result<()> {
@@ -4179,8 +4179,51 @@ fn file_digest(p: &Path) -> Result<String> {
 }
 
 fn canonical_json_bytes(v: &serde_json::Value) -> Vec<u8> {
-    // Single canonicalization path for *all* persisted JSON bytes:
-    // use canon_json() (including k-first object rule).
-    let s = canon_json(v).expect("canonical_json_bytes canon_json failed");
+    fn emit(out: &mut String, v: &serde_json::Value) {
+        match v {
+            serde_json::Value::Null => out.push_str("null"),
+            serde_json::Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+            serde_json::Value::Number(n) => out.push_str(&n.to_string()),
+            serde_json::Value::String(s) => {
+                out.push_str(&serde_json::to_string(s).expect("JSON_STRING_ENC_FAIL"))
+            }
+            serde_json::Value::Array(xs) => {
+                out.push_str("[");
+                for (i, x) in xs.iter().enumerate() {
+                    if i != 0 {
+                        out.push_str(",");
+                    }
+                    emit(out, x);
+                }
+                out.push_str("]");
+            }
+            serde_json::Value::Object(m) => {
+                out.push_str("{");
+                let mut keys: Vec<&String> = m.keys().collect();
+
+                keys.sort_by(|a, b| {
+                    if a.as_str() == "t" && b.as_str() != "t" {
+                        return std::cmp::Ordering::Less;
+                    }
+                    if a.as_str() != "t" && b.as_str() == "t" {
+                        return std::cmp::Ordering::Greater;
+                    }
+                    a.cmp(b)
+                });
+                for (i, k) in keys.iter().enumerate() {
+                    if i != 0 {
+                        out.push_str(",");
+                    }
+                    out.push_str(&serde_json::to_string(k).expect("JSON_KEY_ENC_FAIL"));
+                    out.push_str(":");
+                    emit(out, m.get(*k).expect("JSON_KEY_MISSING"));
+                }
+                out.push_str("}");
+            }
+        }
+    }
+
+    let mut s = String::new();
+    emit(&mut s, v);
     s.into_bytes()
 }
