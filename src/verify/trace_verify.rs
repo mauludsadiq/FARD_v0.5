@@ -54,7 +54,15 @@ fn canon_line(v: &serde_json::Value) -> Result<String, String> {
             }
             serde_json::Value::Object(m) => {
                 let mut keys: Vec<&String> = m.keys().collect();
-                keys.sort();
+                keys.sort_by(|a, b| {
+                    if a.as_str() == "t" && b.as_str() != "t" {
+                        return std::cmp::Ordering::Less;
+                    }
+                    if a.as_str() != "t" && b.as_str() == "t" {
+                        return std::cmp::Ordering::Greater;
+                    }
+                    a.cmp(b)
+                });
                 out.push('{');
                 for (i, k) in keys.iter().enumerate() {
                     if i > 0 {
@@ -155,7 +163,11 @@ pub fn verify_trace_outdir(outdir: &str) -> Result<(), String> {
 
         let canon = canon_line(&v)?;
         if canon != raw_line {
-            return Err("M2_CANON_MISMATCH".into());
+            return Err(format!(
+                "M2_CANON_MISMATCH idx={} raw={} canon={}",
+                idx, raw_line, canon
+            )
+            .into());
         }
 
         match t {
