@@ -1,4 +1,4 @@
-use fardlang::eval::{eval_expr, Env};
+use fardlang::eval::Env;
 use fardlang::parse::parse_module;
 
 #[test]
