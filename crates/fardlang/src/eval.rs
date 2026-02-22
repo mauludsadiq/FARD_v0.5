@@ -357,6 +357,11 @@ fn is_builtin(f: &str) -> bool {
             | "list_reverse"
             | "list_contains"
             | "list_slice"
+            | "bytes_len"
+            | "bytes_concat"
+            | "bytes_slice"
+            | "bytes_eq"
+            | "bytes_from_text"
     )
 }
 
@@ -576,6 +581,46 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                     Ok(V::List(xs[s..e].to_vec()))
                 }
                 _ => Err(anyhow!("ERROR_BADARG list_slice expects (list, int, int)")),
+            }
+        }
+        "bytes_len" => {
+            match args.get(0) {
+                Some(V::Bytes(b)) => Ok(V::Int(b.len() as i64)),
+                _ => Err(anyhow!("ERROR_BADARG bytes_len expects bytes")),
+            }
+        }
+        "bytes_concat" => {
+            match (args.get(0), args.get(1)) {
+                (Some(V::Bytes(a)), Some(V::Bytes(b))) => {
+                    let mut out = a.clone();
+                    out.extend_from_slice(b);
+                    Ok(V::Bytes(out))
+                }
+                _ => Err(anyhow!("ERROR_BADARG bytes_concat expects (bytes, bytes)")),
+            }
+        }
+        "bytes_slice" => {
+            match (args.get(0), args.get(1), args.get(2)) {
+                (Some(V::Bytes(b)), Some(V::Int(start)), Some(V::Int(end))) => {
+                    let len = b.len() as i64;
+                    let s = (*start).max(0).min(len) as usize;
+                    let e = (*end).max(0).min(len) as usize;
+                    let e = e.max(s);
+                    Ok(V::Bytes(b[s..e].to_vec()))
+                }
+                _ => Err(anyhow!("ERROR_BADARG bytes_slice expects (bytes, int, int)")),
+            }
+        }
+        "bytes_eq" => {
+            match (args.get(0), args.get(1)) {
+                (Some(V::Bytes(a)), Some(V::Bytes(b))) => Ok(V::Bool(a == b)),
+                _ => Err(anyhow!("ERROR_BADARG bytes_eq expects (bytes, bytes)")),
+            }
+        }
+        "bytes_from_text" => {
+            match args.get(0) {
+                Some(V::Text(s)) => Ok(V::Bytes(s.as_bytes().to_vec())),
+                _ => Err(anyhow!("ERROR_BADARG bytes_from_text expects text")),
             }
         }
         _ => Err(anyhow!("ERROR_EVAL unknown builtin {}", f)),
