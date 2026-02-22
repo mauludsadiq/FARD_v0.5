@@ -118,7 +118,7 @@ mod witness {
         }
     }
 
-    pub fn write(receipt: &Receipt, trace_ndjson: &str) {
+    pub fn write(receipt: &Receipt, trace_ndjson: &str, output_bytes: &[u8]) {
         // write trace
         if !trace_ndjson.is_empty() {
             let _ = fs::write("trace.ndjson", trace_ndjson);
@@ -130,16 +130,55 @@ mod witness {
             inputs_json.push_str(&format!("{{\"key\":\"{}\",\"value\":\"{}\"}}", k, v));
         }
         inputs_json.push(']');
+        let output_str = String::from_utf8_lossy(output_bytes);
         let json = format!(
-            "{{\"run_id\":\"{}\",\"source_sha256\":\"{}\",\"inputs\":{},\"output_sha256\":\"{}\",\"trace_sha256\":\"{}\"}}", 
+            "{{\"run_id\":\"{}\",\"source_sha256\":\"{}\",\"inputs\":{},\"output_sha256\":\"{}\",\"trace_sha256\":\"{}\",\"output\":{}}}", 
             receipt.run_id,
             receipt.source_sha256,
             inputs_json,
             receipt.output_sha256,
             receipt.trace_sha256,
+            output_str,
         );
-        let _ = fs::write("receipt.json", json);
+        let _ = fs::write("receipt.json", json.clone());
+        // also persist to fact store for future imports
+        let _ = fs::create_dir_all("receipts");
+        let store_path = format!("receipts/{}.json", receipt.run_id.replace(":", "_"));
+        let _ = fs::write(&store_path, json);
     }
+}
+
+fn fard_json_to_v(j: &serde_json::Value) -> valuecore::v0::V {
+    use valuecore::v0::V;
+    // FARD canonical wire format: {"t": "int", "v": 42}
+    if let (Some(t), Some(v)) = (j.get("t").and_then(|x| x.as_str()), j.get("v")) {
+        match t {
+            "unit" => return V::Unit,
+            "bool" => if let Some(b) = v.as_bool() { return V::Bool(b); },
+            "int" => if let Some(n) = v.as_i64() { return V::Int(n); },
+            "text" => if let Some(s) = v.as_str() { return V::Text(s.to_string()); },
+            "bytes" => if let Some(s) = v.as_str() {
+                if let Ok(b) = hex::decode(s) { return V::Bytes(b); }
+            },
+            "list" => if let Some(arr) = v.as_array() {
+                return V::List(arr.iter().map(fard_json_to_v).collect());
+            },
+            "map" => if let Some(arr) = v.as_array() {
+                let pairs = arr.iter().filter_map(|item| {
+                    let pair = item.as_array()?;
+                    let k = pair.get(0)?.as_str()?.to_string();
+                    let val = fard_json_to_v(pair.get(1)?);
+                    Some((k, val))
+                }).collect();
+                return V::Map(pairs);
+            },
+            "ok" => return V::Ok(Box::new(fard_json_to_v(v))),
+            "err" => if let Some(s) = v.as_str() { return V::Err(s.to_string()); },
+            _ => {}
+        }
+    }
+    // fallback to plain json
+    json_to_v(j)
 }
 
 fn main() {
@@ -192,6 +231,29 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
     let mut env = fardlang::eval::Env::new();
     fardlang::eval::apply_imports(&mut env, &module.imports);
 
+    // resolve fact imports
+    for fi in &module.fact_imports {
+        let store_path = format!("receipts/{}.json", fi.run_id.replace(":", "_"));
+        let fact_bytes = fs::read(&store_path).unwrap_or_else(|_| {
+            eprintln!("error: fact not found: {} (expected at {})", fi.run_id, store_path);
+            process::exit(1);
+        });
+        let fact_json: serde_json::Value = serde_json::from_slice(&fact_bytes).unwrap_or_else(|e| {
+            eprintln!("error: malformed fact receipt {}: {}", fi.run_id, e);
+            process::exit(1);
+        });
+        // verify run_id matches
+        let stored_id = fact_json.get("run_id").and_then(|v| v.as_str()).unwrap_or("");
+        if stored_id != fi.run_id {
+            eprintln!("error: fact run_id mismatch: expected {} got {}", fi.run_id, stored_id);
+            process::exit(1);
+        }
+        // load output value - stored as raw JSON object, not a string
+        let output_val = fact_json.get("output").cloned().unwrap_or(serde_json::Value::Null);
+        let v = fard_json_to_v(&output_val);
+        env.bindings.push((fi.name.clone(), fardlang::eval::EvalVal::V(v)));
+    }
+
     // register declared effects
     for eff in &module.effects {
         env.declared_effects.insert(eff.name.clone());
@@ -242,7 +304,7 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
     let output_bytes = valuecore::v0::encode_json(&v);
 
     let receipt = witness::compute(&src, &inputs, &output_bytes, &trace_ndjson);
-    witness::write(&receipt, &trace_ndjson);
+    witness::write(&receipt, &trace_ndjson, &output_bytes);
     eprintln!("run_id: {}", receipt.run_id);
 
     print!("{}", String::from_utf8(output_bytes).unwrap());
