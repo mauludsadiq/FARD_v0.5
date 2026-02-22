@@ -9,3 +9,4 @@ pub use ast::*;
 pub use parse::parse_module;
 
 pub mod eval;
+pub mod effects;

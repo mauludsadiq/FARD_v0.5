@@ -28,7 +28,20 @@ impl EvalVal {
     }
 }
 use anyhow::{anyhow, Result};
-use std::collections::BTreeMap;
+
+// Thread-local effect handler pointer — set by fardcli before eval, cleared after
+use std::cell::RefCell;
+thread_local! {
+    static EFFECT_HANDLER: RefCell<Option<*mut dyn crate::effects::EffectHandler>> = RefCell::new(None);
+}
+
+pub fn with_effect_handler<H: crate::effects::EffectHandler + 'static>(handler: &mut H, f: impl FnOnce()) {
+    let ptr = handler as *mut dyn crate::effects::EffectHandler;
+    EFFECT_HANDLER.with(|cell| *cell.borrow_mut() = Some(ptr));
+    f();
+    EFFECT_HANDLER.with(|cell| *cell.borrow_mut() = None);
+}
+use std::collections::{BTreeMap, BTreeSet};
 use valuecore::v0::{canon_cmp, canon_eq, i64_add, i64_mul, i64_sub, V};
 
 #[derive(Debug, Clone)]
@@ -36,6 +49,7 @@ pub struct Env {
     pub bindings: Vec<(String, EvalVal)>,
     pub fns: BTreeMap<String, FnDecl>,
     pub aliases: BTreeMap<String, String>, // "list.len" -> "list_len"
+    pub declared_effects: BTreeSet<String>,
     pub depth: usize,
     pub max_depth: usize,
 }
@@ -46,6 +60,7 @@ impl Env {
             bindings: vec![],
             fns: BTreeMap::new(),
             aliases: BTreeMap::new(),
+            declared_effects: BTreeSet::new(),
             depth: 0,
             max_depth: 1024,
         }
@@ -56,6 +71,7 @@ impl Env {
             bindings: vec![],
             fns,
             aliases: BTreeMap::new(),
+            declared_effects: BTreeSet::new(),
             depth: 0,
             max_depth: 1024,
         }
@@ -287,6 +303,20 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
             } else {
                 f
             };
+            // effect dispatch — before builtins
+            if env.declared_effects.contains(f) {
+                let mut vs = Vec::with_capacity(args.len());
+                for a in args {
+                    vs.push(eval_expr(a, env)?.into_v()?);
+                }
+                let result = EFFECT_HANDLER.with(|cell| -> Result<V> {
+                    let opt = *cell.borrow();
+                    let ptr = opt.ok_or_else(|| anyhow::anyhow!("ERROR_EFFECT no handler"))?;
+                    unsafe { (*ptr).call(f, &vs) }
+                })?;
+                return Ok(EvalVal::V(result));
+            }
+
             // builtins first
             if is_builtin(f) {
                 let mut vs = Vec::with_capacity(args.len());
