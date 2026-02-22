@@ -1,11 +1,26 @@
 use crate::ast::{Block, Expr, FnDecl, Stmt, Pattern};
+
+#[derive(Debug, Clone)]
+pub enum EvalVal {
+    V(V),
+    Closure { params: Vec<String>, body: Box<Block>, captured: Vec<(String, EvalVal)>, fns: std::collections::BTreeMap<String, FnDecl> },
+}
+
+impl EvalVal {
+    pub fn into_v(self) -> Result<V> {
+        match self {
+            EvalVal::V(v) => Ok(v),
+            EvalVal::Closure { .. } => Err(anyhow!("ERROR_EVAL closure is not a value")),
+        }
+    }
+}
 use anyhow::{anyhow, Result};
 use std::collections::BTreeMap;
 use valuecore::v0::{canon_cmp, canon_eq, i64_add, i64_mul, i64_sub, V};
 
 #[derive(Debug, Clone)]
 pub struct Env {
-    pub bindings: Vec<(String, V)>,
+    pub bindings: Vec<(String, EvalVal)>,
     pub fns: BTreeMap<String, FnDecl>,
     pub depth: usize,
     pub max_depth: usize,
@@ -30,7 +45,7 @@ impl Env {
         }
     }
 
-    fn get(&self, name: &str) -> Option<V> {
+    fn get_eval(&self, name: &str) -> Option<EvalVal> {
         for (k, v) in self.bindings.iter().rev() {
             if k == name {
                 return Some(v.clone());
@@ -39,17 +54,35 @@ impl Env {
         None
     }
 
+    fn get(&self, name: &str) -> Option<V> {
+        match self.get_eval(name)? {
+            EvalVal::V(v) => Some(v),
+            _ => None,
+        }
+    }
+
     fn set(&mut self, name: String, v: V) {
+        self.bindings.push((name, EvalVal::V(v)));
+    }
+
+    fn set_eval(&mut self, name: String, v: EvalVal) {
         self.bindings.push((name, v));
     }
 }
 
 pub fn eval_block(block: &Block, env: &mut Env) -> Result<V> {
+    eval_block_inner(block, env)
+}
+
+fn eval_block_inner(block: &Block, env: &mut Env) -> Result<V> {
     for s in &block.stmts {
         match s {
             Stmt::Let { name, expr } => {
-                let v = eval_expr(expr, env)?;
-                env.set(name.clone(), v);
+                let ev = eval_expr(expr, env)?;
+                match ev {
+                    EvalVal::Closure { .. } => env.set_eval(name.clone(), ev),
+                    EvalVal::V(v) => env.set(name.clone(), v),
+                }
             }
             Stmt::Expr(e) => {
                 let _ = eval_expr(e, env)?;
@@ -58,15 +91,15 @@ pub fn eval_block(block: &Block, env: &mut Env) -> Result<V> {
     }
 
     match &block.tail {
-        Some(t) => eval_expr(t, env),
+        Some(t) => eval_expr(t, env)?.into_v(),
         None => Ok(V::Unit),
     }
 }
 
-pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<V> {
+pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
     match expr {
         Expr::Match { scrut, arms } => {
-            let sv = eval_expr(scrut, env)?;
+            let sv = eval_expr(scrut, env)?.into_v()?;
             for a in arms {
                 if pat_matches(&a.pat, &sv) {
                     let mut child = env.clone();
@@ -81,13 +114,13 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<V> {
         Expr::RecordLit(fs) => {
             let mut kvs: Vec<(String, V)> = vec![];
             for (k, v) in fs.iter() {
-                let vv = eval_expr(v, env)?;
+                let vv = eval_expr(v, env)?.into_v()?;
                 kvs.push((k.clone(), vv));
             }
-            Ok(valuecore::v0::normalize(&V::Map(kvs)))
+            Ok(EvalVal::V(valuecore::v0::normalize(&V::Map(kvs))))
         }
         Expr::FieldGet { base, field } => {
-            let b = eval_expr(base, env)?;
+            let b = eval_expr(base, env)?.into_v()?;
             match b {
                 V::Map(kvs) => {
                     let nb = valuecore::v0::normalize(&V::Map(kvs));
@@ -95,7 +128,7 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<V> {
                         V::Map(xs) => {
                             for (k, v) in xs {
                                 if k == *field {
-                                    return Ok(v);
+                                    return Ok(EvalVal::V(v));
                                 }
                             }
                             Err(anyhow!("ERROR_OOB record missing field {}", field))
@@ -121,32 +154,36 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<V> {
             return eval_expr(&e2, env);
         }
         // eval_operator_close_v1 end
-        Expr::Unit => Ok(V::Unit),
-        Expr::Bool(b) => Ok(V::Bool(*b)),
+        Expr::Unit => Ok(EvalVal::V(V::Unit)),
+        Expr::Bool(b) => Ok(EvalVal::V(V::Bool(*b))),
         Expr::Int(s) => {
             let i = s
                 .parse::<i64>()
                 .map_err(|_| anyhow!("ERROR_BADARG int parse"))?;
-            Ok(V::Int(i))
+            Ok(EvalVal::V(V::Int(i)))
         }
-        Expr::Text(s) => Ok(V::Text(s.clone())),
-        Expr::BytesHex(h) => Ok(V::Bytes(decode_hex(h)?)),
+        Expr::Text(s) => Ok(EvalVal::V(V::Text(s.clone()))),
+        Expr::BytesHex(h) => Ok(EvalVal::V(V::Bytes(decode_hex(h)?))),
         Expr::List(items) => {
             let mut vs = Vec::with_capacity(items.len());
             for it in items {
-                vs.push(eval_expr(it, env)?);
+                vs.push(eval_expr(it, env)?.into_v()?);
             }
-            Ok(V::List(vs))
+            Ok(EvalVal::V(V::List(vs)))
         }
-        Expr::Ident(x) => env
-            .get(x)
-            .ok_or_else(|| anyhow!("ERROR_EVAL unbound ident {}", x)),
+        Expr::Ident(x) => {
+            if let Some(ev) = env.get_eval(x) {
+                Ok(ev)
+            } else {
+                Err(anyhow!("ERROR_EVAL unbound ident {}", x))
+            }
+        }
 
         Expr::If { c, t, e } => {
-            let cv = eval_expr(c, env)?;
+            let cv = eval_expr(c, env)?.into_v()?;
             match cv {
-                V::Bool(true) => eval_block(t, env),
-                V::Bool(false) => eval_block(e, env),
+                V::Bool(true) => eval_block(t, env).map(EvalVal::V),
+                V::Bool(false) => eval_block(e, env).map(EvalVal::V),
                 _ => Err(anyhow!("ERROR_BADARG if condition must be bool")),
             }
         }
@@ -156,9 +193,28 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<V> {
             if is_builtin(f) {
                 let mut vs = Vec::with_capacity(args.len());
                 for a in args {
-                    vs.push(eval_expr(a, env)?);
+                    vs.push(eval_expr(a, env)?.into_v()?);
                 }
-                return eval_builtin(f, &vs);
+                return eval_builtin(f, &vs).map(EvalVal::V);
+            }
+
+            // check if name is a closure in bindings
+            if let Some(EvalVal::Closure { params, body, captured, fns }) = env.get_eval(f) {
+                if params.len() != args.len() {
+                    return Err(anyhow!("ERROR_BADARG wrong arity for closure {}", f));
+                }
+                if env.depth >= env.max_depth {
+                    return Err(anyhow!("ERROR_EVAL_DEPTH recursion limit exceeded"));
+                }
+                let mut child = Env::with_fns(fns);
+                child.bindings = captured;
+                child.depth = env.depth + 1;
+                child.max_depth = env.max_depth;
+                for (i, p) in params.iter().enumerate() {
+                    let v = eval_expr(&args[i], env)?.into_v()?;
+                    child.set(p.clone(), v);
+                }
+                return eval_block(&body, &mut child).map(EvalVal::V);
             }
 
             // user fn call
@@ -183,14 +239,48 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<V> {
 
             for (i, param) in decl.params.iter().enumerate() {
                 let name = param.0.clone(); // (String, Type)
-                let v = eval_expr(&args[i], env)?;
+                let v = eval_expr(&args[i], env)?.into_v()?;
                 child.set(name, v);
             }
 
-            eval_block(&decl.body, &mut child)
+            eval_block(&decl.body, &mut child).map(EvalVal::V)
+        }
+
+        Expr::Lambda { params, body } => {
+            Ok(EvalVal::Closure {
+                params: params.clone(),
+                body: body.clone(),
+                captured: env.bindings.clone(),
+                fns: env.fns.clone(),
+            })
+        }
+
+        Expr::CallExpr { f, args } => {
+            // Evaluate f to get a closure from env
+            if let Expr::Ident(name) = f.as_ref() {
+                if let Some(EvalVal::Closure { params, body, captured, fns }) = env.get_eval(name) {
+                    if params.len() != args.len() {
+                        return Err(anyhow!("ERROR_BADARG wrong arity for closure"));
+                    }
+                    if env.depth >= env.max_depth {
+                        return Err(anyhow!("ERROR_EVAL_DEPTH recursion limit exceeded"));
+                    }
+                    let mut child = Env::with_fns(fns);
+                    child.bindings = captured;
+                    child.depth = env.depth + 1;
+                    child.max_depth = env.max_depth;
+                    for (i, p) in params.iter().enumerate() {
+                        let v = eval_expr(&args[i], env)?.into_v()?;
+                        child.set(p.clone(), v);
+                    }
+                    return eval_block(&body, &mut child).map(EvalVal::V);
+                }
+            }
+            Err(anyhow!("ERROR_EVAL not a closure"))
         }
     }
 }
+
 
 fn pat_matches(p: &Pattern, v: &V) -> bool {
     match p {

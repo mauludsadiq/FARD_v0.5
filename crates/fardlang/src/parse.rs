@@ -568,17 +568,56 @@ fn parse_primary(lx: &mut Lexer<'_>) -> Result<Expr> {
             }
         }
 
+        Tok::KwFn => {
+            // fn(x, y) { body }
+            expect(lx, Tok::LParen)?;
+            let mut params = Vec::new();
+            if !peek_is(lx, Tok::RParen)? {
+                loop {
+                    params.push(parse_ident(lx)?);
+                    if peek_is(lx, Tok::Comma)? {
+                        lx.next()?;
+                        continue;
+                    }
+                    break;
+                }
+            }
+            expect(lx, Tok::RParen)?;
+            let body = parse_block(lx)?;
+            Expr::Lambda { params, body: Box::new(body) }
+        }
+
         tok => bail!("ERROR_PARSE unsupported expression {:?}", tok),
     };
 
     let mut out = e;
-    while peek_is(lx, Tok::Dot)? {
-        lx.next()?; // consume '.'
-        let f = parse_ident(lx)?;
-        out = Expr::FieldGet {
-            base: Box::new(out),
-            field: f,
-        };
+    loop {
+        if peek_is(lx, Tok::Dot)? {
+            lx.next()?; // consume '.'
+            let f = parse_ident(lx)?;
+            out = Expr::FieldGet {
+                base: Box::new(out),
+                field: f,
+            };
+        } else if peek_is(lx, Tok::LParen)? {
+            // CallExpr: expr(args)
+            lx.next()?;
+            let mut args = Vec::new();
+            if !peek_is(lx, Tok::RParen)? {
+                loop {
+                    args.push(parse_expr(lx)?);
+                    if peek_is(lx, Tok::Comma)? {
+                        lx.next()?;
+                        continue;
+                    }
+                    break;
+                }
+            }
+            expect(lx, Tok::RParen)?;
+            out = Expr::CallExpr { f: Box::new(out), args };
+        } else {
+            break;
+        }
     }
     Ok(out)
 }

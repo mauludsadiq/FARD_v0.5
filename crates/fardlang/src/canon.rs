@@ -262,7 +262,7 @@ fn print_match_arm(a: &MatchArm) -> String {
 
 
 
-    fn print_expr(e: &Expr) -> String {
+fn print_expr(e: &Expr) -> String {
     match e {
         Expr::Unit => "unit".to_string(),
         Expr::Bool(true) => "true".to_string(),
@@ -340,6 +340,23 @@ fn print_match_arm(a: &MatchArm) -> String {
             }
             out.push_str(" }");
             out
+        }
+
+        Expr::Lambda { params, body } => {
+            let ps = params.join(", ");
+            format!("fn({}) {{ {} }}", ps, print_block(body))
+        }
+
+        Expr::CallExpr { f, args } => {
+            let mut s = String::new();
+            s.push_str(&print_expr(f));
+            s.push('(');
+            for (i, a) in args.iter().enumerate() {
+                if i > 0 { s.push_str(", "); }
+                s.push_str(&print_expr(a));
+            }
+            s.push(')');
+            s
         }
     }
 }

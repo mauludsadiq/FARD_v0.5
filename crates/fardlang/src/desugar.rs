@@ -76,6 +76,13 @@ pub fn desugar_expr(e: Expr) -> Expr {
 
         Expr::List(xs) => Expr::List(xs.into_iter().map(desugar_expr).collect()),
 
+        Expr::Lambda { params, body } => Expr::Lambda { params, body },
+
+        Expr::CallExpr { f, args } => Expr::CallExpr {
+            f: Box::new(desugar_expr(*f)),
+            args: args.into_iter().map(desugar_expr).collect(),
+        },
+
         other => other,
     }
 }

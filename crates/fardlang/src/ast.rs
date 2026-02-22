@@ -138,6 +138,8 @@ pub enum Expr {
         t: Box<Block>,
         e: Box<Block>,
     },
+    Lambda { params: Vec<String>, body: Box<Block> },
+    CallExpr { f: Box<Expr>, args: Vec<Expr> },
     Match { scrut: Box<Expr>, arms: Vec<MatchArm> },
 }
 

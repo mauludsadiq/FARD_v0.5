@@ -115,6 +115,17 @@ fn check_expr(
                 check_expr(env, allowed, vars, base)?;
                 Ok(())
             }
+            Expr::Lambda { params, body } => {
+                let mut child_vars = vars.clone();
+                for p in params { child_vars.insert(p.clone(), ()); }
+                check_block(env, allowed, &mut child_vars, body)?;
+                Ok(())
+            }
+            Expr::CallExpr { f, args } => {
+                check_expr(env, allowed, vars, f)?;
+                for a in args { check_expr(env, allowed, vars, a)?; }
+                Ok(())
+            }
             Expr::Match { scrut, arms } => {
                 check_expr(env, allowed, vars, scrut)?;
                 for a in arms {
