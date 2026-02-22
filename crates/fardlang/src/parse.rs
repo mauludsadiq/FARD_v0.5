@@ -604,9 +604,15 @@ fn parse_match_expr(lx: &mut Lexer<'_>) -> Result<Expr> {
     if !peek_is(lx, Tok::RBrace)? {
         loop {
             let pat = parse_arm_pattern(lx)?;
+            let guard = if peek_is(lx, Tok::KwIf)? {
+                lx.next()?;
+                Some(parse_expr(lx)?)
+            } else {
+                None
+            };
             expect(lx, Tok::FatArrow)?;
             let body = parse_expr(lx)?;
-            arms.push(MatchArm { pat, body });
+            arms.push(MatchArm { pat, guard, body });
 
             if peek_is(lx, Tok::Comma)? {
                 lx.next()?;

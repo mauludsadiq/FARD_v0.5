@@ -107,6 +107,7 @@ pub enum Pattern {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MatchArm {
     pub pat: Pattern,
+    pub guard: Option<Expr>,
     pub body: Expr,
 }
 

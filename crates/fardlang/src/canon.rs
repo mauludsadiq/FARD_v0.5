@@ -260,6 +260,10 @@ fn print_pattern(p: &Pattern) -> String {
 fn print_match_arm(a: &MatchArm) -> String {
     let mut out = String::new();
     out.push_str(&print_pattern(&a.pat));
+    if let Some(g) = &a.guard {
+        out.push_str(" if ");
+        out.push_str(&print_expr(g));
+    }
     out.push_str(" => ");
     out.push_str(&print_expr(&a.body));
     out

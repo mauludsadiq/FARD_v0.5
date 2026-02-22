@@ -52,7 +52,7 @@ pub fn desugar_expr(e: Expr) -> Expr {
             scrut: Box::new(desugar_expr(*scrut)),
             arms: arms
                 .into_iter()
-                .map(|a| MatchArm { pat: a.pat, body: desugar_expr(a.body) })
+                .map(|a| MatchArm { pat: a.pat, guard: a.guard.map(|g| desugar_expr(g)), body: desugar_expr(a.body) })
                 .collect(),
         },
 

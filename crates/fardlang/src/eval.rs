@@ -73,6 +73,12 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<V> {
                     for (k, vv) in pat_binds(&a.pat, &sv) {
                         child.set(k, vv);
                     }
+                    if let Some(g) = &a.guard {
+                        match eval_expr(g, &mut child)? {
+                            V::Bool(true) => {}
+                            _ => continue,
+                        }
+                    }
                     return eval_expr(&a.body, &mut child);
                 }
             }
