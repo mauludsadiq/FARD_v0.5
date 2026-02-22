@@ -66,6 +66,82 @@ fn json_to_v(j: &serde_json::Value) -> V {
     }
 }
 
+
+mod witness {
+    use sha2::{Sha256, Digest};
+    use std::fs;
+
+    pub struct Receipt {
+        pub source_sha256: String,
+        pub inputs: Vec<(String, String)>,
+        pub output_sha256: String,
+        pub trace_sha256: String,
+        pub run_id: String,
+    }
+
+    fn hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|b| format!("{:02x}", b)).collect()
+    }
+
+    fn sha256(data: &[u8]) -> String {
+        let mut h = Sha256::new();
+        h.update(data);
+        hex(&h.finalize())
+    }
+
+    pub fn compute(
+        source: &[u8],
+        inputs: &[(String, String)],
+        output_json: &[u8],
+        trace_ndjson: &str,
+    ) -> Receipt {
+        let source_sha256 = sha256(source);
+        let output_sha256 = sha256(output_json);
+        let trace_sha256 = sha256(trace_ndjson.as_bytes());
+
+        // canonical witness string: deterministic, order-stable
+        let mut witness_str = String::new();
+        witness_str.push_str(&format!("source:{}", source_sha256));
+        for (k, v) in inputs {
+            witness_str.push_str(&format!(",input.{}:{}", k, v));
+        }
+        witness_str.push_str(&format!(",output:{}", output_sha256));
+        witness_str.push_str(&format!(",trace:{}", trace_sha256));
+        let run_id = format!("sha256:{}", sha256(witness_str.as_bytes()));
+
+        Receipt {
+            source_sha256,
+            inputs: inputs.to_vec(),
+            output_sha256,
+            trace_sha256,
+            run_id,
+        }
+    }
+
+    pub fn write(receipt: &Receipt, trace_ndjson: &str) {
+        // write trace
+        if !trace_ndjson.is_empty() {
+            let _ = fs::write("trace.ndjson", trace_ndjson);
+        }
+        // build receipt json manually to avoid serde_json derive
+        let mut inputs_json = String::from("[");
+        for (i, (k, v)) in receipt.inputs.iter().enumerate() {
+            if i > 0 { inputs_json.push(','); }
+            inputs_json.push_str(&format!("{{\"key\":\"{}\",\"value\":\"{}\"}}", k, v));
+        }
+        inputs_json.push(']');
+        let json = format!(
+            "{{\"run_id\":\"{}\",\"source_sha256\":\"{}\",\"inputs\":{},\"output_sha256\":\"{}\",\"trace_sha256\":\"{}\"}}", 
+            receipt.run_id,
+            receipt.source_sha256,
+            inputs_json,
+            receipt.output_sha256,
+            receipt.trace_sha256,
+        );
+        let _ = fs::write("receipt.json", json);
+    }
+}
+
 fn main() {
 
 fn json_to_v_json(v: &V) -> serde_json::Value {
@@ -148,26 +224,26 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
         process::exit(1);
     }
 
-    // write trace
-    if !handler.traces.is_empty() {
-        let mut trace_lines = String::new();
-        for t in handler.trace() {
-            let args_json: Vec<serde_json::Value> = t.args.iter()
-                .map(|v| json_to_v_json(v))
-                .collect();
-            let entry = serde_json::json!({
-                "effect":       t.name,
-                "args":         args_json,
-                "result":       json_to_v_json(&t.result),
-                "timestamp_ms": t.timestamp_ms,
-            });
-            trace_lines.push_str(&entry.to_string());
-            trace_lines.push('\n');
-        }
-        let _ = fs::write("trace.ndjson", trace_lines);
+    // build trace ndjson
+    let mut trace_ndjson = String::new();
+    for t in handler.trace() {
+        let args_json: Vec<serde_json::Value> = t.args.iter().map(|v| json_to_v_json(v)).collect();
+        let entry = serde_json::json!({
+            "effect": t.name,
+            "args": args_json,
+            "result": json_to_v_json(&t.result),
+            "timestamp_ms": t.timestamp_ms,
+        });
+        trace_ndjson.push_str(&entry.to_string());
+        trace_ndjson.push('\n');
     }
 
     let v = result.unwrap();
-    let bytes = valuecore::v0::encode_json(&v);
-    print!("{}", String::from_utf8(bytes).unwrap());
+    let output_bytes = valuecore::v0::encode_json(&v);
+
+    let receipt = witness::compute(&src, &inputs, &output_bytes, &trace_ndjson);
+    witness::write(&receipt, &trace_ndjson);
+    eprintln!("run_id: {}", receipt.run_id);
+
+    print!("{}", String::from_utf8(output_bytes).unwrap());
 }
