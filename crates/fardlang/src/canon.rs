@@ -245,6 +245,10 @@ fn print_pattern(p: &Pattern) -> String {
         Pattern::Text(s) => format!("{:?}", s),
         Pattern::BytesHex(h) => format!("b{:?}", h),
         Pattern::Ident(s) => s.clone(),
+        Pattern::List(pats) => {
+            let inner = pats.iter().map(|p| print_pattern(p)).collect::<Vec<_>>().join(", ");
+            format!("[{}]", inner)
+        }
     }
 }
 

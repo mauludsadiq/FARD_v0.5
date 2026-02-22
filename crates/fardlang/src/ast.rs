@@ -99,6 +99,7 @@ pub enum Pattern {
     Text(String),
     BytesHex(String),
     Ident(String),
+    List(Vec<Pattern>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
