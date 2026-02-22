@@ -344,6 +344,14 @@ fn is_builtin(f: &str) -> bool {
             | "text_concat"
             | "map_get"
             | "int_to_text"
+            | "text_len"
+            | "text_contains"
+            | "text_starts_with"
+            | "text_split"
+            | "text_trim"
+            | "text_slice"
+            | "text_replace"
+            | "text_join"
     )
 }
 
@@ -444,6 +452,75 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
             match &args[0] {
                 V::Int(i) => Ok(V::Text(i.to_string())),
                 _ => Err(anyhow!("ERROR_BADARG int_to_text expects int")),
+            }
+        }
+        "text_len" => {
+            match args.get(0) {
+                Some(V::Text(s)) => Ok(V::Int(s.chars().count() as i64)),
+                _ => Err(anyhow!("ERROR_BADARG text_len expects text")),
+            }
+        }
+        "text_contains" => {
+            match (args.get(0), args.get(1)) {
+                (Some(V::Text(s)), Some(V::Text(pat))) => Ok(V::Bool(s.contains(pat.as_str()))),
+                _ => Err(anyhow!("ERROR_BADARG text_contains expects (text, text)")),
+            }
+        }
+        "text_starts_with" => {
+            match (args.get(0), args.get(1)) {
+                (Some(V::Text(s)), Some(V::Text(pat))) => Ok(V::Bool(s.starts_with(pat.as_str()))),
+                _ => Err(anyhow!("ERROR_BADARG text_starts_with expects (text, text)")),
+            }
+        }
+        "text_split" => {
+            match (args.get(0), args.get(1)) {
+                (Some(V::Text(s)), Some(V::Text(sep))) => {
+                    let parts: Vec<V> = s.split(sep.as_str()).map(|p| V::Text(p.to_string())).collect();
+                    Ok(V::List(parts))
+                }
+                _ => Err(anyhow!("ERROR_BADARG text_split expects (text, text)")),
+            }
+        }
+        "text_trim" => {
+            match args.get(0) {
+                Some(V::Text(s)) => Ok(V::Text(s.trim().to_string())),
+                _ => Err(anyhow!("ERROR_BADARG text_trim expects text")),
+            }
+        }
+        "text_slice" => {
+            match (args.get(0), args.get(1), args.get(2)) {
+                (Some(V::Text(s)), Some(V::Int(start)), Some(V::Int(end))) => {
+                    let chars: Vec<char> = s.chars().collect();
+                    let len = chars.len() as i64;
+                    let s = (*start).max(0).min(len) as usize;
+                    let e = (*end).max(0).min(len) as usize;
+                    let e = e.max(s);
+                    Ok(V::Text(chars[s..e].iter().collect()))
+                }
+                _ => Err(anyhow!("ERROR_BADARG text_slice expects (text, int, int)")),
+            }
+        }
+        "text_replace" => {
+            match (args.get(0), args.get(1), args.get(2)) {
+                (Some(V::Text(s)), Some(V::Text(from)), Some(V::Text(to))) => {
+                    Ok(V::Text(s.replace(from.as_str(), to.as_str())))
+                }
+                _ => Err(anyhow!("ERROR_BADARG text_replace expects (text, text, text)")),
+            }
+        }
+        "text_join" => {
+            match (args.get(0), args.get(1)) {
+                (Some(V::List(items)), Some(V::Text(sep))) => {
+                    let mut parts = Vec::new();
+                    for item in items {
+                        match item {
+                            V::Text(t) => parts.push(t.clone()),
+                            _ => return Err(anyhow!("ERROR_BADARG text_join list must contain text")),
+                        }
+                    }
+                    Ok(V::Text(parts.join(sep.as_str())))
+                }
+                _ => Err(anyhow!("ERROR_BADARG text_join expects (list, text)")),
             }
         }
         _ => Err(anyhow!("ERROR_EVAL unknown builtin {}", f)),
