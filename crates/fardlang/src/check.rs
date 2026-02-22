@@ -121,6 +121,7 @@ fn check_expr(
                 check_block(env, allowed, &mut child_vars, body)?;
                 Ok(())
             }
+            Expr::TryExpr { inner } => return check_expr(env, allowed, vars, inner),
             Expr::CallExpr { f, args } => {
                 check_expr(env, allowed, vars, f)?;
                 for a in args { check_expr(env, allowed, vars, a)?; }

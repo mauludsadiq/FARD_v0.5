@@ -347,6 +347,7 @@ fn print_expr(e: &Expr) -> String {
             format!("fn({}) {{ {} }}", ps, print_block(body))
         }
 
+        Expr::TryExpr { inner } => format!("{}?", print_expr(inner)),
         Expr::CallExpr { f, args } => {
             let mut s = String::new();
             s.push_str(&print_expr(f));

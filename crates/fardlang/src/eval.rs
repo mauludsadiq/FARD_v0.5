@@ -1,4 +1,12 @@
 use crate::ast::{Block, Expr, FnDecl, Stmt, Pattern};
+
+// Sentinel used to propagate err values through ? without unwinding past block boundaries
+#[derive(Debug)]
+struct TryPropagation(V);
+impl std::fmt::Display for TryPropagation {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "TryPropagation") }
+}
+impl std::error::Error for TryPropagation {}
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use sha2::{Sha256, Digest};
 use hkdf::Hkdf;
@@ -80,6 +88,19 @@ pub fn eval_block(block: &Block, env: &mut Env) -> Result<V> {
 }
 
 fn eval_block_inner(block: &Block, env: &mut Env) -> Result<V> {
+    match eval_block_inner_fallible(block, env) {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            if let Some(tp) = e.downcast_ref::<TryPropagation>() {
+                Ok(tp.0.clone())
+            } else {
+                Err(e)
+            }
+        }
+    }
+}
+
+fn eval_block_inner_fallible(block: &Block, env: &mut Env) -> Result<V> {
     for s in &block.stmts {
         match s {
             Stmt::Let { name, expr } => {
@@ -251,6 +272,26 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
             eval_block(&decl.body, &mut child).map(EvalVal::V)
         }
 
+        Expr::TryExpr { inner } => {
+            let v = eval_expr(inner, env)?;
+            match v {
+                // err value: propagate up via sentinel
+                EvalVal::V(V::Err(ref e)) => {
+                    return Err(anyhow::Error::new(TryPropagation(V::Err(e.clone()))));
+                }
+                // {tag:"ok", val:v} record: unwrap to v
+                EvalVal::V(V::Map(ref kvs)) => {
+                    let tag = kvs.iter().find(|(k, _)| k == "tag").map(|(_, v)| v.clone());
+                    let val = kvs.iter().find(|(k, _)| k == "val").map(|(_, v)| v.clone());
+                    match (tag, val) {
+                        (Some(V::Text(ref t)), Some(ref v2)) if t == "ok" => Ok(EvalVal::V(v2.clone())),
+                        _ => Ok(v),
+                    }
+                }
+                other => Ok(other),
+            }
+        }
+
         Expr::Lambda { params, body } => {
             Ok(EvalVal::Closure {
                 params: params.clone(),
@@ -382,6 +423,8 @@ fn is_builtin(f: &str) -> bool {
             | "xchacha20poly1305_open"
             | "rsa_verify_pkcs1_sha256"
             | "ecdsa_p256_verify"
+            | "ok"
+            | "err"
     )
 }
 
@@ -811,6 +854,22 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                     Ok(V::Bool(vk.verify(msg, &signature).is_ok()))
                 }
                 _ => Err(anyhow!("ERROR_BADARG ecdsa_p256_verify expects (bytes, bytes, bytes, bytes)")),
+            }
+        }
+        "ok" => {
+            match args.get(0) {
+                Some(v) => Ok(valuecore::v0::normalize(&V::Map(vec![
+                    ("tag".to_string(), V::Text("ok".to_string())),
+                    ("val".to_string(), v.clone()),
+                ]))),
+                _ => Err(anyhow!("ERROR_BADARG ok expects 1 argument")),
+            }
+        }
+        "err" => {
+            match args.get(0) {
+                Some(V::Text(code)) => Ok(V::Err(code.clone())),
+                Some(v) => Ok(V::Err(format!("{:?}", v))),
+                _ => Err(anyhow!("ERROR_BADARG err expects 1 argument")),
             }
         }
         _ => Err(anyhow!("ERROR_EVAL unknown builtin {}", f)),

@@ -311,6 +311,11 @@ fn parse_expr(lx: &mut Lexer<'_>) -> Result<Expr> {
 
 fn parse_pipe(lx: &mut Lexer<'_>) -> Result<Expr> {
     let mut lhs = parse_or(lx)?;
+    // wrap initial lhs in ? if present
+    if peek_is(lx, Tok::Question)? {
+        lx.next()?;
+        lhs = make_try(lhs);
+    }
     while peek_is(lx, Tok::PipeGreater)? {
         lx.next()?;
         let rhs = parse_or(lx)?;
@@ -334,8 +339,27 @@ fn parse_pipe(lx: &mut Lexer<'_>) -> Result<Expr> {
             }
             _ => return Err(anyhow::anyhow!("ERROR_PARSE |> right-hand side must be a function")),
         };
+        // wrap step result in ? if present
+        if peek_is(lx, Tok::Question)? {
+            lx.next()?;
+            lhs = make_try(lhs);
+        }
     }
     Ok(lhs)
+}
+
+// Desugar expr? into:
+// match __try__ { err(_) => __try__, map{tag:"ok",val:v} => v, v => v }
+// We use a let binding to avoid double evaluation.
+// Encoded as a Match expression on a synthetic ident bound by let.
+fn make_try(expr: Expr) -> Expr {
+
+    // match expr {
+    //   err_val => err_val   (Pattern::ErrWildcard)
+    //   {tag: "ok", val: v} => v  (record pattern)
+    //   v => v               (bind fallthrough)
+    // }
+    Expr::TryExpr { inner: Box::new(expr) }
 }
 
 fn parse_or(lx: &mut Lexer<'_>) -> Result<Expr> {

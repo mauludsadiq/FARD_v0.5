@@ -40,6 +40,7 @@ pub enum Tok {
     FatArrow,
     Pipe,
     PipeGreater,
+    Question,
 
     Plus,
     Minus,
@@ -265,6 +266,10 @@ impl<'a> Lexer<'a> {
                 }
             }
             // lex_ops_dispatch_v1 end
+            Some(b'?') => {
+                self.bump();
+                Ok(Tok::Question)
+            }
             None => Ok(Tok::Eof),
             Some(b'(') => {
                 self.bump();
