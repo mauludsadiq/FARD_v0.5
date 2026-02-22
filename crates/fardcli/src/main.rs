@@ -67,6 +67,24 @@ fn json_to_v(j: &serde_json::Value) -> V {
 }
 
 fn main() {
+
+fn json_to_v_json(v: &V) -> serde_json::Value {
+    match v {
+        V::Unit        => serde_json::Value::Null,
+        V::Bool(b)     => serde_json::json!(b),
+        V::Int(i)      => serde_json::json!(i),
+        V::Text(s)     => serde_json::json!(s),
+        V::Bytes(b)    => serde_json::json!(hex::encode(b)),
+        V::Ok(x)       => serde_json::json!({"ok": json_to_v_json(x)}),
+        V::Err(e)      => serde_json::json!({"error": e}),
+        V::List(items) => serde_json::Value::Array(items.iter().map(json_to_v_json).collect()),
+        V::Map(pairs)  => {
+            let mut m = serde_json::Map::new();
+            for (k, val) in pairs { m.insert(k.clone(), json_to_v_json(val)); }
+            serde_json::Value::Object(m)
+        }
+    }
+}
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 || args[1] != "run" {
         eprintln!("usage: fard run <file.fard> [--input key=value ...]");
@@ -134,8 +152,13 @@ fn main() {
     if !handler.traces.is_empty() {
         let mut trace_lines = String::new();
         for t in handler.trace() {
+            let args_json: Vec<serde_json::Value> = t.args.iter()
+                .map(|v| json_to_v_json(v))
+                .collect();
             let entry = serde_json::json!({
-                "effect": t.name,
+                "effect":       t.name,
+                "args":         args_json,
+                "result":       json_to_v_json(&t.result),
                 "timestamp_ms": t.timestamp_ms,
             });
             trace_lines.push_str(&entry.to_string());
