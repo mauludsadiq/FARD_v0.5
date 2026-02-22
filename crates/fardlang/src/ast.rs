@@ -101,6 +101,7 @@ pub enum Pattern {
     Ident(String),
     List(Vec<Pattern>),
     Record(Vec<(String, Pattern)>),
+    Or(Vec<Pattern>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

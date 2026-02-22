@@ -229,7 +229,8 @@ fn pat_matches(p: &Pattern, v: &V) -> bool {
                 } else { false }
             } else { false }
         }
-                Pattern::Ident(_) => true,
+        Pattern::Or(alts) => alts.iter().any(|p| pat_matches(p, v)),
+        Pattern::Ident(_) => true,
     }
 }
 

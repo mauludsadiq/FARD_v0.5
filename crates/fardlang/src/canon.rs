@@ -245,7 +245,8 @@ fn print_pattern(p: &Pattern) -> String {
         Pattern::Text(s) => format!("{:?}", s),
         Pattern::BytesHex(h) => format!("b{:?}", h),
         Pattern::Ident(s) => s.clone(),
-        Pattern::Record(fields) => {
+        Pattern::Or(alts) => alts.iter().map(|p| print_pattern(p)).collect::<Vec<_>>().join(" | "),
+                Pattern::Record(fields) => {
             let inner = fields.iter().map(|(k, p)| format!("{}: {}", k, print_pattern(p))).collect::<Vec<_>>().join(", ");
             format!("{{{}}}", inner)
         }

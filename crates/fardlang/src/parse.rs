@@ -583,6 +583,19 @@ fn parse_primary(lx: &mut Lexer<'_>) -> Result<Expr> {
     Ok(out)
 }
 
+fn parse_arm_pattern(lx: &mut Lexer<'_>) -> Result<Pattern> {
+    let first = parse_pattern(lx)?;
+    if !peek_is(lx, Tok::Pipe)? {
+        return Ok(first);
+    }
+    let mut alts = vec![first];
+    while peek_is(lx, Tok::Pipe)? {
+        lx.next()?;
+        alts.push(parse_pattern(lx)?);
+    }
+    Ok(Pattern::Or(alts))
+}
+
 fn parse_match_expr(lx: &mut Lexer<'_>) -> Result<Expr> {
     let scrut = parse_expr(lx)?;
     expect(lx, Tok::LBrace)?;
@@ -590,7 +603,7 @@ fn parse_match_expr(lx: &mut Lexer<'_>) -> Result<Expr> {
     let mut arms: Vec<MatchArm> = vec![];
     if !peek_is(lx, Tok::RBrace)? {
         loop {
-            let pat = parse_pattern(lx)?;
+            let pat = parse_arm_pattern(lx)?;
             expect(lx, Tok::FatArrow)?;
             let body = parse_expr(lx)?;
             arms.push(MatchArm { pat, body });
