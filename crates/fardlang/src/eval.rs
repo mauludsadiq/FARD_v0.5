@@ -362,6 +362,11 @@ fn is_builtin(f: &str) -> bool {
             | "bytes_slice"
             | "bytes_eq"
             | "bytes_from_text"
+            | "map_new"
+            | "map_set"
+            | "map_has"
+            | "map_keys"
+            | "map_delete"
     )
 }
 
@@ -621,6 +626,56 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
             match args.get(0) {
                 Some(V::Text(s)) => Ok(V::Bytes(s.as_bytes().to_vec())),
                 _ => Err(anyhow!("ERROR_BADARG bytes_from_text expects text")),
+            }
+        }
+        "map_new" => {
+            Ok(valuecore::v0::normalize(&V::Map(vec![])))
+        }
+        "map_set" => {
+            match (args.get(0), args.get(1), args.get(2)) {
+                (Some(V::Map(kvs)), Some(V::Text(k)), Some(v)) => {
+                    let mut out = kvs.clone();
+                    out.retain(|(ek, _)| ek != k);
+                    out.push((k.clone(), v.clone()));
+                    Ok(valuecore::v0::normalize(&V::Map(out)))
+                }
+                _ => Err(anyhow!("ERROR_BADARG map_set expects (record, text, value)")),
+            }
+        }
+        "map_has" => {
+            match (args.get(0), args.get(1)) {
+                (Some(V::Map(kvs)), Some(V::Text(k))) => {
+                    let norm = valuecore::v0::normalize(&V::Map(kvs.clone()));
+                    if let V::Map(nkvs) = norm {
+                        Ok(V::Bool(nkvs.iter().any(|(ek, _)| ek == k)))
+                    } else {
+                        Ok(V::Bool(false))
+                    }
+                }
+                _ => Err(anyhow!("ERROR_BADARG map_has expects (record, text)")),
+            }
+        }
+        "map_keys" => {
+            match args.get(0) {
+                Some(V::Map(kvs)) => {
+                    let norm = valuecore::v0::normalize(&V::Map(kvs.clone()));
+                    if let V::Map(nkvs) = norm {
+                        Ok(V::List(nkvs.into_iter().map(|(k, _)| V::Text(k)).collect()))
+                    } else {
+                        Ok(V::List(vec![]))
+                    }
+                }
+                _ => Err(anyhow!("ERROR_BADARG map_keys expects record")),
+            }
+        }
+        "map_delete" => {
+            match (args.get(0), args.get(1)) {
+                (Some(V::Map(kvs)), Some(V::Text(k))) => {
+                    let mut out = kvs.clone();
+                    out.retain(|(ek, _)| ek != k);
+                    Ok(valuecore::v0::normalize(&V::Map(out)))
+                }
+                _ => Err(anyhow!("ERROR_BADARG map_delete expects (record, text)")),
             }
         }
         _ => Err(anyhow!("ERROR_EVAL unknown builtin {}", f)),
