@@ -595,10 +595,28 @@ fn parse_primary(lx: &mut Lexer<'_>) -> Result<Expr> {
         if peek_is(lx, Tok::Dot)? {
             lx.next()?; // consume '.'
             let f = parse_ident(lx)?;
-            out = Expr::FieldGet {
-                base: Box::new(out),
-                field: f,
-            };
+            if peek_is(lx, Tok::LParen)? {
+                // method call: expr.name(args) → name(expr, args)
+                lx.next()?;
+                let mut args = vec![out];
+                if !peek_is(lx, Tok::RParen)? {
+                    loop {
+                        args.push(parse_expr(lx)?);
+                        if peek_is(lx, Tok::Comma)? {
+                            lx.next()?;
+                            continue;
+                        }
+                        break;
+                    }
+                }
+                expect(lx, Tok::RParen)?;
+                out = Expr::Call { f, args };
+            } else {
+                out = Expr::FieldGet {
+                    base: Box::new(out),
+                    field: f,
+                };
+            }
         } else if peek_is(lx, Tok::LParen)? {
             // CallExpr: expr(args)
             lx.next()?;

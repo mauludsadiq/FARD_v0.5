@@ -1,4 +1,4 @@
-use crate::ast::{BinOp, Block, Expr, MatchArm};
+use crate::ast::{BinOp, Expr, MatchArm};
 
 fn op_name(op: &BinOp) -> &'static str {
     match op {
