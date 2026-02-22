@@ -113,13 +113,15 @@ pub fn std_aliases() -> BTreeMap<String, BTreeMap<String, String>> {
         ("crypto",&["sha256","hkdf_sha256","xchacha20poly1305_seal","xchacha20poly1305_open","rsa_verify_pkcs1_sha256","ecdsa_p256_verify"]),
         ("encode",&["base64url_encode","base64url_decode","json_parse","json_emit"]),
         ("result",&["ok","err"]),
+        ("io",    &["read_file","write_file","clock_now","random_bytes"]),
+        ("http",  &["http_get"]),
     ];
     for (mod_name, fns) in modules {
         let mut mod_map = BTreeMap::new();
         for fn_name in *fns {
             // list.len -> list_len, encode.json_parse -> json_parse (already prefixed)
             let builtin = match *mod_name {
-                "encode" | "crypto" | "result" => fn_name.to_string(),
+                "encode" | "crypto" | "result" | "io" | "http" => fn_name.to_string(),
                 _ => format!("{}_{}", mod_name, fn_name),
             };
             mod_map.insert(fn_name.to_string(), builtin);
@@ -141,6 +143,24 @@ pub fn apply_imports(env: &mut Env, imports: &[crate::ast::ImportDecl]) {
                 for (fn_name, builtin) in mod_map {
                     // alias.fn_name -> builtin
                     env.aliases.insert(format!("{}.{}", alias, fn_name), builtin.clone());
+                }
+            }
+        }
+    }
+    // auto-declare io/http effects into env.declared_effects
+    let effect_mods = [
+        ("io",   &["read_file","write_file","clock_now","random_bytes"] as &[&str]),
+        ("http", &["http_get"]),
+    ];
+    for imp in imports {
+        let parts = &imp.path.0;
+        if parts.len() == 2 && parts[0] == "std" {
+            let mod_name = parts[1].as_str();
+            for (em, fns) in &effect_mods {
+                if mod_name == *em {
+                    for fn_name in *fns {
+                        env.declared_effects.insert(fn_name.to_string());
+                    }
                 }
             }
         }

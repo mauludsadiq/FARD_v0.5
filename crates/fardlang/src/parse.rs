@@ -251,7 +251,16 @@ fn parse_fn_decl(lx: &mut Lexer<'_>, is_pub: bool) -> Result<FnDecl> {
         expect(lx, Tok::LBrack)?;
         if !peek_is(lx, Tok::RBrack)? {
             loop {
-                uses.push(parse_ident(lx)?);
+                let name = parse_ident(lx)?;
+                // allow dotted: io.clock_now
+                let full = if peek_is(lx, Tok::Dot)? {
+                    lx.next()?;
+                    let rhs = parse_ident(lx)?;
+                    format!("{}.{}", name, rhs)
+                } else {
+                    name
+                };
+                uses.push(full);
                 if peek_is(lx, Tok::Comma)? {
                     lx.next()?;
                     continue;

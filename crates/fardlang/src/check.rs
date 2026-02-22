@@ -12,16 +12,45 @@ pub fn check_module(m: &Module) -> Result<()> {
     for e in &m.effects {
         effects.insert(e.name.clone());
     }
+    // std.io and std.http auto-declare effects
+    let io_fns = ["read_file","write_file","clock_now","random_bytes"];
+    let http_fns = ["http_get"];
+    for imp in &m.imports {
+        let parts = &imp.path.0;
+        if parts.len() == 2 && parts[0] == "std" {
+            match parts[1].as_str() {
+                "io"   => { for f in &io_fns   { effects.insert(f.to_string()); } }
+                "http" => { for f in &http_fns { effects.insert(f.to_string()); } }
+                _ => {}
+            }
+        }
+    }
+    // build alias map from uses[] entries: io.read_file -> read_file
+    let alias_table = crate::eval::std_aliases();
     let env = CheckEnv { effects };
 
     for f in &m.fns {
-        check_fn(&env, f)?;
+        check_fn(&env, &alias_table, f)?;
     }
     Ok(())
 }
 
-fn check_fn(env: &CheckEnv, f: &FnDecl) -> Result<()> {
-    let allowed: BTreeSet<String> = f.uses.iter().cloned().collect();
+fn check_fn(env: &CheckEnv, alias_table: &std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>, f: &FnDecl) -> Result<()> {
+    // expand uses[] aliases: io.read_file -> read_file
+    let mut allowed: BTreeSet<String> = BTreeSet::new();
+    for u in &f.uses {
+        allowed.insert(u.clone());
+        // try to resolve as alias.fn_name
+        if let Some(dot) = u.find('.') {
+            let mod_part = &u[..dot];
+            let fn_part  = &u[dot+1..];
+            if let Some(mod_map) = alias_table.get(mod_part) {
+                if let Some(resolved) = mod_map.get(fn_part) {
+                    allowed.insert(resolved.clone());
+                }
+            }
+        }
+    }
     let mut vars: BTreeMap<String, ()> = BTreeMap::new();
     for (p, _) in &f.params {
         vars.insert(p.clone(), ());
