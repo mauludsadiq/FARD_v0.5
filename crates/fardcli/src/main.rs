@@ -201,8 +201,46 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
     }
 }
     let args: Vec<String> = env::args().collect();
+    if args.len() >= 2 && args[1] == "verify" {
+        // fard verify <file.fard> <receipt.json> [--input k=v ...]
+        if args.len() < 4 {
+            eprintln!("usage: fard verify <file.fard> <receipt.json> [--input key=value ...]");
+            process::exit(1);
+        }
+        let src_path = &args[2];
+        let receipt_path = &args[3];
+        let mut inputs: Vec<(String, String)> = vec![];
+        let mut i = 4;
+        while i < args.len() {
+            if args[i] == "--input" && i + 1 < args.len() {
+                let kv = &args[i + 1];
+                if let Some(eq) = kv.find('=') {
+                    inputs.push((kv[..eq].to_string(), kv[eq+1..].to_string()));
+                }
+                i += 2;
+            } else { i += 1; }
+        }
+        let src = fs::read(src_path).unwrap_or_else(|e| { eprintln!("error reading {}: {}", src_path, e); process::exit(1); });
+        let receipt_bytes = fs::read(receipt_path).unwrap_or_else(|e| { eprintln!("error reading {}: {}", receipt_path, e); process::exit(1); });
+        let receipt_json: serde_json::Value = serde_json::from_slice(&receipt_bytes).unwrap_or_else(|e| { eprintln!("malformed receipt: {}", e); process::exit(1); });
+        let claimed_run_id = receipt_json.get("run_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let output_val = receipt_json.get("output").cloned().unwrap_or(serde_json::Value::Null);
+        let output_bytes = output_val.to_string().into_bytes();
+        let trace_str = receipt_json.get("trace").and_then(|v| v.as_str()).unwrap_or("");
+        let computed = witness::compute(&src, &inputs, &output_bytes, trace_str);
+        if computed.run_id == claimed_run_id {
+            eprintln!("verified: {}", claimed_run_id);
+            process::exit(0);
+        } else {
+            eprintln!("MISMATCH");
+            eprintln!("  claimed:  {}", claimed_run_id);
+            eprintln!("  computed: {}", computed.run_id);
+            process::exit(2);
+        }
+    }
     if args.len() < 3 || args[1] != "run" {
         eprintln!("usage: fard run <file.fard> [--input key=value ...]");
+        eprintln!("       fard verify <file.fard> <receipt.json> [--input key=value ...]");
         process::exit(1);
     }
 
