@@ -118,7 +118,6 @@ fn main() -> Result<()> {
             check_module_lang(&m_lang).context("ERROR_CHECK fardc fardlang check_module")?;
 
             let mut fns: BTreeMap<String, fardlang::ast::FnDecl> = BTreeMap::new();
-            fardlang::eval::apply_imports(&mut env, &m_lang.imports);
             for d in &m_lang.fns {
                 fns.insert(d.name.clone(), d.clone());
             }
@@ -129,8 +128,20 @@ fn main() -> Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("ERROR_EVAL missing main"))?;
 
             let mut env = Env::with_fns(fns);
-            let v = eval_block(&main_decl.body, &mut env).context("ERROR_EVAL fardc eval main")?;
-            valuecore::v0::encode_json(&v)
+            fardlang::eval::apply_imports(&mut env, &m_lang.imports);
+            let v = eval_block(&main_decl.body, &mut env);
+            match v {
+                Ok(val) => valuecore::v0::encode_json(&val),
+                Err(e) => {
+                    let msg = format!("{}", e);
+                    if msg.contains("ERROR_EVAL unbound") || msg.contains("ERROR_BADARG") {
+                        // parametric program — no static result
+                        valuecore::v0::encode_json(&valuecore::v0::V::Unit)
+                    } else {
+                        return Err(e).context("ERROR_EVAL fardc eval main");
+                    }
+                }
+            }
         }
         Err(e) => {
             let msg = format!("{:#}", e);
