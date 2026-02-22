@@ -352,6 +352,11 @@ fn is_builtin(f: &str) -> bool {
             | "text_slice"
             | "text_replace"
             | "text_join"
+            | "list_append"
+            | "list_concat"
+            | "list_reverse"
+            | "list_contains"
+            | "list_slice"
     )
 }
 
@@ -521,6 +526,56 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                     Ok(V::Text(parts.join(sep.as_str())))
                 }
                 _ => Err(anyhow!("ERROR_BADARG text_join expects (list, text)")),
+            }
+        }
+        "list_append" => {
+            match (args.get(0), args.get(1)) {
+                (Some(V::List(xs)), Some(v)) => {
+                    let mut out = xs.clone();
+                    out.push(v.clone());
+                    Ok(V::List(out))
+                }
+                _ => Err(anyhow!("ERROR_BADARG list_append expects (list, value)")),
+            }
+        }
+        "list_concat" => {
+            match (args.get(0), args.get(1)) {
+                (Some(V::List(a)), Some(V::List(b))) => {
+                    let mut out = a.clone();
+                    out.extend(b.iter().cloned());
+                    Ok(V::List(out))
+                }
+                _ => Err(anyhow!("ERROR_BADARG list_concat expects (list, list)")),
+            }
+        }
+        "list_reverse" => {
+            match args.get(0) {
+                Some(V::List(xs)) => {
+                    let mut out = xs.clone();
+                    out.reverse();
+                    Ok(V::List(out))
+                }
+                _ => Err(anyhow!("ERROR_BADARG list_reverse expects list")),
+            }
+        }
+        "list_contains" => {
+            match (args.get(0), args.get(1)) {
+                (Some(V::List(xs)), Some(v)) => {
+                    Ok(V::Bool(xs.iter().any(|x| canon_eq(x, v))))
+                }
+                _ => Err(anyhow!("ERROR_BADARG list_contains expects (list, value)")),
+            }
+        }
+        "list_slice" => {
+            match (args.get(0), args.get(1), args.get(2)) {
+                (Some(V::List(xs)), Some(V::Int(start)), Some(V::Int(end))) => {
+                    let len = xs.len() as i64;
+                    let s = (*start).max(0).min(len) as usize;
+                    let e = (*end).max(0).min(len) as usize;
+                    let e = e.max(s);
+                    Ok(V::List(xs[s..e].to_vec()))
+                }
+                _ => Err(anyhow!("ERROR_BADARG list_slice expects (list, int, int)")),
             }
         }
         _ => Err(anyhow!("ERROR_EVAL unknown builtin {}", f)),
