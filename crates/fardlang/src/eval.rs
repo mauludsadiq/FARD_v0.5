@@ -1,4 +1,5 @@
 use crate::ast::{Block, Expr, FnDecl, Stmt, Pattern};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 
 #[derive(Debug, Clone)]
 pub enum EvalVal {
@@ -367,6 +368,10 @@ fn is_builtin(f: &str) -> bool {
             | "map_has"
             | "map_keys"
             | "map_delete"
+            | "base64url_encode"
+            | "base64url_decode"
+            | "json_parse"
+            | "json_emit"
     )
 }
 
@@ -678,7 +683,91 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                 _ => Err(anyhow!("ERROR_BADARG map_delete expects (record, text)")),
             }
         }
+        "base64url_encode" => {
+            match args.get(0) {
+                Some(V::Bytes(b)) => Ok(V::Text(URL_SAFE_NO_PAD.encode(b))),
+                _ => Err(anyhow!("ERROR_BADARG base64url_encode expects bytes")),
+            }
+        }
+        "base64url_decode" => {
+            match args.get(0) {
+                Some(V::Text(s)) => {
+                    let b = URL_SAFE_NO_PAD.decode(s.as_bytes())
+                        .map_err(|e| anyhow!("ERROR_BADARG base64url_decode: {}", e))?;
+                    Ok(V::Bytes(b))
+                }
+                _ => Err(anyhow!("ERROR_BADARG base64url_decode expects text")),
+            }
+        }
+        "json_parse" => {
+            match args.get(0) {
+                Some(V::Text(s)) => {
+                    let jv: serde_json::Value = serde_json::from_str(s)
+                        .map_err(|e| anyhow!("ERROR_BADARG json_parse: {}", e))?;
+                    json_to_v(&jv)
+                }
+                _ => Err(anyhow!("ERROR_BADARG json_parse expects text")),
+            }
+        }
+        "json_emit" => {
+            match args.get(0) {
+                Some(v) => {
+                    let jv = v_to_json(v)?;
+                    Ok(V::Text(serde_json::to_string(&jv)
+                        .map_err(|e| anyhow!("ERROR_EVAL json_emit: {}", e))?))
+                }
+                _ => Err(anyhow!("ERROR_BADARG json_emit expects value")),
+            }
+        }
         _ => Err(anyhow!("ERROR_EVAL unknown builtin {}", f)),
+    }
+}
+
+fn json_to_v(j: &serde_json::Value) -> Result<V> {
+    match j {
+        serde_json::Value::Null => Ok(V::Unit),
+        serde_json::Value::Bool(b) => Ok(V::Bool(*b)),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Ok(V::Int(i))
+            } else {
+                Err(anyhow!("ERROR_BADARG json_parse: non-integer number"))
+            }
+        }
+        serde_json::Value::String(s) => Ok(V::Text(s.clone())),
+        serde_json::Value::Array(xs) => {
+            let vs: Result<Vec<V>> = xs.iter().map(json_to_v).collect();
+            Ok(V::List(vs?))
+        }
+        serde_json::Value::Object(m) => {
+            let kvs: Result<Vec<(String, V)>> = m.iter()
+                .map(|(k, v)| json_to_v(v).map(|vv| (k.clone(), vv)))
+                .collect();
+            Ok(valuecore::v0::normalize(&V::Map(kvs?)))
+        }
+    }
+}
+
+fn v_to_json(v: &V) -> Result<serde_json::Value> {
+    match v {
+        V::Unit => Ok(serde_json::Value::Null),
+        V::Bool(b) => Ok(serde_json::Value::Bool(*b)),
+        V::Int(i) => Ok(serde_json::Value::Number((*i).into())),
+        V::Text(s) => Ok(serde_json::Value::String(s.clone())),
+        V::Bytes(b) => Ok(serde_json::Value::String(URL_SAFE_NO_PAD.encode(b))),
+        V::List(xs) => {
+            let vs: Result<Vec<serde_json::Value>> = xs.iter().map(v_to_json).collect();
+            Ok(serde_json::Value::Array(vs?))
+        }
+        V::Map(kvs) => {
+            let mut m = serde_json::Map::new();
+            for (k, v) in kvs {
+                m.insert(k.clone(), v_to_json(v)?);
+            }
+            Ok(serde_json::Value::Object(m))
+        }
+        V::Err(e) => Ok(serde_json::Value::String(format!("error:{}", e))),
+        V::Ok(v) => v_to_json(v),
     }
 }
 
