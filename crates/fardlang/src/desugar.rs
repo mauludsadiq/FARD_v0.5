@@ -1,4 +1,4 @@
-use crate::ast::{BinOp, Expr, MatchArm};
+use crate::ast::{BinOp, Block, Expr, MatchArm};
 
 fn op_name(op: &BinOp) -> &'static str {
     match op {
@@ -28,6 +28,24 @@ pub fn desugar_expr(e: Expr) -> Expr {
             }
         }
 
+        Expr::BinOp { op: BinOp::And, lhs, rhs } => {
+            let lhs = desugar_expr(*lhs);
+            let rhs = desugar_expr(*rhs);
+            Expr::If {
+                c: Box::new(lhs),
+                t: Box::new(crate::ast::Block { stmts: vec![], tail: Some(Box::new(rhs)) }),
+                e: Box::new(crate::ast::Block { stmts: vec![], tail: Some(Box::new(Expr::Bool(false))) }),
+            }
+        }
+        Expr::BinOp { op: BinOp::Or, lhs, rhs } => {
+            let lhs = desugar_expr(*lhs);
+            let rhs = desugar_expr(*rhs);
+            Expr::If {
+                c: Box::new(lhs),
+                t: Box::new(crate::ast::Block { stmts: vec![], tail: Some(Box::new(Expr::Bool(true))) }),
+                e: Box::new(crate::ast::Block { stmts: vec![], tail: Some(Box::new(rhs)) }),
+            }
+        }
         Expr::BinOp { op, lhs, rhs } => {
             let lhs = desugar_expr(*lhs);
             let rhs = desugar_expr(*rhs);
