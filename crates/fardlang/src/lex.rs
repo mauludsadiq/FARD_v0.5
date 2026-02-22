@@ -39,6 +39,7 @@ pub enum Tok {
     Eq,
     FatArrow,
     Pipe,
+    PipeGreater,
 
     Plus,
     Minus,
@@ -256,6 +257,9 @@ impl<'a> Lexer<'a> {
                 if self.peek() == Some(b'|') {
                     self.bump();
                     Ok(Tok::OrOr)
+                } else if self.peek() == Some(b'>') {
+                    self.bump();
+                    Ok(Tok::PipeGreater)
                 } else {
                     Ok(Tok::Pipe)
                 }

@@ -306,7 +306,36 @@ fn parse_block(lx: &mut Lexer<'_>) -> Result<Block> {
     Ok(Block { stmts, tail })
 }
 fn parse_expr(lx: &mut Lexer<'_>) -> Result<Expr> {
-    parse_or(lx)
+    parse_pipe(lx)
+}
+
+fn parse_pipe(lx: &mut Lexer<'_>) -> Result<Expr> {
+    let mut lhs = parse_or(lx)?;
+    while peek_is(lx, Tok::PipeGreater)? {
+        lx.next()?;
+        let rhs = parse_or(lx)?;
+        lhs = match rhs {
+            Expr::Ident(name) => {
+                Expr::Call { f: name, args: vec![lhs] }
+            }
+            Expr::Call { f, mut args } => {
+                args.insert(0, lhs);
+                Expr::Call { f, args }
+            }
+            Expr::CallExpr { f, mut args } => {
+                args.insert(0, lhs);
+                Expr::CallExpr { f, args }
+            }
+            Expr::Lambda { params, body } => {
+                Expr::CallExpr {
+                    f: Box::new(Expr::Lambda { params, body }),
+                    args: vec![lhs],
+                }
+            }
+            _ => return Err(anyhow::anyhow!("ERROR_PARSE |> right-hand side must be a function")),
+        };
+    }
+    Ok(lhs)
 }
 
 fn parse_or(lx: &mut Lexer<'_>) -> Result<Expr> {
