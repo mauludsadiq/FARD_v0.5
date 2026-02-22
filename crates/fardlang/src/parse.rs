@@ -324,6 +324,14 @@ fn parse_pipe(lx: &mut Lexer<'_>) -> Result<Expr> {
                 Expr::Call { f: name, args: vec![lhs] }
             }
             Expr::Call { f, mut args } => {
+                // if first arg is Ident(ns), reconstruct namespaced: ns.f(lhs, rest...)
+                let f = if let Some(Expr::Ident(ns)) = args.first() {
+                    let namespaced = format!("{}.{}", ns, f);
+                    args.remove(0);
+                    namespaced
+                } else {
+                    f
+                };
                 args.insert(0, lhs);
                 Expr::Call { f, args }
             }
@@ -336,6 +344,14 @@ fn parse_pipe(lx: &mut Lexer<'_>) -> Result<Expr> {
                     f: Box::new(Expr::Lambda { params, body }),
                     args: vec![lhs],
                 }
+            }
+            Expr::FieldGet { base, field } => {
+                // list.len |> xs  =>  treat "base.field" as a namespaced call
+                let fname = match *base {
+                    Expr::Ident(ref n) => format!("{}.{}", n, field),
+                    _ => return Err(anyhow::anyhow!("ERROR_PARSE |> field access must be simple ident.field")),
+                };
+                Expr::Call { f: fname, args: vec![lhs] }
             }
             _ => return Err(anyhow::anyhow!("ERROR_PARSE |> right-hand side must be a function")),
         };

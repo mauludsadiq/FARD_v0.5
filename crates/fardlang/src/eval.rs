@@ -35,6 +35,7 @@ use valuecore::v0::{canon_cmp, canon_eq, i64_add, i64_mul, i64_sub, V};
 pub struct Env {
     pub bindings: Vec<(String, EvalVal)>,
     pub fns: BTreeMap<String, FnDecl>,
+    pub aliases: BTreeMap<String, String>, // "list.len" -> "list_len"
     pub depth: usize,
     pub max_depth: usize,
 }
@@ -44,6 +45,7 @@ impl Env {
         Self {
             bindings: vec![],
             fns: BTreeMap::new(),
+            aliases: BTreeMap::new(),
             depth: 0,
             max_depth: 1024,
         }
@@ -53,6 +55,7 @@ impl Env {
         Self {
             bindings: vec![],
             fns,
+            aliases: BTreeMap::new(),
             depth: 0,
             max_depth: 1024,
         }
@@ -80,6 +83,51 @@ impl Env {
 
     fn set_eval(&mut self, name: String, v: EvalVal) {
         self.bindings.push((name, v));
+    }
+}
+
+// Static std namespace table
+pub fn std_aliases() -> BTreeMap<String, BTreeMap<String, String>> {
+    let mut m: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    let modules: &[(&str, &[&str])] = &[
+        ("list", &["len","append","concat","reverse","contains","slice"]),
+        ("text", &["len","contains","starts_with","split","trim","slice","replace","join"]),
+        ("bytes", &["len","concat","slice","eq","from_text"]),
+        ("map",   &["new","set","get","has","keys","delete"]),
+        ("crypto",&["sha256","hkdf_sha256","xchacha20poly1305_seal","xchacha20poly1305_open","rsa_verify_pkcs1_sha256","ecdsa_p256_verify"]),
+        ("encode",&["base64url_encode","base64url_decode","json_parse","json_emit"]),
+        ("result",&["ok","err"]),
+    ];
+    for (mod_name, fns) in modules {
+        let mut mod_map = BTreeMap::new();
+        for fn_name in *fns {
+            // list.len -> list_len, encode.json_parse -> json_parse (already prefixed)
+            let builtin = match *mod_name {
+                "encode" | "crypto" | "result" => fn_name.to_string(),
+                _ => format!("{}_{}", mod_name, fn_name),
+            };
+            mod_map.insert(fn_name.to_string(), builtin);
+        }
+        m.insert(mod_name.to_string(), mod_map);
+    }
+    m
+}
+
+pub fn apply_imports(env: &mut Env, imports: &[crate::ast::ImportDecl]) {
+    let table = std_aliases();
+    for imp in imports {
+        let parts = &imp.path.0;
+        // expect path like ["std", "list"] or ["std", "text"]
+        if parts.len() == 2 && parts[0] == "std" {
+            let mod_name = &parts[1];
+            let alias = imp.alias.as_deref().unwrap_or(mod_name.as_str());
+            if let Some(mod_map) = table.get(mod_name.as_str()) {
+                for (fn_name, builtin) in mod_map {
+                    // alias.fn_name -> builtin
+                    env.aliases.insert(format!("{}.{}", alias, fn_name), builtin.clone());
+                }
+            }
+        }
     }
 }
 
@@ -215,6 +263,30 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
         }
 
         Expr::Call { f, args } => {
+            // resolve namespace alias: list.len -> list_ln
+            // also handle method-call desugaring: f="ok", args=[Ident("result"), ...] -> f="result.ok"
+            // reconstruct namespace: result.ok(42) -> f="ok", args=[Ident("result"),42] -> "result.ok"
+            let f_reconstructed;
+            let args_tail;
+            let (f, args): (&str, &[Expr]) = if let Some(Expr::Ident(ns)) = args.first() {
+                let candidate = format!("{}.{}", ns, f);
+                if env.aliases.contains_key(candidate.as_str()) {
+                    f_reconstructed = candidate;
+                    args_tail = &args[1..];
+                    (f_reconstructed.as_str(), args_tail)
+                } else {
+                    (f.as_str(), args.as_slice())
+                }
+            } else {
+                (f.as_str(), args.as_slice())
+            };
+            let f_resolved;
+            let f: &str = if let Some(resolved) = env.aliases.get(f) {
+                f_resolved = resolved.clone();
+                f_resolved.as_str()
+            } else {
+                f
+            };
             // builtins first
             if is_builtin(f) {
                 let mut vs = Vec::with_capacity(args.len());

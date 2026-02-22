@@ -118,6 +118,7 @@ fn main() -> Result<()> {
             check_module_lang(&m_lang).context("ERROR_CHECK fardc fardlang check_module")?;
 
             let mut fns: BTreeMap<String, fardlang::ast::FnDecl> = BTreeMap::new();
+            fardlang::eval::apply_imports(&mut env, &m_lang.imports);
             for d in &m_lang.fns {
                 fns.insert(d.name.clone(), d.clone());
             }

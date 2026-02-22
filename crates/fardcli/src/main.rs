@@ -35,6 +35,7 @@ fn main() {
         });
 
     let mut env = fardlang::eval::Env::new();
+    fardlang::eval::apply_imports(&mut env, &module.imports);
     for f in &module.fns {
         env.fns.insert(f.name.clone(), f.clone());
     }
