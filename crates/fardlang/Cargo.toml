@@ -7,6 +7,12 @@ edition = "2021"
 anyhow = "1"
 base64 = "0.21"
 serde_json = "1"
+sha2 = "0.10"
+hkdf = "0.12"
+chacha20poly1305 = "0.10"
+rsa = { version = "0.9", features = ["sha2"] }
+p256 = { version = "0.13", features = ["ecdsa"] }
+signature = "2"
 
 valuecore = { path = "../valuecore" }
 

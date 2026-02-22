@@ -1,5 +1,9 @@
 use crate::ast::{Block, Expr, FnDecl, Stmt, Pattern};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use sha2::{Sha256, Digest};
+use hkdf::Hkdf;
+use chacha20poly1305::{XChaCha20Poly1305, KeyInit, aead::{Aead, Payload}};
+use p256::ecdsa::{VerifyingKey, signature::Verifier, DerSignature};
 
 #[derive(Debug, Clone)]
 pub enum EvalVal {
@@ -372,6 +376,12 @@ fn is_builtin(f: &str) -> bool {
             | "base64url_decode"
             | "json_parse"
             | "json_emit"
+            | "sha256"
+            | "hkdf_sha256"
+            | "xchacha20poly1305_seal"
+            | "xchacha20poly1305_open"
+            | "rsa_verify_pkcs1_sha256"
+            | "ecdsa_p256_verify"
     )
 }
 
@@ -717,6 +727,90 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                         .map_err(|e| anyhow!("ERROR_EVAL json_emit: {}", e))?))
                 }
                 _ => Err(anyhow!("ERROR_BADARG json_emit expects value")),
+            }
+        }
+        "sha256" => {
+            match args.get(0) {
+                Some(V::Bytes(b)) => {
+                    let hash = Sha256::digest(b);
+                    Ok(V::Bytes(hash.to_vec()))
+                }
+                _ => Err(anyhow!("ERROR_BADARG sha256 expects bytes")),
+            }
+        }
+        "hkdf_sha256" => {
+            match (args.get(0), args.get(1), args.get(2), args.get(3)) {
+                (Some(V::Bytes(ikm)), Some(V::Bytes(salt)), Some(V::Bytes(info)), Some(V::Int(len))) => {
+                    let hk = Hkdf::<Sha256>::new(Some(salt), ikm);
+                    let mut out = vec![0u8; *len as usize];
+                    hk.expand(info, &mut out)
+                        .map_err(|_| anyhow!("ERROR_BADARG hkdf_sha256: invalid length"))?;
+                    Ok(V::Bytes(out))
+                }
+                _ => Err(anyhow!("ERROR_BADARG hkdf_sha256 expects (bytes, bytes, bytes, int)")),
+            }
+        }
+        "xchacha20poly1305_seal" => {
+            match (args.get(0), args.get(1), args.get(2), args.get(3)) {
+                (Some(V::Bytes(key)), Some(V::Bytes(nonce)), Some(V::Bytes(aad)), Some(V::Bytes(pt))) => {
+                    use chacha20poly1305::XNonce;
+                    let cipher = XChaCha20Poly1305::new_from_slice(key)
+                        .map_err(|_| anyhow!("ERROR_BADARG xchacha20poly1305_seal: key must be 32 bytes"))?;
+                    let n = XNonce::from_slice(nonce);
+                    let ct = cipher.encrypt(n, Payload { msg: pt, aad })
+                        .map_err(|_| anyhow!("ERROR_EVAL xchacha20poly1305_seal: encryption failed"))?;
+                    Ok(V::Bytes(ct))
+                }
+                _ => Err(anyhow!("ERROR_BADARG xchacha20poly1305_seal expects (bytes, bytes, bytes, bytes)")),
+            }
+        }
+        "xchacha20poly1305_open" => {
+            match (args.get(0), args.get(1), args.get(2), args.get(3)) {
+                (Some(V::Bytes(key)), Some(V::Bytes(nonce)), Some(V::Bytes(aad)), Some(V::Bytes(ct))) => {
+                    use chacha20poly1305::XNonce;
+                    let cipher = XChaCha20Poly1305::new_from_slice(key)
+                        .map_err(|_| anyhow!("ERROR_BADARG xchacha20poly1305_open: key must be 32 bytes"))?;
+                    let n = XNonce::from_slice(nonce);
+                    let pt = cipher.decrypt(n, Payload { msg: ct, aad })
+                        .map_err(|_| anyhow!("ERROR_EVAL xchacha20poly1305_open: decryption failed"))?;
+                    Ok(V::Bytes(pt))
+                }
+                _ => Err(anyhow!("ERROR_BADARG xchacha20poly1305_open expects (bytes, bytes, bytes, bytes)")),
+            }
+        }
+        "rsa_verify_pkcs1_sha256" => {
+            use rsa::{RsaPublicKey, pkcs1v15::{VerifyingKey as RsaVerifyingKey, Signature as RsaSig}, signature::Verifier as RsaVerifier};
+            use rsa::BigUint;
+            match (args.get(0), args.get(1), args.get(2), args.get(3)) {
+                (Some(V::Bytes(msg)), Some(V::Bytes(sig)), Some(V::Bytes(n)), Some(V::Bytes(e))) => {
+                    let pub_key = RsaPublicKey::new(
+                        BigUint::from_bytes_be(n),
+                        BigUint::from_bytes_be(e),
+                    ).map_err(|e| anyhow!("ERROR_BADARG rsa_verify_pkcs1_sha256: invalid key: {}", e))?;
+                    let vk: RsaVerifyingKey<Sha256> = RsaVerifyingKey::new(pub_key);
+                    let signature = RsaSig::try_from(sig.as_slice())
+                        .map_err(|e| anyhow!("ERROR_BADARG rsa_verify_pkcs1_sha256: invalid sig: {}", e))?;
+                    Ok(V::Bool(vk.verify(msg, &signature).is_ok()))
+                }
+                _ => Err(anyhow!("ERROR_BADARG rsa_verify_pkcs1_sha256 expects (bytes, bytes, bytes, bytes)")),
+            }
+        }
+        "ecdsa_p256_verify" => {
+            match (args.get(0), args.get(1), args.get(2), args.get(3)) {
+                (Some(V::Bytes(msg)), Some(V::Bytes(sig)), Some(V::Bytes(x)), Some(V::Bytes(y))) => {
+                    use p256::EncodedPoint;
+                    let point = EncodedPoint::from_affine_coordinates(
+                        x.as_slice().into(),
+                        y.as_slice().into(),
+                        false,
+                    );
+                    let vk = VerifyingKey::from_encoded_point(&point)
+                        .map_err(|e| anyhow!("ERROR_BADARG ecdsa_p256_verify: invalid key: {}", e))?;
+                    let signature = DerSignature::try_from(sig.as_slice())
+                        .map_err(|e| anyhow!("ERROR_BADARG ecdsa_p256_verify: invalid sig: {}", e))?;
+                    Ok(V::Bool(vk.verify(msg, &signature).is_ok()))
+                }
+                _ => Err(anyhow!("ERROR_BADARG ecdsa_p256_verify expects (bytes, bytes, bytes, bytes)")),
             }
         }
         _ => Err(anyhow!("ERROR_EVAL unknown builtin {}", f)),
