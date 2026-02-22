@@ -219,7 +219,17 @@ fn pat_matches(p: &Pattern, v: &V) -> bool {
                 false
             }
         }
-        Pattern::Ident(_) => true,
+        Pattern::Record(fields) => {
+            if let V::Map(kvs) = v {
+                let norm = valuecore::v0::normalize(&V::Map(kvs.clone()));
+                if let V::Map(nkvs) = norm {
+                    fields.iter().all(|(k, p)| {
+                        nkvs.iter().find(|(vk, _)| vk == k).map_or(false, |(_, vv)| pat_matches(p, vv))
+                    })
+                } else { false }
+            } else { false }
+        }
+                Pattern::Ident(_) => true,
     }
 }
 
@@ -233,7 +243,17 @@ fn pat_binds(p: &Pattern, v: &V) -> Vec<(String, V)> {
                 vec![]
             }
         }
-        _ => vec![],
+        Pattern::Record(fields) => {
+            if let V::Map(kvs) = v {
+                let norm = valuecore::v0::normalize(&V::Map(kvs.clone()));
+                if let V::Map(nkvs) = norm {
+                    fields.iter().flat_map(|(k, p)| {
+                        nkvs.iter().find(|(vk, _)| vk == k).map_or(vec![], |(_, vv)| pat_binds(p, vv))
+                    }).collect()
+                } else { vec![] }
+            } else { vec![] }
+        }
+                _ => vec![],
     }
 }
 

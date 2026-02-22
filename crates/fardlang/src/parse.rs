@@ -632,7 +632,19 @@ fn parse_pattern(lx: &mut Lexer<'_>) -> Result<Pattern> {
             expect(lx, Tok::RBrack)?;
             Pattern::List(pats)
         }
-        Tok::Ident(s) => Pattern::Ident(s),
+        Tok::LBrace => {
+            let mut fields = Vec::new();
+            while !peek_is(lx, Tok::RBrace)? {
+                let k = parse_ident(lx)?;
+                expect(lx, Tok::Colon)?;
+                let p = parse_pattern(lx)?;
+                fields.push((k, p));
+                if peek_is(lx, Tok::Comma)? { lx.next()?; }
+            }
+            expect(lx, Tok::RBrace)?;
+            Pattern::Record(fields)
+        }
+                Tok::Ident(s) => Pattern::Ident(s),
         _ => bail!("ERROR_PARSE expected pattern"),
     })
 }
