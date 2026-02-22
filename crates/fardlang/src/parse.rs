@@ -623,6 +623,15 @@ fn parse_pattern(lx: &mut Lexer<'_>) -> Result<Pattern> {
         Tok::Int(z) => Pattern::Int(z),
         Tok::Text(s) => Pattern::Text(s),
         Tok::BytesHex(h) => Pattern::BytesHex(h),
+        Tok::LBrack => {
+            let mut pats = Vec::new();
+            while !peek_is(lx, Tok::RBrack)? {
+                pats.push(parse_pattern(lx)?);
+                if peek_is(lx, Tok::Comma)? { lx.next()?; }
+            }
+            expect(lx, Tok::RBrack)?;
+            Pattern::List(pats)
+        }
         Tok::Ident(s) => Pattern::Ident(s),
         _ => bail!("ERROR_PARSE expected pattern"),
     })

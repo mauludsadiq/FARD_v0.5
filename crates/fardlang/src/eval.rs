@@ -70,8 +70,8 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<V> {
             for a in arms {
                 if pat_matches(&a.pat, &sv) {
                     let mut child = env.clone();
-                    if let Some((k, v)) = pat_bind(&a.pat, &sv) {
-                        child.set(k, v);
+                    for (k, vv) in pat_binds(&a.pat, &sv) {
+                        child.set(k, vv);
                     }
                     return eval_expr(&a.body, &mut child);
                 }
@@ -212,14 +212,28 @@ fn pat_matches(p: &Pattern, v: &V) -> bool {
                 false
             }
         }
+        Pattern::List(pats) => {
+            if let V::List(vs) = v {
+                pats.len() == vs.len() && pats.iter().zip(vs.iter()).all(|(p, v)| pat_matches(p, v))
+            } else {
+                false
+            }
+        }
         Pattern::Ident(_) => true,
     }
 }
 
-fn pat_bind(p: &Pattern, v: &V) -> Option<(String, V)> {
+fn pat_binds(p: &Pattern, v: &V) -> Vec<(String, V)> {
     match p {
-        Pattern::Ident(name) if name != "_" => Some((name.clone(), v.clone())),
-        _ => None,
+        Pattern::Ident(name) if name != "_" => vec![(name.clone(), v.clone())],
+        Pattern::List(pats) => {
+            if let V::List(vs) = v {
+                pats.iter().zip(vs.iter()).flat_map(|(p, v)| pat_binds(p, v)).collect()
+            } else {
+                vec![]
+            }
+        }
+        _ => vec![],
     }
 }
 
