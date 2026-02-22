@@ -530,7 +530,13 @@ fn parse_primary(lx: &mut Lexer<'_>) -> Result<Expr> {
         let c = Box::new(parse_expr(lx)?);
         let t = parse_block(lx)?;
         expect(lx, Tok::KwElse)?;
-        let e = parse_block(lx)?;
+        // support else if chaining
+        let e = if peek_is(lx, Tok::KwIf)? {
+            let inner = parse_primary(lx)?;
+            Block { stmts: vec![], tail: Some(Box::new(inner)) }
+        } else {
+            parse_block(lx)?
+        };
         return Ok(Expr::If {
             c,
             t: Box::new(t),

@@ -456,6 +456,9 @@ fn is_builtin(f: &str) -> bool {
             | "neg"
             | "eq"
             | "lt"
+            | "gt"
+            | "le"
+            | "ge"
             | "not"
             | "list_len"
             | "list_get"
@@ -538,6 +541,24 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
             }
             Ok(V::Bool(canon_cmp(&args[0], &args[1]).is_lt()))
         }
+        "gt" => {
+            match (args.get(0), args.get(1)) {
+                (Some(V::Int(a)), Some(V::Int(b))) => Ok(V::Bool(a > b)),
+                _ => Err(anyhow!("ERROR_BADARG gt expects (int, int)")),
+            }
+        }
+        "le" => {
+            match (args.get(0), args.get(1)) {
+                (Some(V::Int(a)), Some(V::Int(b))) => Ok(V::Bool(a <= b)),
+                _ => Err(anyhow!("ERROR_BADARG le expects (int, int)")),
+            }
+        }
+        "ge" => {
+            match (args.get(0), args.get(1)) {
+                (Some(V::Int(a)), Some(V::Int(b))) => Ok(V::Bool(a >= b)),
+                _ => Err(anyhow!("ERROR_BADARG ge expects (int, int)")),
+            }
+        }
         "not" => {
             if args.len() != 1 {
                 return Err(anyhow!("ERROR_BADARG not arity"));
@@ -574,6 +595,22 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                     .cloned()
                     .ok_or_else(|| anyhow!("ERROR_OOB list_get")),
                 _ => Err(anyhow!("ERROR_BADARG list_get expects list")),
+            }
+        }
+        "map_get" => {
+            match (args.get(0), args.get(1)) {
+                (Some(V::Map(kvs)), Some(V::Text(k))) => {
+                    let norm = valuecore::v0::normalize(&V::Map(kvs.clone()));
+                    if let V::Map(nkvs) = norm {
+                        nkvs.into_iter()
+                            .find(|(ek, _)| ek == k)
+                            .map(|(_, v)| v)
+                            .ok_or_else(|| anyhow!("ERROR_OOB map_get missing key {}", k))
+                    } else {
+                        Err(anyhow!("ERROR_BADARG map_get expects record"))
+                    }
+                }
+                _ => Err(anyhow!("ERROR_BADARG map_get expects (record, text)")),
             }
         }
         "text_concat" => {

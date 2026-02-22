@@ -1,0 +1,99 @@
+module color_quant
+
+pub fn clamp(n: Value, max_val: Value) : Value {
+  if lt(n, 0) { 0 }
+  else if gt(n, max_val) { max_val }
+  else { n }
+}
+
+pub fn enforce_simplex(r: Value, g: Value, b: Value, k: Value) : Value {
+  let s = add(add(r, g), b)
+  if le(s, k) {
+    { r: r, g: g, b: b }
+  } else {
+    if ge(r, g) && ge(r, b) && gt(r, 0) {
+      enforce_simplex(sub(r, 1), g, b, k)
+    } else if ge(g, b) && gt(g, 0) {
+      enforce_simplex(r, sub(g, 1), b, k)
+    } else {
+      enforce_simplex(r, g, sub(b, 1), k)
+    }
+  }
+}
+
+pub fn quantize_from_k(r: Value, g: Value, b: Value, k: Value) : Value {
+  let r = clamp(r, k)
+  let g = clamp(g, k)
+  let b = clamp(b, k)
+  let r = if eq(r, 0) && eq(g, 0) && eq(b, 0) { 1 } else { r }
+  enforce_simplex(r, g, b, k)
+}
+
+pub fn is_idempotent(r: Value, g: Value, b: Value, k: Value) : Value {
+  let c2 = quantize_from_k(r, g, b, k)
+  let r2 = map_get(c2, "r")
+  let g2 = map_get(c2, "g")
+  let b2 = map_get(c2, "b")
+  eq(r, r2) && eq(g, g2) && eq(b, b2)
+}
+
+pub fn is_nonzero(r: Value, g: Value, b: Value) : Value {
+  not(eq(r, 0) && eq(g, 0) && eq(b, 0))
+}
+
+pub fn enumerate_b(r: Value, g: Value, b: Value, k: Value, acc: Value) : Value {
+  if gt(add(add(r, g), b), k) { acc }
+  else {
+    let acc = if is_nonzero(r, g, b) {
+      list_append(acc, { r: r, g: g, b: b })
+    } else { acc }
+    enumerate_b(r, g, add(b, 1), k, acc)
+  }
+}
+
+pub fn enumerate_g(r: Value, g: Value, k: Value, acc: Value) : Value {
+  if gt(add(r, g), k) { acc }
+  else {
+    let acc = enumerate_b(r, g, 0, k, acc)
+    enumerate_g(r, add(g, 1), k, acc)
+  }
+}
+
+pub fn enumerate_r(r: Value, k: Value, acc: Value) : Value {
+  if gt(r, k) { acc }
+  else {
+    let acc = enumerate_g(r, 0, k, acc)
+    enumerate_r(add(r, 1), k, acc)
+  }
+}
+
+pub fn enumerate_palette(k: Value) : Value {
+  enumerate_r(0, k, [])
+}
+
+pub fn verify_all(palette: Value, k: Value, idx: Value) : Value {
+  let n = list_len(palette)
+  if ge(idx, n) { true }
+  else {
+    let c = list_get(palette, idx)
+    let r = map_get(c, "r")
+    let g = map_get(c, "g")
+    let b = map_get(c, "b")
+    if is_idempotent(r, g, b, k) {
+      verify_all(palette, k, add(idx, 1))
+    } else {
+      false
+    }
+  }
+}
+
+pub fn main() : Value {
+  let palette = enumerate_palette(k)
+  let palette_size = list_len(palette)
+  let idempotent = verify_all(palette, k, 0)
+  {
+    k: k,
+    palette_size: palette_size,
+    idempotent: idempotent
+  }
+}
