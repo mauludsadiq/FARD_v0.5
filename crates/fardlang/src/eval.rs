@@ -241,12 +241,12 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
                                     return Ok(EvalVal::V(v));
                                 }
                             }
-                            Err(anyhow!("ERROR_OOB record missing field {}", field))
+                            Ok(EvalVal::V(V::Err(format!("ERROR_OOB record missing field {}", field))))
                         }
                         _ => unreachable!("normalize(Map) must return Map"),
                     }
                 }
-                _ => Err(anyhow!("ERROR_BADARG field access expects record")),
+                _ => Ok(EvalVal::V(V::Err("ERROR_BADARG field access expects record".into()))),
             }
         }
         // eval_operator_close_v1 begin
@@ -569,11 +569,11 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
         }
         "div" => {
             let (a, b) = expect_i64_2(args)?;
-            Ok(V::Int(i64_div(a, b)?))
+            match i64_div(a, b) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::Err(e.to_string())) }
         }
         "rem" => {
             let (a, b) = expect_i64_2(args)?;
-            Ok(V::Int(i64_rem(a, b)?))
+            match i64_rem(a, b) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::Err(e.to_string())) }
         }
         "neg" => {
             let a = expect_i64_1(args)?;
@@ -594,19 +594,19 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
         "gt" => {
             match (args.get(0), args.get(1)) {
                 (Some(V::Int(a)), Some(V::Int(b))) => Ok(V::Bool(a > b)),
-                _ => Err(anyhow!("ERROR_BADARG gt expects (int, int)")),
+                _ => Ok(V::Err("ERROR_BADARG gt expects (int, int)".into())),
             }
         }
         "le" => {
             match (args.get(0), args.get(1)) {
                 (Some(V::Int(a)), Some(V::Int(b))) => Ok(V::Bool(a <= b)),
-                _ => Err(anyhow!("ERROR_BADARG le expects (int, int)")),
+                _ => Ok(V::Err("ERROR_BADARG le expects (int, int)".into())),
             }
         }
         "ge" => {
             match (args.get(0), args.get(1)) {
                 (Some(V::Int(a)), Some(V::Int(b))) => Ok(V::Bool(a >= b)),
-                _ => Err(anyhow!("ERROR_BADARG ge expects (int, int)")),
+                _ => Ok(V::Err("ERROR_BADARG ge expects (int, int)".into())),
             }
         }
         "not" => {
@@ -615,7 +615,7 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
             }
             match &args[0] {
                 V::Bool(b) => Ok(V::Bool(!*b)),
-                _ => Err(anyhow!("ERROR_BADARG not expects bool")),
+                _ => Ok(V::Err("ERROR_BADARG not expects bool".into())),
             }
         }
         "list_len" => {
@@ -624,7 +624,7 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
             }
             match &args[0] {
                 V::List(xs) => Ok(V::Int(xs.len() as i64)),
-                _ => Err(anyhow!("ERROR_BADARG list_len expects list")),
+                _ => Ok(V::Err("ERROR_BADARG list_len expects list".into())),
             }
         }
         "list_get" => {
@@ -636,15 +636,15 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                 _ => return Err(anyhow!("ERROR_BADARG list_get expects int index")),
             };
             if idx < 0 {
-                return Err(anyhow!("ERROR_OOB list_get"));
+                return Ok(V::Err("ERROR_OOB list_get".into()));
             }
             let u = idx as usize;
             match &args[0] {
-                V::List(xs) => xs
+                V::List(xs) => Ok(xs
                     .get(u)
                     .cloned()
-                    .ok_or_else(|| anyhow!("ERROR_OOB list_get")),
-                _ => Err(anyhow!("ERROR_BADARG list_get expects list")),
+                    .unwrap_or_else(|| V::Err("ERROR_OOB list_get".into()))),
+                _ => Ok(V::Err("ERROR_BADARG list_get expects list".into())),
             }
         }
         "map_get" => {
@@ -652,15 +652,13 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                 (Some(V::Map(kvs)), Some(V::Text(k))) => {
                     let norm = valuecore::v0::normalize(&V::Map(kvs.clone()));
                     if let V::Map(nkvs) = norm {
-                        nkvs.into_iter()
-                            .find(|(ek, _)| ek == k)
-                            .map(|(_, v)| v)
-                            .ok_or_else(|| anyhow!("ERROR_OOB map_get missing key {}", k))
+                        let found = nkvs.into_iter().find(|(ek, _)| ek == k).map(|(_, v)| v);
+                        Ok(found.unwrap_or_else(|| V::Err(format!("ERROR_OOB map_get missing key {}", k))))
                     } else {
-                        Err(anyhow!("ERROR_BADARG map_get expects record"))
+                        Ok(V::Err("ERROR_BADARG map_get expects record".into()))
                     }
                 }
-                _ => Err(anyhow!("ERROR_BADARG map_get expects (record, text)")),
+                _ => Ok(V::Err("ERROR_BADARG map_get expects (record, text)".into())),
             }
         }
         "text_concat" => {
@@ -674,7 +672,7 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                     out.push_str(b);
                     Ok(V::Text(out))
                 }
-                _ => Err(anyhow!("ERROR_BADARG text_concat expects text")),
+                _ => Ok(V::Err("ERROR_BADARG text_concat expects text".into())),
             }
         }
         "int_to_text" => {
@@ -683,25 +681,25 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
             }
             match &args[0] {
                 V::Int(i) => Ok(V::Text(i.to_string())),
-                _ => Err(anyhow!("ERROR_BADARG int_to_text expects int")),
+                _ => Ok(V::Err("ERROR_BADARG int_to_text expects int".into())),
             }
         }
         "text_len" => {
             match args.get(0) {
                 Some(V::Text(s)) => Ok(V::Int(s.chars().count() as i64)),
-                _ => Err(anyhow!("ERROR_BADARG text_len expects text")),
+                _ => Ok(V::Err("ERROR_BADARG text_len expects text".into())),
             }
         }
         "text_contains" => {
             match (args.get(0), args.get(1)) {
                 (Some(V::Text(s)), Some(V::Text(pat))) => Ok(V::Bool(s.contains(pat.as_str()))),
-                _ => Err(anyhow!("ERROR_BADARG text_contains expects (text, text)")),
+                _ => Ok(V::Err("ERROR_BADARG text_contains expects (text, text)".into())),
             }
         }
         "text_starts_with" => {
             match (args.get(0), args.get(1)) {
                 (Some(V::Text(s)), Some(V::Text(pat))) => Ok(V::Bool(s.starts_with(pat.as_str()))),
-                _ => Err(anyhow!("ERROR_BADARG text_starts_with expects (text, text)")),
+                _ => Ok(V::Err("ERROR_BADARG text_starts_with expects (text, text)".into())),
             }
         }
         "text_split" => {
@@ -710,7 +708,7 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                     let parts: Vec<V> = s.split(sep.as_str()).map(|p| V::Text(p.to_string())).collect();
                     Ok(V::List(parts))
                 }
-                _ => Err(anyhow!("ERROR_BADARG text_split expects (text, text)")),
+                _ => Ok(V::Err("ERROR_BADARG text_split expects (text, text)".into())),
             }
         }
         "text_trim" => {
@@ -1021,14 +1019,14 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                     ("tag".to_string(), V::Text("ok".to_string())),
                     ("val".to_string(), v.clone()),
                 ]))),
-                _ => Err(anyhow!("ERROR_BADARG ok expects 1 argument")),
+                _ => Ok(V::Err("ERROR_BADARG ok expects 1 argument".into())),
             }
         }
         "err" => {
             match args.get(0) {
                 Some(V::Text(code)) => Ok(V::Err(code.clone())),
                 Some(v) => Ok(V::Err(format!("{:?}", v))),
-                _ => Err(anyhow!("ERROR_BADARG err expects 1 argument")),
+                _ => Ok(V::Err("ERROR_BADARG err expects 1 argument".into())),
             }
         }
         _ => Err(anyhow!("ERROR_EVAL unknown builtin {}", f)),
