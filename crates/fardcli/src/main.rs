@@ -361,17 +361,12 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
 
     let mut inputs: Vec<(String, String)> = vec![];
     let mut pretty_mode = "";
-    let mut stack_mb: usize = 256;
     let mut i = 3;
     while i < args.len() {
-        if args[i] == "--stack-mb" && i + 1 < args.len() {
-            let val: usize = args[i+1].parse().unwrap_or(256);
-            stack_mb = match val { 64 => 64, 128 => 128, 256 => 256, 512 => 512, _ => 256 };
-            i += 2;
+        if args[i] == "--stack-mb" {
+            i += 2; // skip flag + value; policy lives in main()
         } else if args[i].starts_with("--stack-mb=") {
-            let val: usize = args[i].strip_prefix("--stack-mb=").unwrap_or("256").parse().unwrap_or(256);
-            stack_mb = match val { 64 => 64, 128 => 128, 256 => 256, 512 => 512, _ => 256 };
-            i += 1;
+            i += 1; // skip flag; policy lives in main()
         } else if args[i] == "--pretty" || args[i].starts_with("--pretty=") {
             if let Some(val) = args[i].strip_prefix("--pretty=") {
                 pretty_mode = match val { "tree" => "tree", "canon" => "canon", "both" => "both", _ => "tree" };
