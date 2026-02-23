@@ -1688,6 +1688,14 @@ enum Builtin {
     CodecHexDecode,
     HashSha256Text,
     HashSha256Bytes,
+    IntMul,
+    IntDiv,
+    IntSub,
+    IntMod,
+    IntLt,
+    IntGt,
+    IntLe,
+    IntGe,
 }
 
 #[derive(Debug)]
@@ -2817,6 +2825,56 @@ fn call_builtin(
                 _ => bail!("ERROR_BADARG str.toLower arg0 must be string"),
             };
             Ok(Val::Str(s.to_ascii_lowercase()))
+        }
+        Builtin::IntMul => {
+            if args.len() != 2 { bail!("ERROR_BADARG int.mul expects 2 args"); }
+            let a = match &args[0] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
+            let b = match &args[1] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
+            Ok(Val::Int(a.checked_mul(b).ok_or_else(|| anyhow::anyhow!("ERROR_RUNTIME int overflow"))?))
+        }
+        Builtin::IntDiv => {
+            if args.len() != 2 { bail!("ERROR_BADARG int.div expects 2 args"); }
+            let a = match &args[0] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
+            let b = match &args[1] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
+            if b == 0 { bail!("ERROR_RUNTIME int divide by zero"); }
+            Ok(Val::Int(a / b))
+        }
+        Builtin::IntSub => {
+            if args.len() != 2 { bail!("ERROR_BADARG int.sub expects 2 args"); }
+            let a = match &args[0] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
+            let b = match &args[1] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
+            Ok(Val::Int(a.checked_sub(b).ok_or_else(|| anyhow::anyhow!("ERROR_RUNTIME int underflow"))?))
+        }
+        Builtin::IntMod => {
+            if args.len() != 2 { bail!("ERROR_BADARG int.mod expects 2 args"); }
+            let a = match &args[0] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
+            let b = match &args[1] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
+            if b == 0 { bail!("ERROR_RUNTIME int mod by zero"); }
+            Ok(Val::Int(a % b))
+        }
+        Builtin::IntLt => {
+            if args.len() != 2 { bail!("ERROR_BADARG int.lt expects 2 args"); }
+            let a = match &args[0] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
+            let b = match &args[1] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
+            Ok(Val::Bool(a < b))
+        }
+        Builtin::IntGt => {
+            if args.len() != 2 { bail!("ERROR_BADARG int.gt expects 2 args"); }
+            let a = match &args[0] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
+            let b = match &args[1] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
+            Ok(Val::Bool(a > b))
+        }
+        Builtin::IntLe => {
+            if args.len() != 2 { bail!("ERROR_BADARG int.le expects 2 args"); }
+            let a = match &args[0] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
+            let b = match &args[1] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
+            Ok(Val::Bool(a <= b))
+        }
+        Builtin::IntGe => {
+            if args.len() != 2 { bail!("ERROR_BADARG int.ge expects 2 args"); }
+            let a = match &args[0] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
+            let b = match &args[1] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
+            Ok(Val::Bool(a >= b))
         }
         Builtin::HashSha256Text => {
             if args.len() != 1 { bail!("ERROR_BADARG hash.sha256_text expects 1 arg"); }
@@ -4074,6 +4132,14 @@ impl ModuleLoader {
                 m.insert("eq".to_string(), Val::Builtin(Builtin::IntEq));
                 m.insert("parse".to_string(), Val::Builtin(Builtin::IntParse));
                 m.insert("pow".to_string(), Val::Builtin(Builtin::IntPow));
+                m.insert("mul".to_string(), Val::Builtin(Builtin::IntMul));
+                m.insert("div".to_string(), Val::Builtin(Builtin::IntDiv));
+                m.insert("sub".to_string(), Val::Builtin(Builtin::IntSub));
+                m.insert("mod".to_string(), Val::Builtin(Builtin::IntMod));
+                m.insert("lt".to_string(), Val::Builtin(Builtin::IntLt));
+                m.insert("gt".to_string(), Val::Builtin(Builtin::IntGt));
+                m.insert("le".to_string(), Val::Builtin(Builtin::IntLe));
+                m.insert("ge".to_string(), Val::Builtin(Builtin::IntGe));
                 Ok(m)
             }
             "std/option" => {
