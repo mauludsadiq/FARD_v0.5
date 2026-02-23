@@ -79,6 +79,21 @@ impl Env {
         }
     }
 
+    pub fn set_max_depth(&mut self, d: usize) { self.max_depth = d; }
+
+    pub fn with_fns_and_depth(fns: BTreeMap<String, FnDecl>, max_depth: usize) -> Self {
+        Self {
+            bindings: vec![],
+            fns,
+            aliases: BTreeMap::new(),
+            declared_effects: BTreeSet::new(),
+            depth: 0,
+            max_depth,
+        }
+    }
+
+    
+
     fn get_eval(&self, name: &str) -> Option<EvalVal> {
         for (k, v) in self.bindings.iter().rev() {
             if k == name {

@@ -299,11 +299,13 @@ fn main() {
     stack_mb = match stack_mb { 64 | 128 | 256 | 512 => stack_mb, _ => 256 };
     let stack_bytes = stack_mb * 1024 * 1024;
     let builder = std::thread::Builder::new().stack_size(stack_bytes);
-    let handler = builder.spawn(run).unwrap();
+    // depth limit scales with stack: ~1500 frames per 64MB
+    let max_depth = (stack_mb / 64) * 1500;
+    let handler = builder.spawn(move || run(max_depth)).unwrap();
     handler.join().unwrap();
 }
 
-fn run() {
+fn run(max_depth: usize) {
 
 fn json_to_v_json(v: &V) -> serde_json::Value {
     match v {
@@ -401,6 +403,7 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
     let main_fn = module.fns.iter().find(|f| f.name == "main").unwrap_or_else(|| { eprintln!("error: no main function"); process::exit(1); });
 
     let mut env = fardlang::eval::Env::new();
+    env.set_max_depth(max_depth);
     fardlang::eval::apply_imports(&mut env, &module.imports);
 
     // load pure-FARD stdlib modules
