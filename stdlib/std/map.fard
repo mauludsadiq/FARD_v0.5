@@ -1,0 +1,61 @@
+module std.map
+
+pub fn from_list(pairs: Value) : Value {
+  from_list_loop(pairs, 0, map_new())
+}
+
+fn from_list_loop(pairs: Value, i: Value, acc: Value) : Value {
+  if lt(i, list_len(pairs)) {
+    let pair = list_get(pairs, i)
+    let k = list_get(pair, 0)
+    let v = list_get(pair, 1)
+    from_list_loop(pairs, add(i, 1), map_set(acc, k, v))
+  } else {
+    acc
+  }
+}
+
+pub fn map_vals(m: Value, f: Value) : Value {
+  let keys = map_keys(m)
+  map_vals_loop(m, keys, f, 0, map_new())
+}
+
+fn map_vals_loop(m: Value, keys: Value, f: Value, i: Value, acc: Value) : Value {
+  if lt(i, list_len(keys)) {
+    let k = list_get(keys, i)
+    let v = map_get(m, k)
+    let v2 = f(v)
+    map_vals_loop(m, keys, f, add(i, 1), map_set(acc, k, v2))
+  } else {
+    acc
+  }
+}
+
+pub fn filter_keys(m: Value, pred: Value) : Value {
+  let keys = map_keys(m)
+  filter_keys_loop(m, keys, pred, 0, map_new())
+}
+
+fn filter_keys_loop(m: Value, keys: Value, pred: Value, i: Value, acc: Value) : Value {
+  if lt(i, list_len(keys)) {
+    let k = list_get(keys, i)
+    let acc = if pred(k) { map_set(acc, k, map_get(m, k)) } else { acc }
+    filter_keys_loop(m, keys, pred, add(i, 1), acc)
+  } else {
+    acc
+  }
+}
+
+pub fn merge(a: Value, b: Value) : Value {
+  let keys = map_keys(b)
+  merge_loop(a, b, keys, 0)
+}
+
+fn merge_loop(acc: Value, b: Value, keys: Value, i: Value) : Value {
+  if lt(i, list_len(keys)) {
+    let k = list_get(keys, i)
+    merge_loop(map_set(acc, k, map_get(b, k)), b, keys, add(i, 1))
+  } else {
+    acc
+  }
+}

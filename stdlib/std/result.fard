@@ -1,0 +1,25 @@
+module std.result
+
+pub fn is_ok(v: Value) : Value {
+  eq(map_get(v, "tag"), "ok")
+}
+
+pub fn is_err(v: Value) : Value {
+  eq(map_get(v, "tag"), "err")
+}
+
+pub fn unwrap_or(v: Value, default: Value) : Value {
+  if is_ok(v) { map_get(v, "val") } else { default }
+}
+
+pub fn unwrap_err(v: Value, default: Value) : Value {
+  if is_err(v) { map_get(v, "val") } else { default }
+}
+
+pub fn map(v: Value, f: Value) : Value {
+  if is_ok(v) { ok(f(map_get(v, "val"))) } else { v }
+}
+
+pub fn and_then(v: Value, f: Value) : Value {
+  if is_ok(v) { f(map_get(v, "val")) } else { v }
+}
