@@ -62,7 +62,7 @@ impl Env {
             aliases: BTreeMap::new(),
             declared_effects: BTreeSet::new(),
             depth: 0,
-            max_depth: 1024,
+            max_depth: 200,
         }
     }
 
@@ -73,7 +73,7 @@ impl Env {
             aliases: BTreeMap::new(),
             declared_effects: BTreeSet::new(),
             depth: 0,
-            max_depth: 1024,
+            max_depth: 200,
         }
     }
 
@@ -219,7 +219,7 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
                     return eval_expr(&a.body, &mut child);
                 }
             }
-            Err(anyhow!("ERROR_MATCH_NO_ARM"))
+            Ok(EvalVal::V(V::Err("ERROR_MATCH_NO_ARM".into())))
         }
         Expr::RecordLit(fs) => {
             let mut kvs: Vec<(String, V)> = vec![];
@@ -352,7 +352,7 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
                     return Err(anyhow!("ERROR_BADARG wrong arity for closure {}", f));
                 }
                 if env.depth >= env.max_depth {
-                    return Err(anyhow!("ERROR_EVAL_DEPTH recursion limit exceeded"));
+                    return Ok(EvalVal::V(V::Err("ERROR_EVAL_DEPTH recursion limit exceeded".into())));
                 }
                 let mut child = Env::with_fns(fns);
                 child.bindings = captured;
@@ -377,7 +377,7 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
             }
 
             if env.depth >= env.max_depth {
-                return Err(anyhow!("ERROR_EVAL_DEPTH recursion limit exceeded"));
+                return Ok(EvalVal::V(V::Err("ERROR_EVAL_DEPTH recursion limit exceeded".into())));
             }
 
             // no closures: new child env, only params + all fns (for recursion)
@@ -431,7 +431,7 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
                         return Err(anyhow!("ERROR_BADARG wrong arity for closure"));
                     }
                     if env.depth >= env.max_depth {
-                        return Err(anyhow!("ERROR_EVAL_DEPTH recursion limit exceeded"));
+                        return Ok(EvalVal::V(V::Err("ERROR_EVAL_DEPTH recursion limit exceeded".into())));
                     }
                     let mut child = Env::with_fns(fns);
                     child.bindings = captured;
@@ -557,15 +557,15 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
     match f {
         "add" => {
             let (a, b) = expect_i64_2(args)?;
-            Ok(V::Int(i64_add(a, b)?))
+            match i64_add(a, b) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::Err(e.to_string())) }
         }
         "sub" => {
             let (a, b) = expect_i64_2(args)?;
-            Ok(V::Int(i64_sub(a, b)?))
+            match i64_sub(a, b) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::Err(e.to_string())) }
         }
         "mul" => {
             let (a, b) = expect_i64_2(args)?;
-            Ok(V::Int(i64_mul(a, b)?))
+            match i64_mul(a, b) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::Err(e.to_string())) }
         }
         "div" => {
             let (a, b) = expect_i64_2(args)?;
