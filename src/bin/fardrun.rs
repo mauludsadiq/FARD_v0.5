@@ -1677,6 +1677,11 @@ enum Builtin {
     MapSet,
     JsonEncode,
     JsonDecode,
+    JsonCanonicalize,
+    CryptoEd25519Verify,
+    CryptoHmacSha256,
+    CodecBase64UrlEncode,
+    CodecBase64UrlDecode,
 }
 
 #[derive(Debug)]
@@ -2431,6 +2436,55 @@ fn call_builtin(
             };
             let j: J = serde_json::from_str(s)?;
             val_from_json(&j)
+        }
+
+        Builtin::JsonCanonicalize => {
+            if args.len() != 1 { bail!("ERROR_RUNTIME arity"); }
+            let j = args[0].to_json().ok_or_else(|| anyhow::anyhow!("ERROR_RUNTIME cannot canonicalize"))?;
+            let canonical = serde_json::to_string(&j)?;
+            Ok(Val::Str(canonical))
+        }
+        Builtin::CryptoEd25519Verify => {
+            if args.len() != 3 { bail!("ERROR_RUNTIME ed25519_verify expects 3 args"); }
+            let pk_hex  = match &args[0] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
+            let msg_hex = match &args[1] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
+            let sig_hex = match &args[2] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
+            let pk_bytes  = hex::decode(&pk_hex)?;
+            let msg_bytes = hex::decode(&msg_hex)?;
+            let sig_bytes = hex::decode(&sig_hex)?;
+            use ed25519_dalek::{VerifyingKey, Signature, Verifier};
+            let pk_arr: [u8;32] = pk_bytes.as_slice().try_into().map_err(|_| anyhow::anyhow!("bad pk length"))?;
+            let sig_arr: [u8;64] = sig_bytes.as_slice().try_into().map_err(|_| anyhow::anyhow!("bad sig length"))?;
+            let pk  = VerifyingKey::from_bytes(&pk_arr)?;
+            let sig = Signature::from_bytes(&sig_arr);
+            let ok  = pk.verify(&msg_bytes, &sig).is_ok();
+            Ok(Val::Bool(ok))
+        }
+        Builtin::CryptoHmacSha256 => {
+            if args.len() != 2 { bail!("ERROR_RUNTIME hmac_sha256 expects 2 args"); }
+            let key_hex = match &args[0] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
+            let msg_hex = match &args[1] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
+            let key_bytes = hex::decode(&key_hex)?;
+            let msg_bytes = hex::decode(&msg_hex)?;
+            use hmac::{Hmac, Mac};
+            type HmacSha256 = Hmac<sha2::Sha256>;
+            let mut mac = HmacSha256::new_from_slice(&key_bytes)?;
+            mac.update(&msg_bytes);
+            let result = mac.finalize();
+            Ok(Val::Str(hex::encode(result.into_bytes())))
+        }
+        Builtin::CodecBase64UrlEncode => {
+            if args.len() != 1 { bail!("ERROR_RUNTIME base64url_encode expects 1 arg"); }
+            let input = match &args[0] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
+            use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+            Ok(Val::Str(URL_SAFE_NO_PAD.encode(input.as_bytes())))
+        }
+        Builtin::CodecBase64UrlDecode => {
+            if args.len() != 1 { bail!("ERROR_RUNTIME base64url_decode expects 1 arg"); }
+            let input = match &args[0] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
+            use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+            let bytes = URL_SAFE_NO_PAD.decode(input.as_bytes())?;
+            Ok(Val::Str(String::from_utf8(bytes)?))
         }
         Builtin::ListGet => {
             if args.len() != 2 {
@@ -3959,6 +4013,7 @@ impl ModuleLoader {
                 let mut m = BTreeMap::new();
                 m.insert("encode".to_string(), Val::Builtin(Builtin::JsonEncode));
                 m.insert("decode".to_string(), Val::Builtin(Builtin::JsonDecode));
+                m.insert("canonicalize".to_string(), Val::Builtin(Builtin::JsonCanonicalize));
                 Ok(m)
             }
 
@@ -4053,7 +4108,9 @@ impl ModuleLoader {
             }
 
             "std/codec" => {
-                let m: BTreeMap<String, Val> = BTreeMap::new();
+                let mut m = BTreeMap::new();
+                m.insert("base64url_encode".to_string(), Val::Builtin(Builtin::CodecBase64UrlEncode));
+                m.insert("base64url_decode".to_string(), Val::Builtin(Builtin::CodecBase64UrlDecode));
                 Ok(m)
             }
             "std/env" => {
@@ -4065,7 +4122,9 @@ impl ModuleLoader {
                 Ok(m)
             }
             "std/hash" => {
-                let m: BTreeMap<String, Val> = BTreeMap::new();
+                let mut m = BTreeMap::new();
+                m.insert("sha256_bytes".to_string(), Val::Builtin(Builtin::Unimplemented));
+                m.insert("sha256_text".to_string(), Val::Builtin(Builtin::Unimplemented));
                 Ok(m)
             }
             "std/http" => {
@@ -4085,6 +4144,12 @@ impl ModuleLoader {
                 Ok(m)
             }
 
+            "std/crypto" => {
+                let mut m = BTreeMap::new();
+                m.insert("ed25519_verify".to_string(), Val::Builtin(Builtin::CryptoEd25519Verify));
+                m.insert("hmac_sha256".to_string(), Val::Builtin(Builtin::CryptoHmacSha256));
+                Ok(m)
+            }
             _ => bail!("unknown std module: {name}"),
         }
     }
