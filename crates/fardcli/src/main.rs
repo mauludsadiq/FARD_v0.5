@@ -76,6 +76,7 @@ mod witness {
         pub inputs: Vec<(String, String)>,
         pub output_sha256: String,
         pub trace_sha256: String,
+        pub derived_from: Vec<String>,
         pub run_id: String,
     }
 
@@ -94,6 +95,7 @@ mod witness {
         inputs: &[(String, String)],
         output_json: &[u8],
         trace_ndjson: &str,
+        derived_from: &[String],
     ) -> Receipt {
         let source_sha256 = sha256(source);
         let output_sha256 = sha256(output_json);
@@ -107,6 +109,9 @@ mod witness {
         }
         witness_str.push_str(&format!(",output:{}", output_sha256));
         witness_str.push_str(&format!(",trace:{}", trace_sha256));
+        for d in derived_from {
+            witness_str.push_str(&format!(",derived:{}", d));
+        }
         let run_id = format!("sha256:{}", sha256(witness_str.as_bytes()));
 
         Receipt {
@@ -114,6 +119,7 @@ mod witness {
             inputs: inputs.to_vec(),
             output_sha256,
             trace_sha256,
+            derived_from: derived_from.to_vec(),
             run_id,
         }
     }
@@ -131,13 +137,17 @@ mod witness {
         }
         inputs_json.push(']');
         let output_str = String::from_utf8_lossy(output_bytes);
+        let derived_json = format!("[{}]", receipt.derived_from.iter()
+            .map(|d| format!("\"{}\"", d))
+            .collect::<Vec<_>>().join(","));
         let json = format!(
-            "{{\"run_id\":\"{}\",\"source_sha256\":\"{}\",\"inputs\":{},\"output_sha256\":\"{}\",\"trace_sha256\":\"{}\",\"output\":{}}}", 
+            "{{\"run_id\":\"{}\",\"source_sha256\":\"{}\",\"inputs\":{},\"output_sha256\":\"{}\",\"trace_sha256\":\"{}\",\"derived_from\":{},\"output\":{}}}", 
             receipt.run_id,
             receipt.source_sha256,
             inputs_json,
             receipt.output_sha256,
             receipt.trace_sha256,
+            derived_json,
             output_str,
         );
         let _ = fs::write("receipt.json", json.clone());
@@ -227,7 +237,7 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
         let output_val = receipt_json.get("output").cloned().unwrap_or(serde_json::Value::Null);
         let output_bytes = output_val.to_string().into_bytes();
         let trace_str = receipt_json.get("trace").and_then(|v| v.as_str()).unwrap_or("");
-        let computed = witness::compute(&src, &inputs, &output_bytes, trace_str);
+        let computed = witness::compute(&src, &inputs, &output_bytes, trace_str, &[]);
         if computed.run_id == claimed_run_id {
             eprintln!("verified: {}", claimed_run_id);
             process::exit(0);
@@ -322,6 +332,55 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
         env.bindings.push((fi.name.clone(), fardlang::eval::EvalVal::V(v)));
     }
 
+    // resolve source imports — load external .fard files by path
+    for si in &module.source_imports {
+        let src_bytes = fs::read(&si.path).unwrap_or_else(|e| {
+            eprintln!("error: source import not found {}: {}", si.path, e);
+            process::exit(1);
+        });
+        match fardlang::parse_module(&src_bytes) {
+            Ok(src_mod) => {
+                let alias = &si.alias;
+                for f in &src_mod.fns {
+                    let aliased = if alias.is_empty() {
+                        f.name.clone()
+                    } else {
+                        format!("{}.{}", alias, f.name)
+                    };
+                    env.fns.insert(aliased, f.clone());
+                    env.fns.insert(f.name.clone(), f.clone());
+                }
+            }
+            Err(e) => {
+                eprintln!("error: failed to parse source import {}: {}", si.path, e);
+                process::exit(1);
+            }
+        }
+    }
+
+    // resolve artifact imports — like fact imports but record derivation edge
+    let mut derived_from: Vec<String> = vec![];
+    for art in &module.artifacts {
+        let store_path = format!("receipts/{}.json", art.run_id.replace(":", "_"));
+        let fact_bytes = fs::read(&store_path).unwrap_or_else(|_| {
+            eprintln!("error: artifact not found: {} (expected at {})", art.run_id, store_path);
+            process::exit(1);
+        });
+        let fact_json: serde_json::Value = serde_json::from_slice(&fact_bytes).unwrap_or_else(|e| {
+            eprintln!("error: malformed artifact receipt {}: {}", art.run_id, e);
+            process::exit(1);
+        });
+        let stored_id = fact_json.get("run_id").and_then(|v| v.as_str()).unwrap_or("");
+        if stored_id != art.run_id {
+            eprintln!("error: artifact run_id mismatch: expected {} got {}", art.run_id, stored_id);
+            process::exit(1);
+        }
+        let output_val = fact_json.get("output").cloned().unwrap_or(serde_json::Value::Null);
+        let v = fard_json_to_v(&output_val);
+        env.bindings.push((art.name.clone(), fardlang::eval::EvalVal::V(v)));
+        derived_from.push(art.run_id.clone());
+    }
+
     // register declared effects
     for eff in &module.effects {
         env.declared_effects.insert(eff.name.clone());
@@ -371,7 +430,7 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
     let v = result.unwrap();
     let output_bytes = valuecore::v0::encode_json(&v);
 
-    let receipt = witness::compute(&src, &inputs, &output_bytes, &trace_ndjson);
+    let receipt = witness::compute(&src, &inputs, &output_bytes, &trace_ndjson, &derived_from);
     witness::write(&receipt, &trace_ndjson, &output_bytes);
     eprintln!("run_id: {}", receipt.run_id);
 

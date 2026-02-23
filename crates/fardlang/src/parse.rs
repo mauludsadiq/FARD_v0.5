@@ -11,6 +11,8 @@ pub fn parse_module(bytes: &[u8]) -> Result<Module> {
 
     let mut imports = Vec::new();
     let mut fact_imports = Vec::new();
+    let mut source_imports = Vec::new();
+    let mut artifacts = Vec::new();
     let mut effects = Vec::new();
     let mut types = Vec::new();
     let mut fns = Vec::new();
@@ -72,8 +74,30 @@ pub fn parse_module(bytes: &[u8]) -> Result<Module> {
                             }
                         }
                     }
+                    Tok::Text(path) => {
+                        // import "path/to/file.fard" as alias
+                        let mut alias = String::new();
+                        if peek_is(&mut lx, Tok::KwAs)? {
+                            lx.next()?;
+                            alias = parse_ident(&mut lx)?;
+                        }
+                        source_imports.push(SourceImportDecl { path, alias });
+                    }
                     _ => bail!("ERROR_PARSE expected ident after import"),
                 }
+            }
+            Tok::KwArtifact => {
+                // artifact name: Run("sha256:...")
+                let name = parse_ident(&mut lx)?;
+                expect(&mut lx, Tok::Colon)?;
+                expect(&mut lx, Tok::KwRun)?;
+                expect(&mut lx, Tok::LParen)?;
+                let run_id = match lx.next()? {
+                    Tok::Text(s) => s,
+                    _ => bail!("ERROR_PARSE expected artifact Run string"),
+                };
+                expect(&mut lx, Tok::RParen)?;
+                artifacts.push(ArtifactDecl { name, run_id });
             }
             Tok::KwEffect => effects.push(parse_effect(&mut lx)?),
             Tok::KwPub | Tok::KwType | Tok::KwFn => {
@@ -99,6 +123,8 @@ pub fn parse_module(bytes: &[u8]) -> Result<Module> {
         name,
         imports,
         fact_imports,
+        source_imports,
+        artifacts,
         effects,
         types,
         fns,

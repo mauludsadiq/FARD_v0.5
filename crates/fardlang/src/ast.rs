@@ -3,6 +3,8 @@ pub struct Module {
     pub name: ModPath,
     pub imports: Vec<ImportDecl>,
     pub fact_imports: Vec<FactImportDecl>,
+    pub source_imports: Vec<SourceImportDecl>,
+    pub artifacts: Vec<ArtifactDecl>,
     pub effects: Vec<EffectDecl>,
     pub types: Vec<TypeDecl>,
     pub fns: Vec<FnDecl>,
@@ -21,6 +23,18 @@ pub struct ImportDecl {
 pub struct FactImportDecl {
     pub name: String,
     pub run_id: String, // must include "sha256:" prefix
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceImportDecl {
+    pub path: String,       // "path/to/file.fard" or "sha256:..."
+    pub alias: String,      // as alias
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArtifactDecl {
+    pub name: String,       // bound name
+    pub run_id: String,     // sha256:... of prior run
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
