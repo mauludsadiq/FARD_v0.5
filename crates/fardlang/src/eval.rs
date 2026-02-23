@@ -307,6 +307,12 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
             let (f, args): (&str, &[Expr]) = if let Some(Expr::Ident(ns)) = args.first() {
                 let candidate = format!("{}.{}", ns, f);
                 if env.aliases.contains_key(candidate.as_str()) {
+                    // builtin alias: list.len -> list_len
+                    f_reconstructed = candidate;
+                    args_tail = &args[1..];
+                    (f_reconstructed.as_str(), args_tail)
+                } else if env.fns.contains_key(candidate.as_str()) {
+                    // pure-FARD stdlib fn: list.map, list.filter etc.
                     f_reconstructed = candidate;
                     args_tail = &args[1..];
                     (f_reconstructed.as_str(), args_tail)
@@ -362,8 +368,8 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
                 child.depth = env.depth + 1;
                 child.max_depth = env.max_depth;
                 for (i, p) in params.iter().enumerate() {
-                    let v = eval_expr(&args[i], env)?.into_v()?;
-                    child.set(p.clone(), v);
+                    let ev = eval_expr(&args[i], env)?;
+                    child.set_eval(p.clone(), ev);
                 }
                 return eval_block(&body, &mut child).map(EvalVal::V);
             }
@@ -390,8 +396,8 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
 
             for (i, param) in decl.params.iter().enumerate() {
                 let name = param.0.clone(); // (String, Type)
-                let v = eval_expr(&args[i], env)?.into_v()?;
-                child.set(name, v);
+                let ev = eval_expr(&args[i], env)?;
+                child.set_eval(name, ev);
             }
 
             eval_block(&decl.body, &mut child).map(EvalVal::V)

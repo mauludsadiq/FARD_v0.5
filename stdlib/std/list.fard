@@ -1,0 +1,111 @@
+module std.list
+
+pub fn map(xs: Value, f: Value) : Value {
+  map_loop(xs, f, 0, [])
+}
+
+fn map_loop(xs: Value, f: Value, i: Value, acc: Value) : Value {
+  if lt(i, list_len(xs)) {
+    let x = list_get(xs, i)
+    let y = f(x)
+    map_loop(xs, f, add(i, 1), list_append(acc, y))
+  } else {
+    acc
+  }
+}
+
+pub fn filter(xs: Value, pred: Value) : Value {
+  filter_loop(xs, pred, 0, [])
+}
+
+fn filter_loop(xs: Value, pred: Value, i: Value, acc: Value) : Value {
+  if lt(i, list_len(xs)) {
+    let x = list_get(xs, i)
+    let acc = if pred(x) { list_append(acc, x) } else { acc }
+    filter_loop(xs, pred, add(i, 1), acc)
+  } else {
+    acc
+  }
+}
+
+pub fn fold(xs: Value, init: Value, f: Value) : Value {
+  fold_loop(xs, init, f, 0)
+}
+
+fn fold_loop(xs: Value, acc: Value, f: Value, i: Value) : Value {
+  if lt(i, list_len(xs)) {
+    let x = list_get(xs, i)
+    let acc = f(acc, x)
+    fold_loop(xs, acc, f, add(i, 1))
+  } else {
+    acc
+  }
+}
+
+pub fn any(xs: Value, pred: Value) : Value {
+  any_loop(xs, pred, 0)
+}
+
+fn any_loop(xs: Value, pred: Value, i: Value) : Value {
+  if lt(i, list_len(xs)) {
+    if pred(list_get(xs, i)) { true }
+    else { any_loop(xs, pred, add(i, 1)) }
+  } else {
+    false
+  }
+}
+
+pub fn all(xs: Value, pred: Value) : Value {
+  all_loop(xs, pred, 0)
+}
+
+fn all_loop(xs: Value, pred: Value, i: Value) : Value {
+  if lt(i, list_len(xs)) {
+    if pred(list_get(xs, i)) { all_loop(xs, pred, add(i, 1)) }
+    else { false }
+  } else {
+    true
+  }
+}
+
+pub fn range(start: Value, end: Value) : Value {
+  range_loop(start, end, [])
+}
+
+fn range_loop(i: Value, end: Value, acc: Value) : Value {
+  if lt(i, end) {
+    range_loop(add(i, 1), end, list_append(acc, i))
+  } else {
+    acc
+  }
+}
+
+pub fn find(xs: Value, pred: Value) : Value {
+  find_loop(xs, pred, 0)
+}
+
+fn find_loop(xs: Value, pred: Value, i: Value) : Value {
+  if lt(i, list_len(xs)) {
+    let x = list_get(xs, i)
+    if pred(x) { x }
+    else { find_loop(xs, pred, add(i, 1)) }
+  } else {
+    unit
+  }
+}
+
+pub fn zip(xs: Value, ys: Value) : Value {
+  zip_loop(xs, ys, 0, [])
+}
+
+fn zip_loop(xs: Value, ys: Value, i: Value, acc: Value) : Value {
+  let lx = list_len(xs)
+  let ly = list_len(ys)
+  let len = if lt(lx, ly) { lx } else { ly }
+  if lt(i, len) {
+    let pair = [list_get(xs, i), list_get(ys, i)]
+    zip_loop(xs, ys, add(i, 1), list_append(acc, pair))
+  } else {
+    acc
+  }
+}

@@ -269,6 +269,36 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
     let mut env = fardlang::eval::Env::new();
     fardlang::eval::apply_imports(&mut env, &module.imports);
 
+    // load pure-FARD stdlib modules
+    for imp in &module.imports {
+        let parts = &imp.path.0;
+        if parts.len() == 2 && parts[0] == "std" {
+            let mod_name = &parts[1];
+            // look for stdlib/std/<mod>.fard relative to binary or cwd
+            let candidates = [
+                format!("stdlib/std/{}.fard", mod_name),
+                format!("/usr/local/lib/fard/std/{}.fard", mod_name),
+            ];
+            for candidate in &candidates {
+                if let Ok(stdlib_src) = fs::read(candidate) {
+                    match fardlang::parse_module(&stdlib_src) {
+                        Ok(stdlib_mod) => {
+                            let alias = imp.alias.as_deref().unwrap_or(mod_name.as_str());
+                            for f in &stdlib_mod.fns {
+                                // register as alias.fnname and bare fnname
+                                let aliased = format!("{}.{}", alias, f.name);
+                                env.fns.insert(aliased, f.clone());
+                                env.fns.insert(f.name.clone(), f.clone());
+                            }
+                        }
+                        Err(e) => eprintln!("warning: failed to parse {}: {}", candidate, e),
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
     // resolve fact imports
     for fi in &module.fact_imports {
         let store_path = format!("receipts/{}.json", fi.run_id.replace(":", "_"));
