@@ -76,6 +76,7 @@ mod witness {
         pub inputs: Vec<(String, String)>,
         pub output_sha256: String,
         pub trace_sha256: String,
+        pub max_depth: usize,
         pub derived_from: Vec<String>,
         pub run_id: String,
     }
@@ -96,6 +97,7 @@ mod witness {
         output_json: &[u8],
         trace_ndjson: &str,
         derived_from: &[String],
+        max_depth: usize,
     ) -> Receipt {
         let source_sha256 = sha256(source);
         let output_sha256 = sha256(output_json);
@@ -109,6 +111,7 @@ mod witness {
         }
         witness_str.push_str(&format!(",output:{}", output_sha256));
         witness_str.push_str(&format!(",trace:{}", trace_sha256));
+        witness_str.push_str(&format!(",max_depth:{}", max_depth));
         for d in derived_from {
             witness_str.push_str(&format!(",derived:{}", d));
         }
@@ -119,6 +122,7 @@ mod witness {
             inputs: inputs.to_vec(),
             output_sha256,
             trace_sha256,
+            max_depth,
             derived_from: derived_from.to_vec(),
             run_id,
         }
@@ -141,12 +145,13 @@ mod witness {
             .map(|d| format!("\"{}\"", d))
             .collect::<Vec<_>>().join(","));
         let json = format!(
-            "{{\"run_id\":\"{}\",\"source_sha256\":\"{}\",\"inputs\":{},\"output_sha256\":\"{}\",\"trace_sha256\":\"{}\",\"derived_from\":{},\"output\":{}}}", 
+            "{{\"run_id\":\"{}\",\"source_sha256\":\"{}\",\"inputs\":{},\"output_sha256\":\"{}\",\"trace_sha256\":\"{}\",\"max_depth\":{},\"derived_from\":{},\"output\":{}}}", 
             receipt.run_id,
             receipt.source_sha256,
             inputs_json,
             receipt.output_sha256,
             receipt.trace_sha256,
+            receipt.max_depth,
             derived_json,
             output_str,
         );
@@ -351,7 +356,7 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
         let output_val = receipt_json.get("output").cloned().unwrap_or(serde_json::Value::Null);
         let output_bytes = output_val.to_string().into_bytes();
         let trace_str = receipt_json.get("trace").and_then(|v| v.as_str()).unwrap_or("");
-        let computed = witness::compute(&src, &inputs, &output_bytes, trace_str, &[]);
+        let computed = witness::compute(&src, &inputs, &output_bytes, trace_str, &[], 6000);
         if computed.run_id == claimed_run_id {
             eprintln!("verified: {}", claimed_run_id);
             process::exit(0);
@@ -557,7 +562,7 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
     let v = result.unwrap();
     let output_bytes = valuecore::v0::encode_json(&v);
 
-    let receipt = witness::compute(&src, &inputs, &output_bytes, &trace_ndjson, &derived_from);
+    let receipt = witness::compute(&src, &inputs, &output_bytes, &trace_ndjson, &derived_from, max_depth);
     witness::write(&receipt, &trace_ndjson, &output_bytes);
     eprintln!("run_id: {}", receipt.run_id);
 
