@@ -333,8 +333,11 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
                     let opt = *cell.borrow();
                     let ptr = opt.ok_or_else(|| anyhow::anyhow!("ERROR_EFFECT no handler"))?;
                     unsafe { (*ptr).call(f, &vs) }
-                })?;
-                return Ok(EvalVal::V(result));
+                });
+                return Ok(EvalVal::V(match result {
+                    Ok(v) => v,
+                    Err(e) => V::Err(e.to_string()),
+                }));
             }
 
             // builtins first
@@ -912,9 +915,10 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
         "json_parse" => {
             match args.get(0) {
                 Some(V::Text(s)) => {
-                    let jv: serde_json::Value = serde_json::from_str(s)
-                        .map_err(|e| anyhow!("ERROR_BADARG json_parse: {}", e))?;
-                    json_to_v(&jv)
+                    match serde_json::from_str::<serde_json::Value>(s) {
+                        Ok(jv) => json_to_v(&jv),
+                        Err(e) => Ok(V::Err(format!("ERROR_BADARG json_parse: {}", e))),
+                    }
                 }
                 _ => Err(anyhow!("ERROR_BADARG json_parse expects text")),
             }
@@ -1041,7 +1045,7 @@ fn json_to_v(j: &serde_json::Value) -> Result<V> {
             if let Some(i) = n.as_i64() {
                 Ok(V::Int(i))
             } else {
-                Err(anyhow!("ERROR_BADARG json_parse: non-integer number"))
+                Ok(V::Err("ERROR_BADARG json_parse: non-integer number".into()))
             }
         }
         serde_json::Value::String(s) => Ok(V::Text(s.clone())),
