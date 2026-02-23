@@ -1,0 +1,110 @@
+import("std/str") as str
+import("std/list") as list
+import("std/codec") as codec
+import("std/crypto") as crypto
+import("std/json") as json
+import("std/result") as result
+import("std/rec") as rec
+import("std/int") as int
+import("std/hash") as hash
+
+// ── JWT verification ─────────────────────────────────────────────────────────
+
+let split_jwt = fn(token) {
+  let parts = str.split(token, ".") in
+  if list.len(parts) == 3
+  then result.ok(parts)
+  else result.err("invalid_jwt_format")
+}
+
+let verify_hs256 = fn(secret_hex, header_b64, payload_b64, sig_b64) {
+  let msg = str.concat(header_b64, str.concat(".", payload_b64)) in
+  let expected_hex = crypto.hmac_sha256(secret_hex, msg) in
+  let actual_hex = codec.hex_encode(codec.base64url_decode(sig_b64)) in
+  if expected_hex == actual_hex
+  then result.ok(true)
+  else result.err("signature_invalid")
+}
+
+let verify_jwt = fn(token, secret_hex) {
+  result.andThen(split_jwt(token), fn(parts) {
+    let header_b64  = list.get(parts, 0) in
+    let payload_b64 = list.get(parts, 1) in
+    let sig_b64     = list.get(parts, 2) in
+    result.andThen(
+      verify_hs256(secret_hex, header_b64, payload_b64, sig_b64),
+      fn(_) { result.ok(json.decode(codec.base64url_decode(payload_b64))) }
+    )
+  })
+}
+
+// ── Tx canonicalization ───────────────────────────────────────────────────────
+
+let make_tx = fn(amount, currency, merchant, payer, parent_digest, timestamp) {
+  let r = rec.empty() in
+  let r = rec.set(r, "amount", amount) in
+  let r = rec.set(r, "currency", currency) in
+  let r = rec.set(r, "merchant", merchant) in
+  let r = rec.set(r, "parent_digest", parent_digest) in
+  let r = rec.set(r, "payer", payer) in
+  let r = rec.set(r, "timestamp", timestamp) in
+  r
+}
+
+let canonicalize_tx = fn(tx) {
+  let canonical_json = json.canonicalize(tx) in
+  let digest = hash.sha256_text(canonical_json) in
+  result.ok(rec.set(rec.set(rec.empty(), "digest", digest), "canonical_json", canonical_json))
+}
+
+// ── Rewards ───────────────────────────────────────────────────────────────────
+
+let BASIS = 10000
+
+let compute_rewards = fn(amount, alpha_bp, beta_bp, gamma_bp) {
+  let total_bp = int.add(alpha_bp, int.add(beta_bp, gamma_bp)) in
+  if total_bp == BASIS
+  then
+    let alpha_reward = int.div(int.mul(amount, alpha_bp), BASIS) in
+    let beta_reward  = int.div(int.mul(amount, beta_bp),  BASIS) in
+    let gamma_reward = int.div(int.mul(amount, gamma_bp), BASIS) in
+    let r = rec.empty() in
+    let r = rec.set(r, "alpha", alpha_reward) in
+    let r = rec.set(r, "beta",  beta_reward) in
+    let r = rec.set(r, "gamma", gamma_reward) in
+    let r = rec.set(r, "total_distributed", int.add(alpha_reward, int.add(beta_reward, gamma_reward))) in
+    result.ok(r)
+  else
+    result.err("basis_points_must_sum_to_10000")
+}
+
+// ── Settlement ────────────────────────────────────────────────────────────────
+// Verifies JWT, canonicalizes tx, computes rewards, emits settlement receipt
+
+let settle = fn(token, secret_hex, tx, alpha_bp, beta_bp, gamma_bp) {
+  result.andThen(verify_jwt(token, secret_hex), fn(claims) {
+    let payer_from_jwt = rec.get(claims, "sub") in
+    let payer_from_tx  = rec.get(tx, "payer") in
+    if payer_from_jwt == payer_from_tx
+    then
+      result.andThen(canonicalize_tx(tx), fn(canon) {
+        result.andThen(compute_rewards(rec.get(tx, "amount"), alpha_bp, beta_bp, gamma_bp), fn(rewards) {
+          let receipt = rec.empty() in
+          let receipt = rec.set(receipt, "ok", true) in
+          let receipt = rec.set(receipt, "payer", payer_from_jwt) in
+          let receipt = rec.set(receipt, "tx_digest", rec.get(canon, "digest")) in
+          let receipt = rec.set(receipt, "rewards", rewards) in
+          result.ok(receipt)
+        })
+      })
+    else
+      result.err("payer_mismatch")
+  })
+}
+
+// ── Test inputs ───────────────────────────────────────────────────────────────
+
+let token = "eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJzdWIiOiAidGVzdHBrIiwgImV4cCI6IDE3NzE4ODIzNTF9.WnItzFStNW6Bhu6CLSD_ChKK9q3KVGoYvwNB_6PZiwI" in
+let secret_hex = "6465767365637265742d6368616e67652d6d65" in
+let tx = make_tx(1000, "CCC", "merchant_a", "testpk", null, 0) in
+settle(token, secret_hex, tx, 6000, 3000, 1000)
