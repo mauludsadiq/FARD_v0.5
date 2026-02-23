@@ -226,7 +226,7 @@ fn render_human(v: &valuecore::v0::V, indent: usize) -> String {
         V::Text(s) => quote_text(s),
         V::Bytes(b) => format!("b<{} bytes>", b.len()),
         V::Ok(inner) => format!("ok({})", render_human(inner, indent)),
-        V::Err(msg) => format!("err({})", quote_text(msg)),
+        V::Err(msg) => format!("error:{}", quote_text(msg)),
         V::List(items) => {
             if items.is_empty() { return "[]".to_string(); }
             let all_scalar = items.iter().all(|x| is_scalar(x));
@@ -237,7 +237,7 @@ fn render_human(v: &valuecore::v0::V, indent: usize) -> String {
             let mut out = String::new();
             out.push_str("[\n");
             for item in items {
-                let r = render_human(item, indent + 2);
+                let r = render_human(item, indent + 1);
                 if r.contains('\n') {
                     out.push_str(&format!("{}- {}\n", pad1, r.lines().next().unwrap_or("")));
                     for line in r.lines().skip(1) {
@@ -253,7 +253,7 @@ fn render_human(v: &valuecore::v0::V, indent: usize) -> String {
         V::Map(kvs) => {
             if kvs.is_empty() { return "{}".to_string(); }
             let all_scalar = kvs.iter().all(|(_, v)| is_scalar(v));
-            if all_scalar {
+            if all_scalar && kvs.len() <= 6 {
                 let parts: Vec<String> = kvs.iter()
                     .map(|(k, v)| format!("{}: {}", k, render_human(v, 0)))
                     .collect();
