@@ -49,6 +49,19 @@ fn all_prime(xs: Value, i: Int) : Bool
   else if eq(is_prime(list_get(xs, i)), false) { false }
   else { all_prime(xs, add(i, 1)) }
 
+// ─── result helpers ────────────────────────────────────────────────────────
+
+fn is_err_val(v: Value) : Bool
+  match v {
+    err(msg) => true,
+    _ => false
+  }
+
+fn ok_true() : Value { ok(true) }
+fn ok_false() : Value { ok(false) }
+
+// ─── THEOREM 1: Euclid's Lemma ─────────────────────────────────────────────
+
 fn euclid_lemma_check(p: Int, a: Int, b: Int) : Bool
   if eq(is_prime(p), false) { true }
   else if eq(rem(mul(a, b), p), 0)
@@ -56,17 +69,27 @@ fn euclid_lemma_check(p: Int, a: Int, b: Int) : Bool
     else { eq(rem(b, p), 0) }
   else { true }
 
-fn euclid_sweep(p: Int, a: Int, b: Int, acc: Bool) : Bool
-  if gt(p, 20) { acc }
+fn euclid_sweep(p: Int, a: Int, b: Int, acc: Bool) : Value
+  if gt(p, 20) { ok(acc) }
   else if gt(a, 10) { euclid_sweep(add(p, 1), 1, 1, acc) }
   else if gt(b, 10) { euclid_sweep(p, add(a, 1), 1, acc) }
   else
-    let ok = euclid_lemma_check(p, a, b)
-    euclid_sweep(p, a, add(b, 1), if eq(ok, false) { false } else { acc })
+    let ok_val = euclid_lemma_check(p, a, b)
+    match ok_val {
+      err(msg) => err(msg),
+      _ => euclid_sweep(p, a, add(b, 1), if eq(ok_val, false) { false } else { acc })
+    }
 
 fn verify_euclid_lemma() : Value
   let result = euclid_sweep(2, 1, 1, true)
-  {theorem: "Euclid's Lemma", verified: result, statement: "if p|ab then p|a or p|b"}
+  match result {
+    err(msg) => {theorem: "Euclid's Lemma", verified: false, error: msg,
+                 statement: "if p|ab then p|a or p|b"},
+    ok(v)    => {theorem: "Euclid's Lemma", verified: v, error: "none",
+                 statement: "if p|ab then p|a or p|b"}
+  }
+
+// ─── THEOREM 2: Bézout's Identity ──────────────────────────────────────────
 
 fn verify_bezout(a: Int, b: Int) : Bool
   let r = ext_gcd(a, b)
@@ -75,17 +98,26 @@ fn verify_bezout(a: Int, b: Int) : Bool
   let y = map_get(r, "y")
   eq(add(mul(a, x), mul(b, y)), g)
 
-fn bezout_sweep(a: Int, b: Int, acc: Bool) : Bool
-  if gt(a, 20) { acc }
+fn bezout_sweep(a: Int, b: Int, acc: Bool) : Value
+  if gt(a, 20) { ok(acc) }
   else if gt(b, 20) { bezout_sweep(add(a, 1), 1, acc) }
   else
-    let ok = verify_bezout(a, b)
-    bezout_sweep(a, add(b, 1), if eq(ok, false) { false } else { acc })
+    let chk = verify_bezout(a, b)
+    match chk {
+      err(msg) => err(msg),
+      _ => bezout_sweep(a, add(b, 1), if eq(chk, false) { false } else { acc })
+    }
 
 fn verify_bezout_identity() : Value
   let result = bezout_sweep(1, 1, true)
-  {theorem: "Bezout's Identity", verified: result,
-   statement: "gcd(a,b) = ax + by", example: ext_gcd(12, 8)}
+  match result {
+    err(msg) => {theorem: "Bezout's Identity", verified: false, error: msg,
+                 statement: "gcd(a,b) = ax + by"},
+    ok(v)    => {theorem: "Bezout's Identity", verified: v, error: "none",
+                 statement: "gcd(a,b) = ax + by", example: ext_gcd(12, 8)}
+  }
+
+// ─── THEOREM 3: Prime Factorization Existence ──────────────────────────────
 
 fn verify_factorization_existence(n: Int) : Bool
   if lt(n, 2) { true }
@@ -95,45 +127,88 @@ fn verify_factorization_existence(n: Int) : Bool
     else if eq(product(factors), n) { all_prime(factors, 0) }
     else { false }
 
-fn existence_sweep(n: Int, max: Int, acc: Bool) : Bool
-  if gt(n, max) { acc }
+fn existence_sweep(n: Int, max: Int, acc: Bool) : Value
+  if gt(n, max) { ok(acc) }
   else
-    let ok = verify_factorization_existence(n)
-    existence_sweep(add(n, 1), max, if eq(ok, false) { false } else { acc })
+    let chk = verify_factorization_existence(n)
+    match chk {
+      err(msg) => err(msg),
+      _ => existence_sweep(add(n, 1), max, if eq(chk, false) { false } else { acc })
+    }
 
 fn verify_prime_factorization_existence() : Value
   let result = existence_sweep(2, 100, true)
-  {theorem: "Prime Factorization Existence", verified: result,
-   statement: "every n in [2,100] factors into primes", example: factorize(60)}
+  match result {
+    err(msg) => {theorem: "Prime Factorization Existence", verified: false, error: msg,
+                 statement: "every n in [2,100] factors into primes"},
+    ok(v)    => {theorem: "Prime Factorization Existence", verified: v, error: "none",
+                 statement: "every n in [2,100] factors into primes", example: factorize(60)}
+  }
 
-fn uniqueness_sweep(n: Int, max: Int, acc: Bool) : Bool
-  if gt(n, max) { acc }
+// ─── THEOREM 4: FTA Uniqueness ─────────────────────────────────────────────
+
+fn uniqueness_sweep(n: Int, max: Int, acc: Bool) : Value
+  if gt(n, max) { ok(acc) }
   else
-    let ok = eq(product(factorize(n)), n)
-    uniqueness_sweep(add(n, 1), max, if eq(ok, false) { false } else { acc })
+    let chk = eq(product(factorize(n)), n)
+    match chk {
+      err(msg) => err(msg),
+      _ => uniqueness_sweep(add(n, 1), max, if eq(chk, false) { false } else { acc })
+    }
 
 fn verify_fta_uniqueness() : Value
   let result = uniqueness_sweep(2, 100, true)
-  {theorem: "FTA Uniqueness", verified: result,
-   statement: "product(factorize(n)) = n for all n in [2,100]"}
+  match result {
+    err(msg) => {theorem: "FTA Uniqueness", verified: false, error: msg,
+                 statement: "product(factorize(n)) = n for all n in [2,100]"},
+    ok(v)    => {theorem: "FTA Uniqueness", verified: v, error: "none",
+                 statement: "product(factorize(n)) = n for all n in [2,100]"}
+  }
+
+// ─── THEOREM 5: gcd * lcm = a * b ──────────────────────────────────────────
 
 fn verify_gcd_lcm_product(a: Int, b: Int) : Bool
   if eq(a, 0) { true }
   else if eq(b, 0) { true }
   else { eq(mul(gcd(a, b), lcm(a, b)), mul(abs_int(a), abs_int(b))) }
 
-fn gcd_lcm_sweep(a: Int, b: Int, acc: Bool) : Bool
-  if gt(a, 20) { acc }
+fn gcd_lcm_sweep(a: Int, b: Int, acc: Bool) : Value
+  if gt(a, 20) { ok(acc) }
   else if gt(b, 20) { gcd_lcm_sweep(add(a, 1), 1, acc) }
   else
-    let ok = verify_gcd_lcm_product(a, b)
-    gcd_lcm_sweep(a, add(b, 1), if eq(ok, false) { false } else { acc })
+    let chk = verify_gcd_lcm_product(a, b)
+    match chk {
+      err(msg) => err(msg),
+      _ => gcd_lcm_sweep(a, add(b, 1), if eq(chk, false) { false } else { acc })
+    }
 
 fn verify_gcd_lcm() : Value
   let result = gcd_lcm_sweep(1, 1, true)
-  {theorem: "gcd * lcm = a * b", verified: result,
-   statement: "gcd(a,b) * lcm(a,b) = a*b for a,b in [1,20]",
-   example: {a: 12, b: 18, gcd: gcd(12, 18), lcm: lcm(12, 18)}}
+  match result {
+    err(msg) => {theorem: "gcd * lcm = a * b", verified: false, error: msg,
+                 statement: "gcd(a,b) * lcm(a,b) = a*b for a,b in [1,20]"},
+    ok(v)    => {theorem: "gcd * lcm = a * b", verified: v, error: "none",
+                 statement: "gcd(a,b) * lcm(a,b) = a*b for a,b in [1,20]",
+                 example: {a: 12, b: 18, gcd: gcd(12, 18), lcm: lcm(12, 18)}}
+  }
+
+// ─── main ──────────────────────────────────────────────────────────────────
+
+fn count_errors(theorems: Value, i: Int, acc: Int) : Int
+  if eq(i, list_len(theorems)) { acc }
+  else
+    let t = list_get(theorems, i)
+    let e = map_get(t, "error")
+    let has_err = if eq(e, "none") { false } else { true }
+    count_errors(theorems, add(i, 1), if has_err { add(acc, 1) } else { acc })
+
+fn all_verified_check(theorems: Value, i: Int) : Bool
+  if eq(i, list_len(theorems)) { true }
+  else
+    let t = list_get(theorems, i)
+    let v = map_get(t, "verified")
+    if eq(v, false) { false }
+    else { all_verified_check(theorems, add(i, 1)) }
 
 fn main() : Value {
   let t1 = verify_euclid_lemma()
@@ -141,14 +216,8 @@ fn main() : Value {
   let t3 = verify_prime_factorization_existence()
   let t4 = verify_fta_uniqueness()
   let t5 = verify_gcd_lcm()
-  let all_pass = if eq(map_get(t1, "verified"), true)
-    if eq(map_get(t2, "verified"), true)
-      if eq(map_get(t3, "verified"), true)
-        if eq(map_get(t4, "verified"), true)
-          { eq(map_get(t5, "verified"), true) }
-        else { false }
-      else { false }
-    else { false }
-  else { false }
-  {theorems: [t1, t2, t3, t4, t5], all_verified: all_pass}
+  let theorems = [t1, t2, t3, t4, t5]
+  let all_pass = all_verified_check(theorems, 0)
+  let error_count = count_errors(theorems, 0, 0)
+  {theorems: theorems, all_verified: all_pass, resource_errors: error_count}
 }
