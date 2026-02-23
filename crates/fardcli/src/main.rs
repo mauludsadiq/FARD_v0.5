@@ -280,7 +280,12 @@ fn render_human(v: &valuecore::v0::V, indent: usize) -> String {
 
 fn main() {
     // Spawn a thread with 64MB stack to handle deep FARD recursion
-    let builder = std::thread::Builder::new().stack_size(256 * 1024 * 1024);
+    let stack_bytes = std::env::args().find(|a| a.starts_with("--stack-mb="))
+        .and_then(|a| a.strip_prefix("--stack-mb=").map(|s| s.to_string()))
+        .and_then(|s| s.parse::<usize>().ok())
+        .map(|mb| match mb { 64 => 64, 128 => 128, 256 => 256, 512 => 512, _ => 256 })
+        .unwrap_or(256) * 1024 * 1024;
+    let builder = std::thread::Builder::new().stack_size(stack_bytes);
     let handler = builder.spawn(run).unwrap();
     handler.join().unwrap();
 }
@@ -352,9 +357,14 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
 
     let mut inputs: Vec<(String, String)> = vec![];
     let mut pretty_mode = "";
+    let mut stack_mb: usize = 256;
     let mut i = 3;
     while i < args.len() {
-        if args[i] == "--pretty" || args[i].starts_with("--pretty=") {
+        if args[i].starts_with("--stack-mb=") {
+            let val: usize = args[i].strip_prefix("--stack-mb=").unwrap_or("256").parse().unwrap_or(256);
+            stack_mb = match val { 64 => 64, 128 => 128, 256 => 256, 512 => 512, _ => 256 };
+            i += 1;
+        } else if args[i] == "--pretty" || args[i].starts_with("--pretty=") {
             if let Some(val) = args[i].strip_prefix("--pretty=") {
                 pretty_mode = match val { "tree" => "tree", "canon" => "canon", "both" => "both", _ => "tree" };
             } else {
