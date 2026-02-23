@@ -1,0 +1,88 @@
+module collapse_structural_numbers
+
+fn gcd(a: Int, b: Int) : Int
+  if eq(b, 0) { a }
+  else { gcd(b, rem(a, b)) }
+
+fn abs_int(n: Int) : Int
+  if lt(n, 0) { neg(n) } else { n }
+
+fn nat_orbit(k: Int) : Value
+  nat_orbit_loop(0, k, [])
+
+fn nat_orbit_loop(i: Int, k: Int, acc: Value) : Value
+  if gt(i, k) { acc }
+  else { nat_orbit_loop(add(i, 1), k, list_append(acc, i)) }
+
+fn z_make(a: Int, b: Int) : Value
+  {a: a, b: b}
+
+fn z_val(z: Value) : Int
+  sub(map_get(z, "a"), map_get(z, "b"))
+
+fn z_add(z1: Value, z2: Value) : Value
+  z_make(add(map_get(z1, "a"), map_get(z2, "a")), add(map_get(z1, "b"), map_get(z2, "b")))
+
+fn z_mul(z1: Value, z2: Value) : Value
+  let a = map_get(z1, "a")
+  let b = map_get(z1, "b")
+  let c = map_get(z2, "a")
+  let d = map_get(z2, "b")
+  z_make(add(mul(a, c), mul(b, d)), add(mul(a, d), mul(b, c)))
+
+fn z_neg(z: Value) : Value
+  z_make(map_get(z, "b"), map_get(z, "a"))
+
+fn z_repr(z: Value) : Value
+  text_concat("[", text_concat(int_to_text(map_get(z, "a")), text_concat(",", text_concat(int_to_text(map_get(z, "b")), "]"))))
+
+fn z_from_nat(n: Int) : Value
+  z_make(n, 0)
+
+fn q_reduce(p: Int, q: Int) : Value
+  let g = gcd(abs_int(p), abs_int(q))
+  let p2 = div(p, g)
+  let q2 = div(q, g)
+  if lt(q2, 0) { {p: neg(p2), q: neg(q2)} } else { {p: p2, q: q2} }
+
+fn q_add(q1: Value, q2: Value) : Value
+  let p1 = map_get(q1, "p")
+  let d1 = map_get(q1, "q")
+  let p2 = map_get(q2, "p")
+  let d2 = map_get(q2, "q")
+  q_reduce(add(mul(p1, d2), mul(p2, d1)), mul(d1, d2))
+
+fn q_mul(q1: Value, q2: Value) : Value
+  q_reduce(mul(map_get(q1, "p"), map_get(q2, "p")), mul(map_get(q1, "q"), map_get(q2, "q")))
+
+fn q_div(q1: Value, q2: Value) : Value
+  q_reduce(mul(map_get(q1, "p"), map_get(q2, "q")), mul(map_get(q1, "q"), map_get(q2, "p")))
+
+fn q_repr(q: Value) : Value
+  text_concat(int_to_text(map_get(q, "p")), text_concat("/", int_to_text(map_get(q, "q"))))
+
+fn q_from_z(z: Value) : Value
+  q_reduce(z_val(z), 1)
+
+fn build_table(n: Int, max: Int, acc: Value) : Value
+  if gt(n, max) { acc }
+  else
+    let zn = z_from_nat(n)
+    let qn = q_from_z(zn)
+    let row = {n: n, z: z_repr(zn), z_val: z_val(zn), q: q_repr(qn)}
+    build_table(add(n, 1), max, list_append(acc, row))
+
+fn main() : Value {
+  let orbit = nat_orbit(5)
+  let z1 = z_make(3, 1)
+  let z2 = z_make(1, 4)
+  let z3 = z_add(z1, z2)
+  let z4 = z_mul(z1, z2)
+  let q1 = q_reduce(1, 2)
+  let q2 = q_reduce(3, 4)
+  let q3 = q_add(q1, q2)
+  let q4 = q_mul(q1, q2)
+  let q5 = q_div(q3, q4)
+  let table = build_table(0, 5, [])
+  {nat_orbit: orbit, z1: z_repr(z1), z2: z_repr(z2), z1_val: z_val(z1), z2_val: z_val(z2), z_add: z_repr(z3), z_add_val: z_val(z3), z_mul: z_repr(z4), z_mul_val: z_val(z4), q1: q_repr(q1), q2: q_repr(q2), q_add: q_repr(q3), q_mul: q_repr(q4), q_div: q_repr(q5), table: table}
+}

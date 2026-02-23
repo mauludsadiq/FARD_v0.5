@@ -310,7 +310,22 @@ fn parse_fn_decl(lx: &mut Lexer<'_>, is_pub: bool) -> Result<FnDecl> {
 
 fn parse_block(lx: &mut Lexer<'_>) -> Result<Block> {
     // braces optional: if next token is '{' use brace mode, else use indent mode
-    let brace_mode = peek_is(lx, Tok::LBrace)?;
+    // BUT: distinguish block '{' from record literal '{ident:' 
+    let brace_mode = if peek_is(lx, Tok::LBrace)? {
+        // lookahead: consume '{', check if next is Ident then Colon (record literal)
+        let m = lx.mark();
+        lx.next()?; // consume '{'
+        let m2 = lx.mark();
+        let next = lx.next()?;
+        let after = lx.next()?;
+        lx.reset(m);
+        // if '{' is followed by 'ident :' or '}' it's a record literal, not a block
+        let is_record = matches!((&next, &after), (Tok::Ident(_), Tok::Colon))
+            || matches!(next, Tok::RBrace);
+        !is_record
+    } else {
+        false
+    };
     if brace_mode {
         lx.next()?; // consume '{'
     }
