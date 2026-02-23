@@ -279,6 +279,13 @@ fn render_human(v: &valuecore::v0::V, indent: usize) -> String {
 }
 
 fn main() {
+    // Spawn a thread with 64MB stack to handle deep FARD recursion
+    let builder = std::thread::Builder::new().stack_size(256 * 1024 * 1024);
+    let handler = builder.spawn(run).unwrap();
+    handler.join().unwrap();
+}
+
+fn run() {
 
 fn json_to_v_json(v: &V) -> serde_json::Value {
     match v {

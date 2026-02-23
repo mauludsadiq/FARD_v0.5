@@ -16,6 +16,7 @@ use p256::ecdsa::{VerifyingKey, signature::Verifier, DerSignature};
 #[derive(Debug, Clone)]
 pub enum EvalVal {
     V(V),
+    TailCall { name: String, args: Vec<V> },
     Closure { params: Vec<String>, body: Box<Block>, captured: Vec<(String, EvalVal)>, fns: std::collections::BTreeMap<String, FnDecl> },
 }
 
@@ -23,6 +24,7 @@ impl EvalVal {
     pub fn into_v(self) -> Result<V> {
         match self {
             EvalVal::V(v) => Ok(v),
+            EvalVal::TailCall { .. } => Err(anyhow!("ERROR_EVAL tail call is not a value")),
             EvalVal::Closure { .. } => Err(anyhow!("ERROR_EVAL closure is not a value")),
         }
     }
@@ -62,7 +64,7 @@ impl Env {
             aliases: BTreeMap::new(),
             declared_effects: BTreeSet::new(),
             depth: 0,
-            max_depth: 200,
+            max_depth: 10000,
         }
     }
 
@@ -73,7 +75,7 @@ impl Env {
             aliases: BTreeMap::new(),
             declared_effects: BTreeSet::new(),
             depth: 0,
-            max_depth: 200,
+            max_depth: 10000,
         }
     }
 
@@ -190,6 +192,7 @@ fn eval_block_inner_fallible(block: &Block, env: &mut Env) -> Result<V> {
             Stmt::Let { name, expr } => {
                 let ev = eval_expr(expr, env)?;
                 match ev {
+                    EvalVal::TailCall { .. } => {}
                     EvalVal::Closure { .. } => env.set_eval(name.clone(), ev),
                     EvalVal::V(v) => env.set(name.clone(), v),
                 }
@@ -415,6 +418,7 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
                 child.set_eval(name, ev);
             }
 
+            // TCO: just call eval_block directly; depth already checked above
             eval_block(&decl.body, &mut child).map(EvalVal::V)
         }
 
