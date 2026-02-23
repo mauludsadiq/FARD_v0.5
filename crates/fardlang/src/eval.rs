@@ -396,7 +396,22 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
 
             for (i, param) in decl.params.iter().enumerate() {
                 let name = param.0.clone(); // (String, Type)
+                let ty = &param.1;
                 let ev = eval_expr(&args[i], env)?;
+                // runtime type enforcement for non-Value annotations
+                if let EvalVal::V(ref v) = ev {
+                    if !type_check(ty, v) {
+                        return Ok(EvalVal::V(V::Err(format!(
+                            "ERROR_TYPE {}:{} expected {} got {:?}",
+                            f, name, type_name(ty),
+                            match v { V::Int(_) => "Int", V::Text(_) => "Text",
+                              V::Bool(_) => "Bool", V::Bytes(_) => "Bytes",
+                              V::List(_) => "List", V::Map(_) => "Map",
+                              V::Unit => "Unit", V::Ok(_) => "Ok",
+                              V::Err(_) => "Err" }
+                        ))));
+                    }
+                }
                 child.set_eval(name, ev);
             }
 
@@ -548,6 +563,51 @@ fn pat_binds(p: &Pattern, v: &V) -> Vec<(String, V)> {
             }
         }
         _ => vec![],
+    }
+}
+
+fn type_check(ty: &crate::ast::Type, v: &V) -> bool {
+    use crate::ast::Type;
+    match ty {
+        Type::Value => true,  // Value = any type, no check
+        Type::Unit => matches!(v, V::Unit),
+        Type::Bool => matches!(v, V::Bool(_)),
+        Type::Int => matches!(v, V::Int(_)),
+        Type::Text => matches!(v, V::Text(_)),
+        Type::Bytes => matches!(v, V::Bytes(_)),
+        Type::List(_) => matches!(v, V::List(_)),
+        Type::Map(_, _) => matches!(v, V::Map(_)),
+        Type::Named { name, .. } => match name.as_str() {
+            "Value" => true,
+            "Int" => matches!(v, V::Int(_)),
+            "Text" => matches!(v, V::Text(_)),
+            "Bool" => matches!(v, V::Bool(_)),
+            "Bytes" => matches!(v, V::Bytes(_)),
+            "List" => matches!(v, V::List(_)),
+            "Map" => matches!(v, V::Map(_)),
+            "Unit" => matches!(v, V::Unit),
+            _ => true, // unknown named type — pass through
+        },
+    }
+}
+
+fn type_name(ty: &crate::ast::Type) -> &'static str {
+    use crate::ast::Type;
+    match ty {
+        Type::Value => "Value",
+        Type::Unit => "Unit",
+        Type::Bool => "Bool",
+        Type::Int => "Int",
+        Type::Text => "Text",
+        Type::Bytes => "Bytes",
+        Type::List(_) => "List",
+        Type::Map(_, _) => "Map",
+        Type::Named { name, .. } => match name.as_str() {
+            "Int" => "Int", "Text" => "Text", "Bool" => "Bool",
+            "Bytes" => "Bytes", "List" => "List", "Map" => "Map",
+            "Unit" => "Unit", "Value" => "Value",
+            other => Box::leak(other.to_string().into_boxed_str()),
+        },
     }
 }
 
