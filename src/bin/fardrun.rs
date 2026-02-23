@@ -1683,6 +1683,9 @@ enum Builtin {
     CodecBase64UrlEncode,
     CodecBase64UrlDecode,
     RandUuidV4,
+    StrSplit,
+    CodecHexEncode,
+    CodecHexDecode,
 }
 
 #[derive(Debug)]
@@ -2431,11 +2434,11 @@ fn call_builtin(
             if args.len() != 1 {
                 bail!("ERROR_RUNTIME arity");
             }
-            let s = match &args[0] {
-                Val::Str(ss) => ss,
+            let j: J = match &args[0] {
+                Val::Str(ss) => serde_json::from_str(ss)?,
+                Val::Bytes(bs) => serde_json::from_slice(bs)?,
                 _ => bail!("ERROR_RUNTIME type"),
             };
-            let j: J = serde_json::from_str(s)?;
             val_from_json(&j)
         }
 
@@ -2463,10 +2466,16 @@ fn call_builtin(
         }
         Builtin::CryptoHmacSha256 => {
             if args.len() != 2 { bail!("ERROR_RUNTIME hmac_sha256 expects 2 args"); }
-            let key_hex = match &args[0] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
-            let msg_hex = match &args[1] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
-            let key_bytes = hex::decode(&key_hex)?;
-            let msg_bytes = hex::decode(&msg_hex)?;
+            let key_bytes = match &args[0] {
+                Val::Str(ss) => hex::decode(ss)?,
+                Val::Bytes(bs) => bs.clone(),
+                _ => bail!("ERROR_RUNTIME hmac_sha256 key must be hex str or bytes"),
+            };
+            let msg_bytes = match &args[1] {
+                Val::Str(ss) => ss.as_bytes().to_vec(),
+                Val::Bytes(bs) => bs.clone(),
+                _ => bail!("ERROR_RUNTIME hmac_sha256 msg must be str or bytes"),
+            };
             use hmac::{Hmac, Mac};
             type HmacSha256 = Hmac<sha2::Sha256>;
             let mut mac = HmacSha256::new_from_slice(&key_bytes)?;
@@ -2485,7 +2494,7 @@ fn call_builtin(
             let input = match &args[0] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
             use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
             let bytes = URL_SAFE_NO_PAD.decode(input.as_bytes())?;
-            Ok(Val::Str(String::from_utf8(bytes)?))
+            Ok(Val::Bytes(bytes))
         }
         Builtin::RandUuidV4 => {
             if args.len() != 0 { bail!("ERROR_RUNTIME rand.uuid_v4 expects 0 args"); }
@@ -2806,6 +2815,27 @@ fn call_builtin(
                 _ => bail!("ERROR_BADARG str.toLower arg0 must be string"),
             };
             Ok(Val::Str(s.to_ascii_lowercase()))
+        }
+        Builtin::CodecHexEncode => {
+            if args.len() != 1 { bail!("ERROR_BADARG codec.hex_encode expects 1 arg"); }
+            match &args[0] {
+                Val::Bytes(bs) => Ok(Val::Str(hex::encode(bs))),
+                Val::Str(ss) => Ok(Val::Str(hex::encode(ss.as_bytes()))),
+                _ => bail!("ERROR_BADARG codec.hex_encode expects str or bytes"),
+            }
+        }
+        Builtin::CodecHexDecode => {
+            if args.len() != 1 { bail!("ERROR_BADARG codec.hex_decode expects 1 arg"); }
+            let s = match &args[0] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_BADARG type") };
+            let bytes = hex::decode(s.as_str())?;
+            Ok(Val::Str(String::from_utf8(bytes)?))
+        }
+        Builtin::StrSplit => {
+            if args.len() != 2 { bail!("ERROR_BADARG str.split expects 2 args"); }
+            let s = match &args[0] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_BADARG str.split arg0 must be string") };
+            let delim = match &args[1] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_BADARG str.split arg1 must be string") };
+            let parts: Vec<Val> = s.split(delim.as_str()).map(|p| Val::Str(p.to_string())).collect();
+            Ok(Val::List(parts))
         }
         Builtin::StrSplitLines => {
             if args.len() != 1 {
@@ -3986,6 +4016,7 @@ impl ModuleLoader {
                 m.insert("toLower".to_string(), Val::Builtin(Builtin::StrToLower));
                 m.insert("lower".to_string(), Val::Builtin(Builtin::StrToLower));
                 m.insert("concat".to_string(), Val::Builtin(Builtin::StrConcat));
+                m.insert("split".to_string(), Val::Builtin(Builtin::StrSplit));
                 Ok(m)
             }
             "std/map" => {
@@ -4116,6 +4147,8 @@ impl ModuleLoader {
                 let mut m = BTreeMap::new();
                 m.insert("base64url_encode".to_string(), Val::Builtin(Builtin::CodecBase64UrlEncode));
                 m.insert("base64url_decode".to_string(), Val::Builtin(Builtin::CodecBase64UrlDecode));
+                m.insert("hex_encode".to_string(), Val::Builtin(Builtin::CodecHexEncode));
+                m.insert("hex_decode".to_string(), Val::Builtin(Builtin::CodecHexDecode));
                 Ok(m)
             }
             "std/env" => {
