@@ -100,6 +100,8 @@ pub enum Pattern {
     BytesHex(String),
     Ident(String),
     List(Vec<Pattern>),
+    Ok(Box<Pattern>),
+    Err(Box<Pattern>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

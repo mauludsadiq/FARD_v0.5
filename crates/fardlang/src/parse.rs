@@ -773,6 +773,18 @@ fn parse_pattern(lx: &mut Lexer<'_>) -> Result<Pattern> {
             expect(lx, Tok::RBrack)?;
             Pattern::List(pats)
         }
+        Tok::Ident(s) if s == "ok" => {
+            expect(lx, Tok::LParen)?;
+            let inner = parse_pattern(lx)?;
+            expect(lx, Tok::RParen)?;
+            Pattern::Ok(Box::new(inner))
+        }
+        Tok::Ident(s) if s == "err" => {
+            expect(lx, Tok::LParen)?;
+            let inner = parse_pattern(lx)?;
+            expect(lx, Tok::RParen)?;
+            Pattern::Err(Box::new(inner))
+        }
         Tok::Ident(s) => Pattern::Ident(s),
         _ => bail!("ERROR_PARSE expected pattern"),
     })

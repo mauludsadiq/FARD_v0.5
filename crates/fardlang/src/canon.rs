@@ -249,6 +249,8 @@ fn print_pattern(p: &Pattern) -> String {
             let inner = pats.iter().map(|p| print_pattern(p)).collect::<Vec<_>>().join(", ");
             format!("[{}]", inner)
         }
+        Pattern::Ok(inner) => format!("ok({})", print_pattern(inner)),
+        Pattern::Err(inner) => format!("err({})", print_pattern(inner)),
     }
 }
 

@@ -486,6 +486,31 @@ fn pat_matches(p: &Pattern, v: &V) -> bool {
                 false
             }
         }
+        Pattern::Ok(inner) => {
+            // ok(x) matches {tag:"ok", val:v} or V::Ok(v)
+            match v {
+                V::Map(kvs) => {
+                    let tag = kvs.iter().find(|(k,_)| k == "tag").map(|(_,v)| v);
+                    let val = kvs.iter().find(|(k,_)| k == "val").map(|(_,v)| v);
+                    matches!(tag, Some(V::Text(t)) if t == "ok")
+                        && val.map_or(false, |v| pat_matches(inner, v))
+                }
+                V::Ok(v) => pat_matches(inner, v),
+                _ => false,
+            }
+        }
+        Pattern::Err(inner) => {
+            match v {
+                V::Map(kvs) => {
+                    let tag = kvs.iter().find(|(k,_)| k == "tag").map(|(_,v)| v);
+                    let val = kvs.iter().find(|(k,_)| k == "val").map(|(_,v)| v);
+                    matches!(tag, Some(V::Text(t)) if t == "err")
+                        && val.map_or(false, |v| pat_matches(inner, v))
+                }
+                V::Err(_) => pat_matches(inner, &V::Text("_err_".into())),
+                _ => false,
+            }
+        }
         Pattern::Ident(_) => true,
     }
 }
@@ -498,6 +523,28 @@ fn pat_binds(p: &Pattern, v: &V) -> Vec<(String, V)> {
                 pats.iter().zip(vs.iter()).flat_map(|(p, v)| pat_binds(p, v)).collect()
             } else {
                 vec![]
+            }
+        }
+        Pattern::Ok(inner) => {
+            match v {
+                V::Map(kvs) => {
+                    if let Some((_, val)) = kvs.iter().find(|(k,_)| k == "val") {
+                        pat_binds(inner, val)
+                    } else { vec![] }
+                }
+                V::Ok(v) => pat_binds(inner, v),
+                _ => vec![],
+            }
+        }
+        Pattern::Err(inner) => {
+            match v {
+                V::Map(kvs) => {
+                    if let Some((_, val)) = kvs.iter().find(|(k,_)| k == "val") {
+                        pat_binds(inner, val)
+                    } else { vec![] }
+                }
+                V::Err(e) => pat_binds(inner, &V::Text(e.clone())),
+                _ => vec![],
             }
         }
         _ => vec![],

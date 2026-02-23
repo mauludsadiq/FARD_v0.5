@@ -1,25 +1,43 @@
 module std.result
 
 pub fn is_ok(v: Value) : Value {
-  eq(map_get(v, "tag"), "ok")
+  match v {
+    ok(_) => true,
+    _ => false
+  }
 }
 
 pub fn is_err(v: Value) : Value {
-  eq(map_get(v, "tag"), "err")
+  match v {
+    err(_) => true,
+    _ => false
+  }
 }
 
 pub fn unwrap_or(v: Value, default: Value) : Value {
-  if is_ok(v) { map_get(v, "val") } else { default }
+  match v {
+    ok(x) => x,
+    _ => default
+  }
 }
 
 pub fn unwrap_err(v: Value, default: Value) : Value {
-  if is_err(v) { map_get(v, "val") } else { default }
+  match v {
+    err(msg) => msg,
+    _ => default
+  }
 }
 
 pub fn map(v: Value, f: Value) : Value {
-  if is_ok(v) { ok(f(map_get(v, "val"))) } else { v }
+  match v {
+    ok(x) => ok(f(x)),
+    _ => v
+  }
 }
 
 pub fn and_then(v: Value, f: Value) : Value {
-  if is_ok(v) { f(map_get(v, "val")) } else { v }
+  match v {
+    ok(x) => f(x),
+    _ => v
+  }
 }
