@@ -1,0 +1,30 @@
+import("std/json") as json
+import("std/hash") as hash
+import("std/rec") as rec
+import("std/result") as result
+
+// Tx field order must match coin-core Rust struct exactly:
+// amount, currency, merchant, payer, parent_digest, timestamp
+
+let make_tx = fn(amount, currency, merchant, payer, parent_digest, timestamp) {
+  let r = rec.empty() in
+  let r = rec.set(r, "amount", amount) in
+  let r = rec.set(r, "currency", currency) in
+  let r = rec.set(r, "merchant", merchant) in
+  let r = rec.set(r, "payer", payer) in
+  let r = rec.set(r, "parent_digest", parent_digest) in
+  let r = rec.set(r, "timestamp", timestamp) in
+  r
+}
+
+let canonicalize_tx = fn(tx) {
+  let canonical_json = json.canonicalize(tx) in
+  let digest = hash.sha256_text(canonical_json) in
+  let r = rec.empty() in
+  let r = rec.set(r, "digest", digest) in
+  let r = rec.set(r, "canonical_json", canonical_json) in
+  result.ok(r)
+}
+
+let tx = make_tx(123, "CCC", "merchant_a", "payer_pubkey_hex", null, 0) in
+canonicalize_tx(tx)

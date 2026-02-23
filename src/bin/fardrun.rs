@@ -1686,6 +1686,8 @@ enum Builtin {
     StrSplit,
     CodecHexEncode,
     CodecHexDecode,
+    HashSha256Text,
+    HashSha256Bytes,
 }
 
 #[derive(Debug)]
@@ -2815,6 +2817,19 @@ fn call_builtin(
                 _ => bail!("ERROR_BADARG str.toLower arg0 must be string"),
             };
             Ok(Val::Str(s.to_ascii_lowercase()))
+        }
+        Builtin::HashSha256Text => {
+            if args.len() != 1 { bail!("ERROR_BADARG hash.sha256_text expects 1 arg"); }
+            let s = match &args[0] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_BADARG type") };
+            Ok(Val::Str(format!("sha256:{}", sha256_bytes_hex(s.as_bytes()))))
+        }
+        Builtin::HashSha256Bytes => {
+            if args.len() != 1 { bail!("ERROR_BADARG hash.sha256_bytes expects 1 arg"); }
+            match &args[0] {
+                Val::Str(ss) => Ok(Val::Str(format!("sha256:{}", sha256_bytes_hex(ss.as_bytes())))),
+                Val::Bytes(bs) => Ok(Val::Str(format!("sha256:{}", sha256_bytes_hex(bs)))),
+                _ => bail!("ERROR_BADARG hash.sha256_bytes expects str or bytes"),
+            }
         }
         Builtin::CodecHexEncode => {
             if args.len() != 1 { bail!("ERROR_BADARG codec.hex_encode expects 1 arg"); }
@@ -4161,8 +4176,8 @@ impl ModuleLoader {
             }
             "std/hash" => {
                 let mut m = BTreeMap::new();
-                m.insert("sha256_bytes".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("sha256_text".to_string(), Val::Builtin(Builtin::Unimplemented));
+                m.insert("sha256_bytes".to_string(), Val::Builtin(Builtin::HashSha256Bytes));
+                m.insert("sha256_text".to_string(), Val::Builtin(Builtin::HashSha256Text));
                 Ok(m)
             }
             "std/http" => {
