@@ -344,11 +344,15 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
     let path = &args[2];
 
     let mut inputs: Vec<(String, String)> = vec![];
-    let mut pretty = false;
+    let mut pretty_mode = "";
     let mut i = 3;
     while i < args.len() {
-        if args[i] == "--pretty" {
-            pretty = true;
+        if args[i] == "--pretty" || args[i].starts_with("--pretty=") {
+            if let Some(val) = args[i].strip_prefix("--pretty=") {
+                pretty_mode = match val { "tree" => "tree", "canon" => "canon", "both" => "both", _ => "tree" };
+            } else {
+                pretty_mode = "tree";
+            }
             i += 1;
         } else if args[i] == "--input" && i + 1 < args.len() {
             let kv = &args[i + 1];
@@ -525,9 +529,14 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
     witness::write(&receipt, &trace_ndjson, &output_bytes);
     eprintln!("run_id: {}", receipt.run_id);
 
-    if pretty {
-        println!("{}", render_human(&v, 0));
-    } else {
-        print!("{}", String::from_utf8(output_bytes).unwrap());
+    match pretty_mode {
+        "tree" => println!("{}", render_human(&v, 0)),
+        "canon" => print!("{}", String::from_utf8(output_bytes.clone()).unwrap()),
+        "both" => {
+            println!("{}", render_human(&v, 0));
+            println!("---");
+            print!("{}", String::from_utf8(output_bytes.clone()).unwrap());
+        }
+        _ => print!("{}", String::from_utf8(output_bytes).unwrap()),
     }
 }
