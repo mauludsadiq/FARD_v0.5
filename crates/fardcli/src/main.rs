@@ -194,45 +194,86 @@ fn fard_json_to_v(j: &serde_json::Value) -> valuecore::v0::V {
 
 fn render_human(v: &valuecore::v0::V, indent: usize) -> String {
     use valuecore::v0::V;
-    let pad = "  ".repeat(indent);
+
+    fn is_scalar(v: &V) -> bool {
+        matches!(v, V::Unit | V::Bool(_) | V::Int(_) | V::Text(_) | V::Bytes(_) | V::Ok(_) | V::Err(_))
+    }
+
+    fn quote_text(s: &str) -> String {
+        let mut out = String::new();
+        out.push('"');
+        for ch in s.chars() {
+            match ch {
+                '\\' => out.push_str("\\\\"),
+                '"'  => out.push_str("\\\""),
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                '\t' => out.push_str("\\t"),
+                _ => out.push(ch),
+            }
+        }
+        out.push('"');
+        out
+    }
+
+    let pad  = "  ".repeat(indent);
     let pad1 = "  ".repeat(indent + 1);
+
     match v {
         V::Unit => "unit".to_string(),
         V::Bool(b) => b.to_string(),
         V::Int(n) => n.to_string(),
-        V::Text(s) => s.clone(),
+        V::Text(s) => quote_text(s),
         V::Bytes(b) => format!("b<{} bytes>", b.len()),
         V::Ok(inner) => format!("ok({})", render_human(inner, indent)),
-        V::Err(msg) => format!("err({})", msg),
+        V::Err(msg) => format!("err({})", quote_text(msg)),
         V::List(items) => {
             if items.is_empty() { return "[]".to_string(); }
-            let all_scalar = items.iter().all(|v| matches!(v,
-                V::Int(_) | V::Text(_) | V::Bool(_) | V::Unit | V::Bytes(_)
-            ));
+            let all_scalar = items.iter().all(|x| is_scalar(x));
             if all_scalar {
-                let inner: Vec<String> = items.iter().map(|v| render_human(v, 0)).collect();
-                format!("[{}]", inner.join(", "))
-            } else {
-                let mut parts: Vec<String> = items.iter().map(|item| {
-                    let r = render_human(item, indent + 1);
-                    // indent each line of the item
-                    r.lines().map(|l| format!("{}{}", pad1, l)).collect::<Vec<_>>().join("\n")
-                }).collect();
-                format!("[\n{}\n{}]", parts.join("\n\n"), pad)
+                let inner: Vec<String> = items.iter().map(|x| render_human(x, 0)).collect();
+                return format!("[{}]", inner.join(", "));
             }
+            let mut out = String::new();
+            out.push_str("[\n");
+            for item in items {
+                let r = render_human(item, indent + 2);
+                if r.contains('\n') {
+                    out.push_str(&format!("{}- {}\n", pad1, r.lines().next().unwrap_or("")));
+                    for line in r.lines().skip(1) {
+                        out.push_str(&format!("{}  {}\n", pad1, line));
+                    }
+                } else {
+                    out.push_str(&format!("{}- {}\n", pad1, r));
+                }
+            }
+            out.push_str(&format!("{}]", pad));
+            out
         }
         V::Map(kvs) => {
             if kvs.is_empty() { return "{}".to_string(); }
+            let all_scalar = kvs.iter().all(|(_, v)| is_scalar(v));
+            if all_scalar {
+                let parts: Vec<String> = kvs.iter()
+                    .map(|(k, v)| format!("{}: {}", k, render_human(v, 0)))
+                    .collect();
+                return format!("{{{}}}", parts.join(", "));
+            }
             let mut out = String::new();
+            out.push_str("{\n");
             for (k, val) in kvs {
-                let rendered = render_human(val, indent + 1);
-                if rendered.contains('\n') {
-                    out.push_str(&format!("{}{}:\n{}{}\n", pad, k, pad1, rendered.trim_start()));
+                let r = render_human(val, indent + 1);
+                if r.contains('\n') {
+                    out.push_str(&format!("{}{}: {}\n", pad1, k, r.lines().next().unwrap_or("")));
+                    for line in r.lines().skip(1) {
+                        out.push_str(&format!("{}{}\n", pad1, line));
+                    }
                 } else {
-                    out.push_str(&format!("{}{}: {}\n", pad, k, rendered));
+                    out.push_str(&format!("{}{}: {}\n", pad1, k, r));
                 }
             }
-            out.trim_end().to_string()
+            out.push_str(&format!("{}}}", pad));
+            out
         }
     }
 }
