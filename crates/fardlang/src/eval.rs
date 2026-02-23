@@ -559,28 +559,28 @@ fn is_builtin(f: &str) -> bool {
 fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
     match f {
         "add" => {
-            let (a, b) = expect_i64_2(args)?;
+            let (a, b) = match expect_i64_2(args) { Ok(v) => v, Err(e) => return Ok(V::Err(e.to_string())) };
             match i64_add(a, b) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::Err(e.to_string())) }
         }
         "sub" => {
-            let (a, b) = expect_i64_2(args)?;
+            let (a, b) = match expect_i64_2(args) { Ok(v) => v, Err(e) => return Ok(V::Err(e.to_string())) };
             match i64_sub(a, b) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::Err(e.to_string())) }
         }
         "mul" => {
-            let (a, b) = expect_i64_2(args)?;
+            let (a, b) = match expect_i64_2(args) { Ok(v) => v, Err(e) => return Ok(V::Err(e.to_string())) };
             match i64_mul(a, b) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::Err(e.to_string())) }
         }
         "div" => {
-            let (a, b) = expect_i64_2(args)?;
+            let (a, b) = match expect_i64_2(args) { Ok(v) => v, Err(e) => return Ok(V::Err(e.to_string())) };
             match i64_div(a, b) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::Err(e.to_string())) }
         }
         "rem" => {
-            let (a, b) = expect_i64_2(args)?;
+            let (a, b) = match expect_i64_2(args) { Ok(v) => v, Err(e) => return Ok(V::Err(e.to_string())) };
             match i64_rem(a, b) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::Err(e.to_string())) }
         }
         "neg" => {
-            let a = expect_i64_1(args)?;
-            Ok(V::Int(i64_neg(a)?))
+            let a = match expect_i64_1(args) { Ok(v) => v, Err(e) => return Ok(V::Err(e.to_string())) };
+            match i64_neg(a) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::Err(e.to_string())) }
         }
         "eq" => {
             if args.len() != 2 {
@@ -905,9 +905,10 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
         "base64url_decode" => {
             match args.get(0) {
                 Some(V::Text(s)) => {
-                    let b = URL_SAFE_NO_PAD.decode(s.as_bytes())
-                        .map_err(|e| anyhow!("ERROR_BADARG base64url_decode: {}", e))?;
-                    Ok(V::Bytes(b))
+                    match URL_SAFE_NO_PAD.decode(s.as_bytes()) {
+                        Ok(b) => Ok(V::Bytes(b)),
+                        Err(e) => Ok(V::Err(format!("ERROR_BADARG base64url_decode: {}", e))),
+                    }
                 }
                 _ => Err(anyhow!("ERROR_BADARG base64url_decode expects text")),
             }
@@ -926,9 +927,10 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
         "json_emit" => {
             match args.get(0) {
                 Some(v) => {
-                    let jv = v_to_json(v)?;
-                    Ok(V::Text(serde_json::to_string(&jv)
-                        .map_err(|e| anyhow!("ERROR_EVAL json_emit: {}", e))?))
+                    match v_to_json(v).and_then(|jv| serde_json::to_string(&jv).map_err(|e| anyhow!("json_emit: {}", e))) {
+                        Ok(s) => Ok(V::Text(s)),
+                        Err(e) => Ok(V::Err(format!("ERROR_EVAL json_emit: {}", e))),
+                    }
                 }
                 _ => Err(anyhow!("ERROR_BADARG json_emit expects value")),
             }
@@ -947,9 +949,10 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                 (Some(V::Bytes(ikm)), Some(V::Bytes(salt)), Some(V::Bytes(info)), Some(V::Int(len))) => {
                     let hk = Hkdf::<Sha256>::new(Some(salt), ikm);
                     let mut out = vec![0u8; *len as usize];
-                    hk.expand(info, &mut out)
-                        .map_err(|_| anyhow!("ERROR_BADARG hkdf_sha256: invalid length"))?;
-                    Ok(V::Bytes(out))
+                    match hk.expand(info, &mut out) {
+                        Ok(_) => Ok(V::Bytes(out)),
+                        Err(_) => Ok(V::Err("ERROR_BADARG hkdf_sha256: invalid length".into())),
+                    }
                 }
                 _ => Err(anyhow!("ERROR_BADARG hkdf_sha256 expects (bytes, bytes, bytes, int)")),
             }
@@ -958,12 +961,16 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
             match (args.get(0), args.get(1), args.get(2), args.get(3)) {
                 (Some(V::Bytes(key)), Some(V::Bytes(nonce)), Some(V::Bytes(aad)), Some(V::Bytes(pt))) => {
                     use chacha20poly1305::XNonce;
-                    let cipher = XChaCha20Poly1305::new_from_slice(key)
-                        .map_err(|_| anyhow!("ERROR_BADARG xchacha20poly1305_seal: key must be 32 bytes"))?;
-                    let n = XNonce::from_slice(nonce);
-                    let ct = cipher.encrypt(n, Payload { msg: pt, aad })
-                        .map_err(|_| anyhow!("ERROR_EVAL xchacha20poly1305_seal: encryption failed"))?;
-                    Ok(V::Bytes(ct))
+                    match XChaCha20Poly1305::new_from_slice(key) {
+                        Err(_) => Ok(V::Err("ERROR_BADARG xchacha20poly1305_seal: key must be 32 bytes".into())),
+                        Ok(cipher) => {
+                            let n = XNonce::from_slice(nonce);
+                            match cipher.encrypt(n, Payload { msg: pt, aad }) {
+                                Ok(ct) => Ok(V::Bytes(ct)),
+                                Err(_) => Ok(V::Err("ERROR_EVAL xchacha20poly1305_seal: encryption failed".into())),
+                            }
+                        }
+                    }
                 }
                 _ => Err(anyhow!("ERROR_BADARG xchacha20poly1305_seal expects (bytes, bytes, bytes, bytes)")),
             }
@@ -972,12 +979,16 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
             match (args.get(0), args.get(1), args.get(2), args.get(3)) {
                 (Some(V::Bytes(key)), Some(V::Bytes(nonce)), Some(V::Bytes(aad)), Some(V::Bytes(ct))) => {
                     use chacha20poly1305::XNonce;
-                    let cipher = XChaCha20Poly1305::new_from_slice(key)
-                        .map_err(|_| anyhow!("ERROR_BADARG xchacha20poly1305_open: key must be 32 bytes"))?;
-                    let n = XNonce::from_slice(nonce);
-                    let pt = cipher.decrypt(n, Payload { msg: ct, aad })
-                        .map_err(|_| anyhow!("ERROR_EVAL xchacha20poly1305_open: decryption failed"))?;
-                    Ok(V::Bytes(pt))
+                    match XChaCha20Poly1305::new_from_slice(key) {
+                        Err(_) => Ok(V::Err("ERROR_BADARG xchacha20poly1305_open: key must be 32 bytes".into())),
+                        Ok(cipher) => {
+                            let n = XNonce::from_slice(nonce);
+                            match cipher.decrypt(n, Payload { msg: ct, aad }) {
+                                Ok(pt) => Ok(V::Bytes(pt)),
+                                Err(_) => Ok(V::Err("ERROR_EVAL xchacha20poly1305_open: decryption failed".into())),
+                            }
+                        }
+                    }
                 }
                 _ => Err(anyhow!("ERROR_BADARG xchacha20poly1305_open expects (bytes, bytes, bytes, bytes)")),
             }
