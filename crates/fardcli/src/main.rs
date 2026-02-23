@@ -279,15 +279,24 @@ fn render_human(v: &valuecore::v0::V, indent: usize) -> String {
 }
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
     // Spawn a thread with 64MB stack to handle deep FARD recursion
-    let stack_mb: usize = std::env::args()
-        .find(|a| a.starts_with("--stack-mb=") || a == "--stack-mb")
-        .and_then(|a| {
-            if let Some(v) = a.strip_prefix("--stack-mb=") { v.parse().ok() }
-            else { std::env::args().skip_while(|x| x != "--stack-mb").nth(1).and_then(|v| v.parse().ok()) }
-        })
-        .map(|mb: usize| match mb { 64 => 64, 128 => 128, 256 => 256, 512 => 512, _ => 256 })
-        .unwrap_or(256);
+    let mut stack_mb = 256usize;
+    {
+        let mut j = 0usize;
+        while j < args.len() {
+            if let Some(v) = args[j].strip_prefix("--stack-mb=") {
+                stack_mb = v.parse().unwrap_or(256);
+                break;
+            }
+            if args[j] == "--stack-mb" && j + 1 < args.len() {
+                stack_mb = args[j + 1].parse().unwrap_or(256);
+                break;
+            }
+            j += 1;
+        }
+    }
+    stack_mb = match stack_mb { 64 | 128 | 256 | 512 => stack_mb, _ => 256 };
     let stack_bytes = stack_mb * 1024 * 1024;
     let builder = std::thread::Builder::new().stack_size(stack_bytes);
     let handler = builder.spawn(run).unwrap();
