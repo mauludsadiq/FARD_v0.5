@@ -6,6 +6,6 @@
   },
   "ok": true,
   "runtime_version": "0.5.0",
-  "stdlib_root_digest": "sha256:3f60fb7268eb2d6968657c61ab550683d9ebb172d8deb66daf83b6e7aed01b5a",
+  "stdlib_root_digest": "sha256:1cb437966534c514b4a591c3bbdecba0965b443c414d3781e7dbb6eaa93c9999",
   "trace_format_version": "0.1.0"
 }

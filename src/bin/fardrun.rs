@@ -1682,6 +1682,7 @@ enum Builtin {
     CryptoHmacSha256,
     CodecBase64UrlEncode,
     CodecBase64UrlDecode,
+    RandUuidV4,
 }
 
 #[derive(Debug)]
@@ -2485,6 +2486,10 @@ fn call_builtin(
             use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
             let bytes = URL_SAFE_NO_PAD.decode(input.as_bytes())?;
             Ok(Val::Str(String::from_utf8(bytes)?))
+        }
+        Builtin::RandUuidV4 => {
+            if args.len() != 0 { bail!("ERROR_RUNTIME rand.uuid_v4 expects 0 args"); }
+            Ok(Val::Str(uuid::Uuid::new_v4().to_string()))
         }
         Builtin::ListGet => {
             if args.len() != 2 {
@@ -4144,6 +4149,11 @@ impl ModuleLoader {
                 Ok(m)
             }
 
+            "std/rand" => {
+                let mut m = BTreeMap::new();
+                m.insert("uuid_v4".to_string(), Val::Builtin(Builtin::RandUuidV4));
+                Ok(m)
+            }
             "std/crypto" => {
                 let mut m = BTreeMap::new();
                 m.insert("ed25519_verify".to_string(), Val::Builtin(Builtin::CryptoEd25519Verify));
@@ -4164,7 +4174,7 @@ impl ModuleLoader {
     }
 
     fn stdlib_root_digest(&self) -> String {
-        let names: [&str; 22] = [
+        let names: [&str; 23] = [
             "std/artifact",
             "std/bytes",
             "std/codec",
@@ -4187,6 +4197,7 @@ impl ModuleLoader {
             "std/png",
             "std/rec",
             "std/crypto",
+            "std/rand",
         ];
 
         let mut pairs: Vec<(String, String)> = names
