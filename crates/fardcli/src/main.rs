@@ -191,6 +191,52 @@ fn fard_json_to_v(j: &serde_json::Value) -> valuecore::v0::V {
     json_to_v(j)
 }
 
+
+fn render_human(v: &valuecore::v0::V, indent: usize) -> String {
+    use valuecore::v0::V;
+    let pad = "  ".repeat(indent);
+    let pad1 = "  ".repeat(indent + 1);
+    match v {
+        V::Unit => "unit".to_string(),
+        V::Bool(b) => b.to_string(),
+        V::Int(n) => n.to_string(),
+        V::Text(s) => s.clone(),
+        V::Bytes(b) => format!("b<{} bytes>", b.len()),
+        V::Ok(inner) => format!("ok({})", render_human(inner, indent)),
+        V::Err(msg) => format!("err({})", msg),
+        V::List(items) => {
+            if items.is_empty() { return "[]".to_string(); }
+            let all_scalar = items.iter().all(|v| matches!(v,
+                V::Int(_) | V::Text(_) | V::Bool(_) | V::Unit | V::Bytes(_)
+            ));
+            if all_scalar {
+                let inner: Vec<String> = items.iter().map(|v| render_human(v, 0)).collect();
+                format!("[{}]", inner.join(", "))
+            } else {
+                let mut parts: Vec<String> = items.iter().map(|item| {
+                    let r = render_human(item, indent + 1);
+                    // indent each line of the item
+                    r.lines().map(|l| format!("{}{}", pad1, l)).collect::<Vec<_>>().join("\n")
+                }).collect();
+                format!("[\n{}\n{}]", parts.join("\n\n"), pad)
+            }
+        }
+        V::Map(kvs) => {
+            if kvs.is_empty() { return "{}".to_string(); }
+            let mut out = String::new();
+            for (k, val) in kvs {
+                let rendered = render_human(val, indent + 1);
+                if rendered.contains('\n') {
+                    out.push_str(&format!("{}{}:\n{}{}\n", pad, k, pad1, rendered.trim_start()));
+                } else {
+                    out.push_str(&format!("{}{}: {}\n", pad, k, rendered));
+                }
+            }
+            out.trim_end().to_string()
+        }
+    }
+}
+
 fn main() {
 
 fn json_to_v_json(v: &V) -> serde_json::Value {
@@ -257,9 +303,13 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
     let path = &args[2];
 
     let mut inputs: Vec<(String, String)> = vec![];
+    let mut pretty = false;
     let mut i = 3;
     while i < args.len() {
-        if args[i] == "--input" && i + 1 < args.len() {
+        if args[i] == "--pretty" {
+            pretty = true;
+            i += 1;
+        } else if args[i] == "--input" && i + 1 < args.len() {
             let kv = &args[i + 1];
             if let Some(eq) = kv.find('=') {
                 inputs.push((kv[..eq].to_string(), kv[eq+1..].to_string()));
@@ -434,5 +484,9 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
     witness::write(&receipt, &trace_ndjson, &output_bytes);
     eprintln!("run_id: {}", receipt.run_id);
 
-    print!("{}", String::from_utf8(output_bytes).unwrap());
+    if pretty {
+        println!("{}", render_human(&v, 0));
+    } else {
+        print!("{}", String::from_utf8(output_bytes).unwrap());
+    }
 }
