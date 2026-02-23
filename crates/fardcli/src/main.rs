@@ -305,7 +305,7 @@ fn main() {
     let stack_bytes = stack_mb * 1024 * 1024;
     let builder = std::thread::Builder::new().stack_size(stack_bytes);
     // depth limit scales with stack: ~1500 frames per 64MB
-    let max_depth = (stack_mb / 64) * 1500;
+    let max_depth = match stack_mb { 64 => 500, 128 => 1000, 256 => 2500, 512 => 6000, _ => 2500 };
     let handler = builder.spawn(move || run(max_depth)).unwrap();
     handler.join().unwrap();
 }
