@@ -280,11 +280,15 @@ fn render_human(v: &valuecore::v0::V, indent: usize) -> String {
 
 fn main() {
     // Spawn a thread with 64MB stack to handle deep FARD recursion
-    let stack_bytes = std::env::args().find(|a| a.starts_with("--stack-mb="))
-        .and_then(|a| a.strip_prefix("--stack-mb=").map(|s| s.to_string()))
-        .and_then(|s| s.parse::<usize>().ok())
-        .map(|mb| match mb { 64 => 64, 128 => 128, 256 => 256, 512 => 512, _ => 256 })
-        .unwrap_or(256) * 1024 * 1024;
+    let stack_mb: usize = std::env::args()
+        .find(|a| a.starts_with("--stack-mb=") || a == "--stack-mb")
+        .and_then(|a| {
+            if let Some(v) = a.strip_prefix("--stack-mb=") { v.parse().ok() }
+            else { std::env::args().skip_while(|x| x != "--stack-mb").nth(1).and_then(|v| v.parse().ok()) }
+        })
+        .map(|mb: usize| match mb { 64 => 64, 128 => 128, 256 => 256, 512 => 512, _ => 256 })
+        .unwrap_or(256);
+    let stack_bytes = stack_mb * 1024 * 1024;
     let builder = std::thread::Builder::new().stack_size(stack_bytes);
     let handler = builder.spawn(run).unwrap();
     handler.join().unwrap();
@@ -360,7 +364,11 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
     let mut stack_mb: usize = 256;
     let mut i = 3;
     while i < args.len() {
-        if args[i].starts_with("--stack-mb=") {
+        if args[i] == "--stack-mb" && i + 1 < args.len() {
+            let val: usize = args[i+1].parse().unwrap_or(256);
+            stack_mb = match val { 64 => 64, 128 => 128, 256 => 256, 512 => 512, _ => 256 };
+            i += 2;
+        } else if args[i].starts_with("--stack-mb=") {
             let val: usize = args[i].strip_prefix("--stack-mb=").unwrap_or("256").parse().unwrap_or(256);
             stack_mb = match val { 64 => 64, 128 => 128, 256 => 256, 512 => 512, _ => 256 };
             i += 1;
