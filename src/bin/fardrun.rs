@@ -4164,7 +4164,7 @@ impl ModuleLoader {
     }
 
     fn stdlib_root_digest(&self) -> String {
-        let names: [&str; 21] = [
+        let names: [&str; 22] = [
             "std/artifact",
             "std/bytes",
             "std/codec",
@@ -4186,6 +4186,7 @@ impl ModuleLoader {
             "std/trace",
             "std/png",
             "std/rec",
+            "std/crypto",
         ];
 
         let mut pairs: Vec<(String, String)> = names
