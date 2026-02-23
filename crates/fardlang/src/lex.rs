@@ -83,6 +83,28 @@ impl<'a> Lexer<'a> {
         Some(b)
     }
 
+    /// Column of the next non-whitespace token (1-based).
+    /// Call after skip_ws_and_comments has already advanced past whitespace.
+    pub fn col(&self) -> usize {
+        // scan backward from current position to find last newline
+        let mut c = 1usize;
+        let mut j = self.i;
+        while j > 0 {
+            j -= 1;
+            if self.s[j] == b'\n' {
+                break;
+            }
+            c += 1;
+        }
+        c
+    }
+
+    /// Skip whitespace then return column of next token without consuming it.
+    pub fn peek_col(&mut self) -> usize {
+        self.skip_ws_and_comments();
+        self.col()
+    }
+
     fn skip_ws_and_comments(&mut self) {
         loop {
             while matches!(self.peek(), Some(b' ' | b'\n' | b'\r' | b'\t')) {

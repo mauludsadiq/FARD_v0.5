@@ -309,14 +309,29 @@ fn parse_fn_decl(lx: &mut Lexer<'_>, is_pub: bool) -> Result<FnDecl> {
 }
 
 fn parse_block(lx: &mut Lexer<'_>) -> Result<Block> {
-    expect(lx, Tok::LBrace)?;
+    // braces optional: if next token is '{' use brace mode, else use indent mode
+    let brace_mode = peek_is(lx, Tok::LBrace)?;
+    if brace_mode {
+        lx.next()?; // consume '{'
+    }
+    // in indent mode, record the column of the first token as block indent level
+    let block_col = if !brace_mode { lx.peek_col() } else { 0 };
+
     let mut stmts = Vec::new();
     let mut tail = None;
 
     loop {
-        if peek_is(lx, Tok::RBrace)? {
-            lx.next()?;
-            break;
+        if brace_mode {
+            if peek_is(lx, Tok::RBrace)? {
+                lx.next()?;
+                break;
+            }
+            if peek_is(lx, Tok::Eof)? { break; }
+        } else {
+            // indent mode: stop when next token is at a lesser column than block_col
+            let c = lx.peek_col();
+            if peek_is(lx, Tok::Eof)? { break; }
+            if c < block_col { break; }
         }
         if peek_is(lx, Tok::KwLet)? {
             lx.next()?;
@@ -327,14 +342,25 @@ fn parse_block(lx: &mut Lexer<'_>) -> Result<Block> {
             continue;
         }
 
-        // either stmt expr or tail expr; we treat last expr before '}' as tail if next is '}'
+        // either stmt expr or tail expr
         let e = parse_expr(lx)?;
-        if peek_is(lx, Tok::RBrace)? {
-            tail = Some(Box::new(e));
-            lx.next()?;
-            break;
+        if brace_mode {
+            if peek_is(lx, Tok::RBrace)? {
+                tail = Some(Box::new(e));
+                lx.next()?;
+                break;
+            } else {
+                stmts.push(Stmt::Expr(e));
+            }
         } else {
-            stmts.push(Stmt::Expr(e));
+            // indent mode: check if next token is at lesser column — if so this is tail
+            let c = lx.peek_col();
+            if peek_is(lx, Tok::Eof)? || c < block_col {
+                tail = Some(Box::new(e));
+                break;
+            } else {
+                stmts.push(Stmt::Expr(e));
+            }
         }
     }
 
