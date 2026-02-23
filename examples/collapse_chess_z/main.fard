@@ -1,0 +1,195 @@
+module collapse_chess_z
+
+// ─── integer log2 and entropy ──────────────────────────────────────────────
+
+fn floor_log2(n: Int) : Int
+  floor_log2_loop(n, 0)
+
+fn floor_log2_loop(n: Int, acc: Int) : Int
+  if lt(n, 2) { acc }
+  else { floor_log2_loop(div(n, 2), add(acc, 1)) }
+
+fn int_pow2(n: Int) : Int
+  int_pow2_loop(n, 1)
+
+fn int_pow2_loop(n: Int, acc: Int) : Int
+  if eq(n, 0) { acc }
+  else { int_pow2_loop(sub(n, 1), mul(acc, 2)) }
+
+fn log2_mb(n: Int) : Int
+  if lt(n, 1) { 0 }
+  else
+    let fl = floor_log2(n)
+    let pow = int_pow2(fl)
+    let frac = div(mul(1000, sub(n, pow)), pow)
+    add(mul(fl, 1000), frac)
+
+fn entropy_mb(counts: Value, total: Int) : Int
+  entropy_loop(counts, total, 0, 0)
+
+fn entropy_loop(counts: Value, total: Int, i: Int, acc: Int) : Int
+  if eq(i, list_len(counts)) { acc }
+  else
+    let k = list_get(counts, i)
+    if eq(k, 0) { entropy_loop(counts, total, add(i, 1), acc) }
+    else
+      let contrib = div(mul(k, sub(log2_mb(total), log2_mb(k))), total)
+      entropy_loop(counts, total, add(i, 1), add(acc, contrib))
+
+fn abs_diff(a: Int, b: Int) : Int
+  if gt(a, b) { sub(a, b) } else { sub(b, a) }
+
+// ─── Z edges: 22 edges from Z_edges_fitted.json ───────────────────────────
+// p_milli = p_hat * 1000  support = game count from KingBase corpus
+
+fn z_edges() : Value
+  [
+    {opening: "O_Alekhine",        endgame: "E_Lucena",           motif: "gamma_AlekhineLucena",           p_milli: 1000, support: 7917},
+    {opening: "O_Scandinavian",    endgame: "E_Philidor",         motif: "gamma_ScandinavianPhilidor",     p_milli: 1000, support: 11663},
+    {opening: "O_Dutch",           endgame: "E_Opposition",       motif: "gamma_DutchOCB",                 p_milli: 500,  support: 10796},
+    {opening: "O_Dutch",           endgame: "E_KeySquares",       motif: "gamma_DutchOCB",                 p_milli: 500,  support: 10796},
+    {opening: "O_Philidor",        endgame: "E_Opposition",       motif: "gamma_PhilidorKP",               p_milli: 500,  support: 2992},
+    {opening: "O_Philidor",        endgame: "E_KeySquares",       motif: "gamma_PhilidorKP",               p_milli: 500,  support: 2992},
+    {opening: "O_Nimzowitsch",     endgame: "E_RuleSquare",       motif: "gamma_NimzoSquare",              p_milli: 1000, support: 2217},
+    {opening: "O_Grunfeld",        endgame: "E_Reti",             motif: "gamma_GrunfeldReti",             p_milli: 1000, support: 16622},
+    {opening: "O_RuyClosed",       endgame: "E_WrongColorBishop", motif: "gamma_RuyWrongColor",            p_milli: 1000, support: 41922},
+    {opening: "O_SicilianMoscow",  endgame: "E_Saavedra",         motif: "gamma_MoscowSaavedra",           p_milli: 1000, support: 11527},
+    {opening: "O_CaroKannAdvance", endgame: "E_LaskerRook",       motif: "gamma_CaroLasker",               p_milli: 1000, support: 11614},
+    {opening: "O_FrenchWinawer",   endgame: "E_Vancura",          motif: "gamma_WinawerVancura",           p_milli: 1000, support: 12664},
+    {opening: "O_ClosedSicilian",  endgame: "E_BishopVsKnight",   motif: "gamma_ClosedSicilian_BvN",       p_milli: 1000, support: 17344},
+    {opening: "O_QGA",             endgame: "E_TwoKnightsVsPawn", motif: "gamma_QGA_TwoKnightsPawn",       p_milli: 1000, support: 10043},
+    {opening: "O_Petroff",         endgame: "E_ShoulderZugzwang", motif: "gamma_Petroff_Shoulder",         p_milli: 1000, support: 11708},
+    {opening: "O_d4e6",            endgame: "E_KlingHorwitz",     motif: "gamma_d4e6_KlingHorwitz",        p_milli: 1000, support: 19518},
+    {opening: "O_SymEnglish",      endgame: "E_OCBishops",        motif: "gamma_SymEnglish_OCB",           p_milli: 1000, support: 9095},
+    {opening: "O_SicilianNajdorf", endgame: "E_RBvsRN",           motif: "gamma_Najdorf_RBvsRN",           p_milli: 1000, support: 34143},
+    {opening: "O_RuyBerlin",       endgame: "E_Fortress",         motif: "gamma_Berlin_Fortress",          p_milli: 1000, support: 12039},
+    {opening: "O_QGDSlav",         endgame: "E_Stamma",           motif: "gamma_QGDSlav_Stamma",           p_milli: 1000, support: 49283},
+    {opening: "O_NimzoRubinstein", endgame: "E_TroitzkyLine",     motif: "gamma_NimzoRubinstein_Troitzky", p_milli: 1000, support: 12367},
+    {opening: "O_KIDClassical",    endgame: "E_CochraneDefense",  motif: "gamma_KID_Cochrane",             p_milli: 1000, support: 6715}
+  ]
+
+// ─── H(O): entropy of opening distribution ────────────────────────────────
+// support_by_opening: game counts, total = 325977
+
+fn h_opening_mb() : Int
+  let counts = [7917, 11663, 21592, 5984, 2217, 16622, 41922, 11527,
+                11614, 12664, 17344, 10043, 11708, 19518, 9095, 34143,
+                12039, 49283, 12367, 6715]
+  entropy_mb(counts, 325977)
+
+// ─── H(Z): entropy of Z distribution ─────────────────────────────────────
+// Each z state has weight = support * p_milli / 1000
+// Dutch and Philidor each split into two z states with weight support/2
+
+fn h_z_mb() : Int
+  // z weights: support * p_milli / 1000
+  let counts = [
+    7917,   // O_Alekhine -> E_Lucena
+    11663,  // O_Scandinavian -> E_Philidor
+    5398,   // O_Dutch -> E_Opposition  (10796 * 500/1000)
+    5398,   // O_Dutch -> E_KeySquares
+    1496,   // O_Philidor -> E_Opposition (2992 * 500/1000)
+    1496,   // O_Philidor -> E_KeySquares
+    2217,   // O_Nimzowitsch -> E_RuleSquare
+    16622,  // O_Grunfeld -> E_Reti
+    41922,  // O_RuyClosed -> E_WrongColorBishop
+    11527,  // O_SicilianMoscow -> E_Saavedra
+    11614,  // O_CaroKannAdvance -> E_LaskerRook
+    12664,  // O_FrenchWinawer -> E_Vancura
+    17344,  // O_ClosedSicilian -> E_BishopVsKnight
+    10043,  // O_QGA -> E_TwoKnightsVsPawn
+    11708,  // O_Petroff -> E_ShoulderZugzwang
+    19518,  // O_d4e6 -> E_KlingHorwitz
+    9095,   // O_SymEnglish -> E_OCBishops
+    34143,  // O_SicilianNajdorf -> E_RBvsRN
+    12039,  // O_RuyBerlin -> E_Fortress
+    49283,  // O_QGDSlav -> E_Stamma
+    12367,  // O_NimzoRubinstein -> E_TroitzkyLine
+    6715    // O_KIDClassical -> E_CochraneDefense
+  ]
+  entropy_mb(counts, 325977)
+
+// ─── H(E): entropy of endgame distribution ────────────────────────────────
+// P(E=e) = sum over z with endgame=e of P(Z=z)
+// Dutch splits E_Opposition and E_KeySquares each get 5398
+// Philidor splits E_Opposition and E_KeySquares each get 1496
+// E_Opposition total = 5398 + 1496 = 6894
+// E_KeySquares total = 5398 + 1496 = 6894
+
+fn h_endgame_mb() : Int
+  let counts = [
+    7917,   // E_Lucena
+    11663,  // E_Philidor
+    6894,   // E_Opposition (Dutch 5398 + Philidor 1496)
+    6894,   // E_KeySquares (Dutch 5398 + Philidor 1496)
+    2217,   // E_RuleSquare
+    16622,  // E_Reti
+    41922,  // E_WrongColorBishop
+    11527,  // E_Saavedra
+    11614,  // E_LaskerRook
+    12664,  // E_Vancura
+    17344,  // E_BishopVsKnight
+    10043,  // E_TwoKnightsVsPawn
+    11708,  // E_ShoulderZugzwang
+    19518,  // E_KlingHorwitz
+    9095,   // E_OCBishops
+    34143,  // E_RBvsRN
+    12039,  // E_Fortress
+    49283,  // E_Stamma
+    12367,  // E_TroitzkyLine
+    6715    // E_CochraneDefense
+  ]
+  entropy_mb(counts, 325977)
+
+// ─── factorization check ───────────────────────────────────────────────────
+// For each opening, sum of p_milli over its edges must equal 1000
+
+fn check_row_sums(edges: Value, i: Int, errors: Int) : Int
+  if eq(i, list_len(edges)) { errors }
+  else
+    let e = list_get(edges, i)
+    let opening = map_get(e, "opening")
+    let row_sum = sum_p_for_opening(edges, opening, 0, 0)
+    let err = if eq(row_sum, 1000) { 0 } else { 1 }
+    check_row_sums(edges, add(i, 1), add(errors, err))
+
+fn sum_p_for_opening(edges: Value, opening: Text, i: Int, acc: Int) : Int
+  if eq(i, list_len(edges)) { acc }
+  else
+    let e = list_get(edges, i)
+    let o = map_get(e, "opening")
+    let p = map_get(e, "p_milli")
+    if eq(o, opening)
+      { sum_p_for_opening(edges, opening, add(i, 1), add(acc, p)) }
+    else
+      { sum_p_for_opening(edges, opening, add(i, 1), acc) }
+
+// ─── isentropy check ──────────────────────────────────────────────────────
+// |H(O) - H(Z)| and |H(Z) - H(E)| should be small (< 100 millibits)
+
+fn main() : Value
+  let edges = z_edges()
+  let n_edges = list_len(edges)
+  let total_games = 325977
+  let h_o = h_opening_mb()
+  let h_z = h_z_mb()
+  let h_e = h_endgame_mb()
+  let oz_gap = abs_diff(h_o, h_z)
+  let ze_gap = abs_diff(h_z, h_e)
+  let row_errors = check_row_sums(edges, 0, 0)
+  let factorization_valid = eq(row_errors, 0)
+  let isentropic = if gt(oz_gap, 100) { false }
+                   else if gt(ze_gap, 100) { false }
+                   else { true }
+  {
+    total_games: total_games,
+    n_z_edges: n_edges,
+    h_opening_mb: h_o,
+    h_z_mb: h_z,
+    h_endgame_mb: h_e,
+    oz_gap_mb: oz_gap,
+    ze_gap_mb: ze_gap,
+    factorization_valid: factorization_valid,
+    row_sum_errors: row_errors,
+    isentropic: isentropic
+  }
