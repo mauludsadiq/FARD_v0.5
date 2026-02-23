@@ -85,7 +85,7 @@ fn verify_euclid_lemma() : Value
   match result {
     err(msg) => {theorem: "Euclid's Lemma", verified: false, error: msg,
                  statement: "if p|ab then p|a or p|b"},
-    ok(v)    => {theorem: "Euclid's Lemma", verified: v, error: "none",
+    ok(v)    => {theorem: "Euclid's Lemma", verified: v, error: unit,
                  statement: "if p|ab then p|a or p|b"}
   }
 
@@ -113,7 +113,7 @@ fn verify_bezout_identity() : Value
   match result {
     err(msg) => {theorem: "Bezout's Identity", verified: false, error: msg,
                  statement: "gcd(a,b) = ax + by"},
-    ok(v)    => {theorem: "Bezout's Identity", verified: v, error: "none",
+    ok(v)    => {theorem: "Bezout's Identity", verified: v, error: unit,
                  statement: "gcd(a,b) = ax + by", example: ext_gcd(12, 8)}
   }
 
@@ -141,7 +141,7 @@ fn verify_prime_factorization_existence() : Value
   match result {
     err(msg) => {theorem: "Prime Factorization Existence", verified: false, error: msg,
                  statement: "every n in [2,100] factors into primes"},
-    ok(v)    => {theorem: "Prime Factorization Existence", verified: v, error: "none",
+    ok(v)    => {theorem: "Prime Factorization Existence", verified: v, error: unit,
                  statement: "every n in [2,100] factors into primes", example: factorize(60)}
   }
 
@@ -161,7 +161,7 @@ fn verify_fta_uniqueness() : Value
   match result {
     err(msg) => {theorem: "FTA Uniqueness", verified: false, error: msg,
                  statement: "product(factorize(n)) = n for all n in [2,100]"},
-    ok(v)    => {theorem: "FTA Uniqueness", verified: v, error: "none",
+    ok(v)    => {theorem: "FTA Uniqueness", verified: v, error: unit,
                  statement: "product(factorize(n)) = n for all n in [2,100]"}
   }
 
@@ -187,7 +187,7 @@ fn verify_gcd_lcm() : Value
   match result {
     err(msg) => {theorem: "gcd * lcm = a * b", verified: false, error: msg,
                  statement: "gcd(a,b) * lcm(a,b) = a*b for a,b in [1,20]"},
-    ok(v)    => {theorem: "gcd * lcm = a * b", verified: v, error: "none",
+    ok(v)    => {theorem: "gcd * lcm = a * b", verified: v, error: unit,
                  statement: "gcd(a,b) * lcm(a,b) = a*b for a,b in [1,20]",
                  example: {a: 12, b: 18, gcd: gcd(12, 18), lcm: lcm(12, 18)}}
   }
@@ -199,7 +199,7 @@ fn count_errors(theorems: Value, i: Int, acc: Int) : Int
   else
     let t = list_get(theorems, i)
     let e = map_get(t, "error")
-    let has_err = if eq(e, "none") { false } else { true }
+    let has_err = match e { unit => false, _ => true }
     count_errors(theorems, add(i, 1), if has_err { add(acc, 1) } else { acc })
 
 fn all_verified_check(theorems: Value, i: Int) : Bool
