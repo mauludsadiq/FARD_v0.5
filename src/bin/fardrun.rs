@@ -1943,6 +1943,29 @@ fn hex_lower(bytes: &[u8]) -> String {
     out
 }
 
+fn hex_decode(s: &str) -> Result<Vec<u8>> {
+    let s = s.trim();
+    if s.len() % 2 != 0 {
+        anyhow::bail!("hex_decode: odd length input");
+    }
+    let mut out = Vec::with_capacity(s.len() / 2);
+    for chunk in s.as_bytes().chunks(2) {
+        let hi = hex_nibble(chunk[0])?;
+        let lo = hex_nibble(chunk[1])?;
+        out.push((hi << 4) | lo);
+    }
+    Ok(out)
+}
+
+fn hex_nibble(b: u8) -> Result<u8> {
+    match b {
+        b'0'..=b'9' => Ok(b - b'0'),
+        b'a'..=b'f' => Ok(b - b'a' + 10),
+        b'A'..=b'F' => Ok(b - b'A' + 10),
+        _ => anyhow::bail!("hex_decode: invalid nibble {:?}", b as char),
+    }
+}
+
 fn parse_hex_bytes(s: &str) -> Result<Vec<u8>> {
     let s = s
         .strip_prefix("hex:")
@@ -2458,7 +2481,7 @@ fn call_builtin(
             if !args.is_empty() {
                 bail!("ERROR_BADARG std/png.red_1x1 expects 0 args");
             }
-            let bs = hex::decode("89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000f494441547801010400fbff00ff0000030101008d1de5820000000049454e44ae426082").map_err(|_| anyhow!("ERROR_BADARG std/png.red_1x1 invalid hex"))?;
+            let bs = hex_decode("89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000f494441547801010400fbff00ff0000030101008d1de5820000000049454e44ae426082")?;
             Ok(Val::Bytes(bs))
         }
 
@@ -2696,9 +2719,9 @@ fn call_builtin(
             let pk_hex  = match &args[0] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
             let msg_hex = match &args[1] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
             let sig_hex = match &args[2] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
-            let pk_bytes  = hex::decode(&pk_hex)?;
-            let msg_bytes = hex::decode(&msg_hex)?;
-            let sig_bytes = hex::decode(&sig_hex)?;
+            let pk_bytes  = hex_decode(&pk_hex)?;
+            let msg_bytes = hex_decode(&msg_hex)?;
+            let sig_bytes = hex_decode(&sig_hex)?;
             use ed25519_dalek::{VerifyingKey, Signature, Verifier};
             let pk_arr: [u8;32] = pk_bytes.as_slice().try_into().map_err(|_| anyhow::anyhow!("bad pk length"))?;
             let sig_arr: [u8;64] = sig_bytes.as_slice().try_into().map_err(|_| anyhow::anyhow!("bad sig length"))?;
@@ -2710,7 +2733,7 @@ fn call_builtin(
         Builtin::CryptoHmacSha256 => {
             if args.len() != 2 { bail!("ERROR_RUNTIME hmac_sha256 expects 2 args"); }
             let key_bytes = match &args[0] {
-                Val::Str(ss) => hex::decode(ss)?,
+                Val::Str(ss) => hex_decode(ss)?,
                 Val::Bytes(bs) => bs.clone(),
                 _ => bail!("ERROR_RUNTIME hmac_sha256 key must be hex str or bytes"),
             };
@@ -2724,7 +2747,7 @@ fn call_builtin(
             let mut mac = HmacSha256::new_from_slice(&key_bytes)?;
             mac.update(&msg_bytes);
             let result = mac.finalize();
-            Ok(Val::Str(hex::encode(result.into_bytes())))
+            Ok(Val::Str(hex_lower(&result.into_bytes())))
         }
         Builtin::CodecBase64UrlEncode => {
             if args.len() != 1 { bail!("ERROR_RUNTIME base64url_encode expects 1 arg"); }
@@ -3241,15 +3264,15 @@ fn call_builtin(
         Builtin::CodecHexEncode => {
             if args.len() != 1 { bail!("ERROR_BADARG codec.hex_encode expects 1 arg"); }
             match &args[0] {
-                Val::Bytes(bs) => Ok(Val::Str(hex::encode(bs))),
-                Val::Str(ss) => Ok(Val::Str(hex::encode(ss.as_bytes()))),
+                Val::Bytes(bs) => Ok(Val::Str(hex_lower(bs))),
+                Val::Str(ss) => Ok(Val::Str(hex_lower(ss.as_bytes()))),
                 _ => bail!("ERROR_BADARG codec.hex_encode expects str or bytes"),
             }
         }
         Builtin::CodecHexDecode => {
             if args.len() != 1 { bail!("ERROR_BADARG codec.hex_decode expects 1 arg"); }
             let s = match &args[0] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_BADARG type") };
-            let bytes = hex::decode(s.as_str())?;
+            let bytes = hex_decode(s.as_str())?;
             Ok(Val::Str(String::from_utf8(bytes)?))
         }
         Builtin::StrSplit => {
@@ -5109,7 +5132,7 @@ fn base_env() -> Env {
 fn sha256_bytes(bytes: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(bytes);
-    format!("sha256:{}", hex::encode(h.finalize()))
+    format!("sha256:{}", hex_lower(&h.finalize()))
 }
 fn file_digest(p: &Path) -> Result<String> {
     let b = fs::read(p)?;

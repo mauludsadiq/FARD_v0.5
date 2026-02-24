@@ -18,7 +18,7 @@ mod parse;
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(bytes);
-    hex::encode(h.finalize())
+    hex_lower(&h.finalize())
 }
 
 fn write_text(path: &Path, s: &str) -> Result<()> {

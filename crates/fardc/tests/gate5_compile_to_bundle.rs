@@ -32,7 +32,7 @@ fn gate5_compiler_emits_bundle_and_runner_produces_frozen_witness_runid() {
     let source_cid_compiler = source_cid_compiler.trim().to_string();
 
     let src_bytes = std::fs::read(&src).unwrap();
-    let expected_source_cid = format!("sha256:{}", hex::encode(sha2::Sha256::digest(&src_bytes)));
+    let expected_source_cid = format!("sha256:{}", hex_lower(&sha2::Sha256::digest(&src_bytes)));
 
     assert_eq!(source_cid_compiler, expected_source_cid);
 

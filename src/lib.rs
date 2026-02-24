@@ -70,10 +70,20 @@ pub struct RunResult {
     pub paths: RunPaths,
 }
 
+fn sha256_hex_native(b: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(b.len() * 2);
+    for &byte in b {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
+}
+
 pub fn sha256_hex(bytes: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(bytes);
-    hex::encode(h.finalize())
+    sha256_hex_native(&h.finalize())
 }
 
 pub fn read_bytes(p: &Path) -> Result<Vec<u8>> {

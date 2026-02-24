@@ -2,6 +2,7 @@ use std::env;
 use std::fs;
 use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
+use valuecore::{hex_lower, parse_hex};
 use valuecore::v0::V;
 use fardlang::effects::{EffectHandler, EffectTrace};
 use anyhow::{anyhow, Result};
@@ -173,7 +174,7 @@ fn fard_json_to_v(j: &serde_json::Value) -> valuecore::v0::V {
             "int" => if let Some(n) = v.as_i64() { return V::Int(n); },
             "text" => if let Some(s) = v.as_str() { return V::Text(s.to_string()); },
             "bytes" => if let Some(s) = v.as_str() {
-                if let Ok(b) = hex::decode(s) { return V::Bytes(b); }
+                if let Ok(b) = parse_hex(s) { return V::Bytes(b); }
             },
             "list" => if let Some(arr) = v.as_array() {
                 return V::List(arr.iter().map(fard_json_to_v).collect());
@@ -318,7 +319,7 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
         V::Bool(b)     => serde_json::json!(b),
         V::Int(i)      => serde_json::json!(i),
         V::Text(s)     => serde_json::json!(s),
-        V::Bytes(b)    => serde_json::json!(hex::encode(b)),
+        V::Bytes(b)    => serde_json::json!(hex_lower(b)),
         V::Ok(x)       => serde_json::json!({"ok": json_to_v_json(x)}),
         V::Err(e)      => serde_json::json!({"error": e}),
         V::List(items) => serde_json::Value::Array(items.iter().map(json_to_v_json).collect()),

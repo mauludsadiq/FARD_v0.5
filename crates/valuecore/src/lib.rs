@@ -8,6 +8,7 @@ pub mod value;
 pub mod vdig;
 
 pub use dec::{dec, DecodeError};
+pub use canon_hex::{hex_lower, parse_hex, parse_hex_lower};
 pub use enc::enc;
 pub use value::{Value, ValueTag};
 pub use vdig::{cid, vdig};
