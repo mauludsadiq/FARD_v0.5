@@ -1,0 +1,145 @@
+import("std/float") as float
+import("std/linalg") as linalg
+import("std/hash") as hash
+import("std/json") as json
+
+fn flt(x) { float.from_int(x) }
+fn ftxt(x) { float.to_text(x) }
+fn fadd(a, b) { float.add(a, b) }
+fn fmul(a, b) { float.mul(a, b) }
+fn fdiv(a, b) { float.div(a, b) }
+fn fsub(a, b) { float.sub(a, b) }
+fn fsqrt(x) { float.sqrt(x) }
+fn fabs(x) { float.abs(x) }
+fn fln(x) { float.ln(x) }
+fn fpow(b, e) { float.pow(b, e) }
+fn fneg(x) { float.neg(x) }
+
+fn normal_quantile(p) {
+  let a0 = float.from_text("2.50662823884")
+  let a1 = float.from_text("-18.61500062529")
+  let a2 = float.from_text("41.39119773534")
+  let a3 = float.from_text("-25.44106049637")
+  let b1 = float.from_text("-8.47351093090")
+  let b2 = float.from_text("23.08336743743")
+  let b3 = float.from_text("-21.06224101826")
+  let b4 = float.from_text("3.13082909833")
+  let c0 = float.from_text("0.3374754822726147")
+  let c1 = float.from_text("0.9761690190917186")
+  let c2 = float.from_text("0.1607979714918209")
+  let c3 = float.from_text("0.0276438810333863")
+  let c4 = float.from_text("0.0038405729373609")
+  let c5 = float.from_text("0.0003951896511919")
+  let c6 = float.from_text("0.0000321767881768")
+  let c7 = float.from_text("0.0000002888167364")
+  let c8 = float.from_text("0.0000003960315187")
+  let y = fsub(p, float.from_text("0.5"))
+  let r = fmul(y, y)
+  let num = fmul(y, fadd(fmul(r, fadd(fmul(r, fadd(fmul(a3, r), a2)), a1)), a0))
+  let den = fadd(fmul(r, fadd(fmul(r, fadd(fmul(r, fadd(fmul(b4, r), b3)), b2)), b1)), flt(1))
+  let inner = fdiv(num, den)
+  let r2 = if float.gt(y, flt(0)) then fsub(flt(1), p) else p
+  let r3 = fsqrt(fneg(fln(r2)))
+  let s = if float.le(r3, flt(5)) then fsub(r3, float.from_text("1.6")) else fsub(r3, flt(5))
+  let outer = fadd(fmul(s, fadd(fmul(s, fadd(fmul(s, fadd(fmul(s, fadd(fmul(s, fadd(fmul(s, fadd(fmul(s, fadd(fmul(s, c8), c7)), c6)), c5)), c4)), c3)), c2)), c1)), c0)
+  let outer_signed = if float.lt(y, flt(0)) then fneg(outer) else outer
+  if float.lt(fabs(y), float.from_text("0.42")) then inner else outer_signed
+}
+
+fn chi2_quantile(df, p) {
+  let z = normal_quantile(p)
+  let df_f = float.from_int(df)
+  let x = fdiv(flt(2), fmul(flt(9), df_f))
+  let term = fadd(fsub(flt(1), x), fmul(z, fsqrt(x)))
+  fmul(df_f, fpow(term, flt(3)))
+}
+
+fn portfolio_digest(total_value, equity, n_positions) {
+  let j = json.encode({total_value: ftxt(total_value), equity: ftxt(equity), n: n_positions})
+  hash.sha256_text(j)
+}
+
+// 2-asset quad form: w^T Sigma w where Sigma_ij = vol_i * vol_j * rho_ij / sqrt(252)
+fn compute_quad_2(w0, w1, v0, v1, r00, r01, r10, r11) {
+  let sq252 = fsqrt(float.from_text("252"))
+  let s00 = fdiv(fmul(fmul(v0,v0),r00), sq252)
+  let s01 = fdiv(fmul(fmul(v0,v1),r01), sq252)
+  let s10 = fdiv(fmul(fmul(v1,v0),r10), sq252)
+  let s11 = fdiv(fmul(fmul(v1,v1),r11), sq252)
+  fadd(fadd(fadd(fmul(fmul(w0,s00),w0), fmul(fmul(w0,s01),w1)),
+            fmul(fmul(w1,s10),w0)),
+       fmul(fmul(w1,s11),w1))
+}
+
+fn risk_check_2(w0, w1, v0, v1, rho, total_value, max_var_frac, var_pct) {
+  let quad = compute_quad_2(w0, w1, v0, v1, flt(1), rho, rho, flt(1))
+  let chi2 = chi2_quantile(2, var_pct)
+  let var_bound = fmul(fsqrt(chi2), fsqrt(fabs(quad)))
+  let threshold = fmul(total_value, max_var_frac)
+  {ok: float.le(var_bound, threshold), var_bound: var_bound, threshold: threshold, quad: quad, chi2: chi2}
+}
+
+fn liq_one(price, shares, adv, beta, days, half_spread, k_impact, alpha_impact) {
+  let q = fabs(shares)
+  let cap = fmul(fmul(beta, adv), days)
+  let qcap = if float.lt(q, cap) then q else cap
+  let spread = fmul(fmul(price, half_spread), qcap)
+  let alpha1 = fadd(alpha_impact, flt(1))
+  let impact = fmul(fmul(price, fdiv(k_impact, alpha1)), fpow(qcap, alpha1))
+  fadd(spread, impact)
+}
+
+fn liq_check_2(p0, s0, p1, s1, adv, beta, days, hs, ki, ai, total_value, max_frac) {
+  let c0 = liq_one(p0, s0, adv, beta, days, hs, ki, ai)
+  let c1 = liq_one(p1, s1, adv, beta, days, hs, ki, ai)
+  let total_cost = fadd(c0, c1)
+  let frac = fdiv(total_cost, total_value)
+  {ok: float.le(frac, max_frac), total_cost: total_cost, cost_fraction: frac}
+}
+
+fn lev_check(gross, equity, max_lev, quad, chi2) {
+  let loss_wc = fmul(fsqrt(chi2), fsqrt(fabs(quad)))
+  let headroom = fsub(equity, fdiv(gross, max_lev))
+  let ok = if float.gt(headroom, flt(0)) then float.le(loss_wc, headroom) else false
+  {ok: ok, loss_wc: loss_wc, headroom: headroom, gross: gross, current_lev: fdiv(gross, equity)}
+}
+
+// Portfolio: AAPL x10 @ 170.5, MSFT x5 @ 350.0, rho=0.6
+let p0 = float.from_text("170.5")
+let p1 = float.from_text("350.0")
+let s0 = flt(10)
+let s1 = flt(5)
+let w0 = fmul(s0, p0)
+let w1 = fmul(s1, p1)
+let total_value = fadd(w0, w1)
+let equity = fdiv(total_value, flt(2))
+let gross = fadd(fabs(w0), fabs(w1))
+let rho = float.from_text("0.6")
+let v0 = float.from_text("0.25")
+let v1 = float.from_text("0.30")
+let adv = float.from_text("1000000")
+let beta = float.from_text("0.1")
+let days = flt(5)
+let hs = float.from_text("0.0005")
+let ki = float.from_text("0.1")
+let ai = float.from_text("0.6")
+
+let risk = risk_check_2(w0, w1, v0, v1, rho, total_value,
+                        float.from_text("0.02"), float.from_text("0.95"))
+let liq = liq_check_2(p0, s0, p1, s1, adv, beta, days, hs, ki, ai, total_value,
+                      float.from_text("0.01"))
+let lev = lev_check(gross, equity, flt(3), risk.quad, risk.chi2)
+let overall = if risk.ok then if liq.ok then lev.ok else false else false
+let digest = portfolio_digest(total_value, equity, 2)
+
+{
+  portfolio_digest: digest,
+  total_value: ftxt(total_value),
+  equity: ftxt(equity),
+  risk: {ok: risk.ok, var_bound: ftxt(risk.var_bound), threshold: ftxt(risk.threshold),
+         quad_form: ftxt(risk.quad), chi2_radius: ftxt(risk.chi2)},
+  liquidity: {ok: liq.ok, total_cost: ftxt(liq.total_cost), cost_fraction: ftxt(liq.cost_fraction)},
+  leverage: {ok: lev.ok, loss_wc: ftxt(lev.loss_wc), headroom: ftxt(lev.headroom),
+             gross: ftxt(lev.gross), current_lev: ftxt(lev.current_lev)},
+  overall_verdict: overall
+}
