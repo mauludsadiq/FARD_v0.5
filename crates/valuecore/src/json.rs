@@ -372,6 +372,14 @@ impl JsonVal {
     pub fn is_null(&self) -> bool { matches!(self, JsonVal::Null) }
 }
 
+
+
+impl std::fmt::Display for JsonVal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", to_string(self))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,62 +1,70 @@
 use anyhow::{anyhow, Context, Result};
 use regex::Regex;
-use serde::Deserialize;
-use serde_json::Value;
+use valuecore::json::{JsonVal as Value, from_slice, from_str};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use fard_v0_5_language_gate::{read_bytes, run_fard, sha256_hex};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 struct Gate {
     id: String,
     name: String,
     kind: String,
     program: String,
 
-    #[serde(rename = "expect_result")]
     expected_result: Option<Value>,
 
-    #[serde(rename = "expect_stderr_regex")]
     stderr_regexes: Option<Vec<String>>,
 
-    #[serde(rename = "expect_exit_nonzero")]
     expect_exit_nonzero: Option<bool>,
 
-    #[serde(rename = "lockfile")]
     lockfile_relpath: Option<String>,
+}
+
+
+fn parse_gate(v: &Value) -> anyhow::Result<Gate> {
+    let obj = v.as_object().ok_or_else(|| anyhow::anyhow!("gate must be object"))?;
+    let get_str = |k: &str| -> anyhow::Result<String> {
+        obj.get(k).and_then(|v| v.as_str()).map(|s| s.to_string())
+            .ok_or_else(|| anyhow::anyhow!("gate missing string field: {}", k))
+    };
+    Ok(Gate {
+        id: get_str("id")?,
+        name: get_str("name")?,
+        kind: get_str("kind")?,
+        program: get_str("program")?,
+        expected_result: obj.get("expect_result").cloned(),
+        stderr_regexes: obj.get("expect_stderr_regex").and_then(|v| v.as_array()).map(|a| {
+            a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+        }),
+        expect_exit_nonzero: obj.get("expect_exit_nonzero").and_then(|v| v.as_bool()),
+        lockfile_relpath: obj.get("lockfile").and_then(|v| v.as_str()).map(|s| s.to_string()),
+    })
 }
 
 fn main() -> Result<()> {
     let gates_path = PathBuf::from("tests/gate/gates.json");
     let gates_bytes = fs::read(&gates_path).with_context(|| format!("read {gates_path:?}"))?;
 
-    let v: serde_json::Value =
-        serde_json::from_slice(&gates_bytes).with_context(|| "parse tests/gate/gates.json")?;
+    let v = from_slice(&gates_bytes).with_context(|| "parse tests/gate/gates.json")?;
 
-    let gates: Vec<Gate> = match v {
-        serde_json::Value::Object(mut obj) => {
-            if let Some(sv) = obj.remove("schema") {
-                match sv {
-                    serde_json::Value::String(s) => {
-                        if s != "fard_language_gate_v0_5" {
-                            anyhow::bail!("unexpected gates schema: {}", s);
-                        }
-                    }
-                    _ => anyhow::bail!("gates schema must be a string"),
+    let gate_arr = match &v {
+        Value::Object(obj) => {
+            if let Some(Value::Str(s)) = obj.get("schema") {
+                if s != "fard_language_gate_v0_5" {
+                    anyhow::bail!("unexpected gates schema: {}", s);
                 }
             }
-            if let Some(gv) = obj.remove("gates") {
-                serde_json::from_value(gv).context("decode gates.gates")?
-            } else {
-                anyhow::bail!("gates.json object missing \"gates\" array");
-            }
+            obj.get("gates")
+                .and_then(|g| g.as_array())
+                .ok_or_else(|| anyhow::anyhow!("gates.json missing gates array"))?
         }
-        serde_json::Value::Array(_) => {
-            serde_json::from_value(v).context("decode gates as array")?
-        }
+        Value::Array(a) => a,
         other => anyhow::bail!("gates.json must be an object or array, got {:?}", other),
     };
+
+    let gates: Vec<Gate> = gate_arr.iter().map(parse_gate).collect::<Result<_>>()?;
 
     let cfg = fard_v0_5_language_gate::load_config(std::path::Path::new("fard_gate.toml"))?;
 
@@ -321,7 +329,7 @@ fn trace_parseable(cfg: &fard_v0_5_language_gate::Config, out_dir: &Path) -> Res
         if line.trim().is_empty() {
             continue;
         }
-        serde_json::from_str::<Value>(line)
+        from_str(line)
             .with_context(|| format!("trace line {} not json", i + 1))?;
     }
     Ok(true)
@@ -331,7 +339,7 @@ fn read_result(cfg: &fard_v0_5_language_gate::Config, out_dir: &Path) -> Result<
     let result_path = out_dir.join(&cfg.artifacts.result_relpath);
     if result_path.exists() {
         let bytes = read_bytes(&result_path)?;
-        let v: Value = serde_json::from_slice(&bytes).with_context(|| "parse result.json")?;
+        let v = from_slice(&bytes).with_context(|| "parse result.json")?;
         return Ok(extract_result_value(&v));
     }
 
@@ -342,7 +350,7 @@ fn read_result(cfg: &fard_v0_5_language_gate::Config, out_dir: &Path) -> Result<
         if line.trim().is_empty() {
             continue;
         }
-        let v: Value = serde_json::from_str(line).with_context(|| "parse trace line")?;
+        let v = from_str(line).with_context(|| "parse trace line")?;
         if let Some(r) = extract_result_from_trace_event(&v) {
             return Ok(r);
         }
