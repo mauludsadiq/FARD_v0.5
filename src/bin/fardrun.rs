@@ -2314,30 +2314,103 @@ fn val_eq(a: &Val, b: &Val) -> bool {
     }
 }
 fn call(f: Val, args: Vec<Val>, tracer: &mut Tracer, loader: &mut ModuleLoader) -> Result<Val> {
-    match f {
-        Val::Builtin(b) => call_builtin(b, args, tracer, loader),
-        Val::Func(fun) => {
-            if fun.params.len() != args.len() {
-                bail!("arity mismatch");
-            }
-            let mut e = fun.env.child();
-            for (p, a) in fun.params.iter().zip(args.into_iter()) {
-                if !fard_pat_match_v0_5(p, &a, &mut e)? {
-                    bail!("{} arg pattern did not match", ERROR_PAT_MISMATCH);
+    // Trampoline loop for tail-call optimisation.
+    // Instead of recursing into Rust stack frames for every FARD call,
+    // we detect when the body of a Func evaluates to another Func call
+    // and loop at this level, replacing f/args in place.
+    let mut cur_f = f;
+    let mut cur_args = args;
+    loop {
+        match cur_f {
+            Val::Builtin(b) => return call_builtin(b, cur_args, tracer, loader),
+            Val::Func(fun) => {
+                if fun.params.len() != cur_args.len() {
+                    bail!("arity mismatch: expected {} args, got {}", fun.params.len(), cur_args.len());
                 }
-            }
-            match eval(&fun.body, &mut e, tracer, loader) {
-                Ok(v) => Ok(v),
-                Err(err) => {
-                    if let Some(q) = err.downcast_ref::<QMarkUnwind>() {
-                        Ok(mk_result_err(q.err.clone()))
-                    } else {
-                        Err(err)
+                let mut e = fun.env.child();
+                for (p, a) in fun.params.iter().zip(cur_args.into_iter()) {
+                    if !fard_pat_match_v0_5(p, &a, &mut e)? {
+                        bail!("{} arg pattern did not match", ERROR_PAT_MISMATCH);
+                    }
+                }
+                // Evaluate the body. If the result is a TailCall sentinel, loop.
+                // Otherwise return the value directly.
+                match eval_tco(&fun.body, &mut e, tracer, loader) {
+                    Ok(TcoResult::Done(v)) => return Ok(v),
+                    Ok(TcoResult::TailCall(next_f, next_args)) => {
+                        cur_f = next_f;
+                        cur_args = next_args;
+                        // loop continues
+                    }
+                    Err(err) => {
+                        if let Some(q) = err.downcast_ref::<QMarkUnwind>() {
+                            return Ok(mk_result_err(q.err.clone()));
+                        } else {
+                            return Err(err);
+                        }
                     }
                 }
             }
+            _ => bail!("call on non-function"),
         }
-        _ => bail!("call on non-function"),
+    }
+}
+
+enum TcoResult {
+    Done(Val),
+    TailCall(Val, Vec<Val>),
+}
+
+fn eval_tco(expr: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader) -> Result<TcoResult> {
+    // Only the outermost Call in tail position can be a TailCall.
+    // Everything else delegates to normal eval.
+    match expr {
+        Expr::Call(f, args) => {
+            let fv = eval(f, env, tracer, loader)?;
+            let mut av = Vec::new();
+            for a in args {
+                av.push(eval(a, env, tracer, loader)?);
+            }
+            match fv {
+                Val::Func(_) => Ok(TcoResult::TailCall(fv, av)),
+                Val::Builtin(b) => Ok(TcoResult::Done(call_builtin(b, av, tracer, loader)?)),
+                _ => bail!("call on non-function"),
+            }
+        }
+        Expr::If(c, t, f) => {
+            let cv = eval(c, env, tracer, loader)?;
+            match cv {
+                Val::Bool(true) => eval_tco(t, env, tracer, loader),
+                Val::Bool(false) => eval_tco(f, env, tracer, loader),
+                _ => bail!("if cond must be bool"),
+            }
+        }
+        Expr::Let(name, rhs, body) => {
+            let v = eval(rhs, env, tracer, loader)?;
+            let mut env2 = env.child();
+            env2.set(name.clone(), v);
+            eval_tco(body, &mut env2, tracer, loader)
+        }
+        Expr::Match(scrut, arms) => {
+            let sv = eval(scrut, env, tracer, loader)?;
+            for arm in arms.iter() {
+                let mut env2 = env.child();
+                if fard_pat_match_v0_5(&arm.pat, &sv, &mut env2)? {
+                    if let Some(g) = &arm.guard {
+                        let gv = eval(g, &mut env2, tracer, loader)?;
+                        match gv {
+                            Val::Bool(true) => {}
+                            Val::Bool(false) => continue,
+                            _ => bail!("ERROR_RUNTIME match guard not bool"),
+                        }
+                    }
+                    return eval_tco(&arm.body, &mut env2, tracer, loader);
+                }
+            }
+            bail!("ERROR_RUNTIME no match arm matched")
+        }
+        // All other expressions are not tail calls — evaluate normally
+        other => Ok(TcoResult::Done(eval(other, env, tracer, loader)?)),
     }
 }
 fn call_builtin(
