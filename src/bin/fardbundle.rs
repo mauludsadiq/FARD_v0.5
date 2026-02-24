@@ -5,7 +5,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use serde_json::{json, Value};
+use valuecore::json::{JsonVal as Value, from_slice, to_string, to_string_pretty};
 
 const HELP: &str = r#"fardbundle
 
@@ -108,12 +108,17 @@ fn write_error_json(
 ) -> io::Result<()> {
     fs::create_dir_all(out_dir)?;
     let err_path = out_dir.join("error.json");
-    let payload = if let Some(d) = details {
-        json!({"ok": false, "code": code, "message": message, "details": d})
-    } else {
-        json!({"ok": false, "code": code, "message": message})
+    let payload = {
+        let mut m = std::collections::BTreeMap::new();
+        m.insert("code".to_string(), Value::Str(code.to_string()));
+        m.insert("message".to_string(), Value::Str(message.to_string()));
+        m.insert("ok".to_string(), Value::Bool(false));
+        if let Some(d) = details {
+            m.insert("details".to_string(), d.clone());
+        }
+        Value::Object(m)
     };
-    let bytes = serde_json::to_vec_pretty(&payload).unwrap_or_else(|_| b"{}".to_vec());
+    let bytes = to_string_pretty(&payload).into_bytes();
     fs::write(err_path, bytes)?;
     Ok(())
 }
@@ -159,14 +164,14 @@ fn cmd_build(rest: &[String]) -> Result<(), FardBundleError> {
         return Err(
             FardBundleError::new("ERROR_BUNDLE_BUILD", "root is not a directory")
                 .with_out(&out_dir)
-                .with_details(json!({"root": root.to_string_lossy()})),
+                .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("root".to_string(), Value::Str(format!("{}",root.to_string_lossy()))); Value::Object(_m) }),
         );
     }
     if !is_safe_rel_path(&entry) {
         return Err(
             FardBundleError::new("ERROR_BUNDLE_BUILD", "unsafe entry path")
                 .with_out(&out_dir)
-                .with_details(json!({"entry": entry})),
+                .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("entry".to_string(), Value::Str(format!("{}",entry))); Value::Object(_m) }),
         );
     }
 
@@ -192,7 +197,7 @@ fn cmd_build(rest: &[String]) -> Result<(), FardBundleError> {
         return Err(
             FardBundleError::new("ERROR_BUNDLE_BUILD", "entry does not exist under root")
                 .with_out(&out_dir)
-                .with_details(json!({"entry": entry, "root": root.to_string_lossy()})),
+                .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("entry".to_string(), Value::Str(format!("{}",entry))); _m.insert("root".to_string(), Value::Str(format!("{}",root.to_string_lossy()))); Value::Object(_m) }),
         );
     }
 
@@ -203,7 +208,7 @@ fn cmd_build(rest: &[String]) -> Result<(), FardBundleError> {
             return Err(
                 FardBundleError::new("ERROR_BUNDLE_BUILD", "unsafe file path")
                     .with_out(&out_dir)
-                    .with_details(json!({"path": rel})),
+                    .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("path".to_string(), Value::Str(format!("{}",rel))); Value::Object(_m) }),
             );
         }
         let src = root.join(rel);
@@ -213,7 +218,7 @@ fn cmd_build(rest: &[String]) -> Result<(), FardBundleError> {
         let bytes = fs::read(&src).map_err(|e| {
             FardBundleError::new("ERROR_BUNDLE_BUILD", format!("read failed: {e}"))
                 .with_out(&out_dir)
-                .with_details(json!({"path": rel}))
+                .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("path".to_string(), Value::Str(format!("{}",rel))); Value::Object(_m) })
         })?;
         let d = sha256_hex(&bytes);
 
@@ -222,21 +227,21 @@ fn cmd_build(rest: &[String]) -> Result<(), FardBundleError> {
             fs::create_dir_all(parent).map_err(|e| {
                 FardBundleError::new("ERROR_BUNDLE_BUILD", format!("mkdir failed: {e}"))
                     .with_out(&out_dir)
-                    .with_details(json!({"path": rel}))
+                    .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("path".to_string(), Value::Str(format!("{}",rel))); Value::Object(_m) })
             })?;
         }
         fs::write(&dst, &bytes).map_err(|e| {
             FardBundleError::new("ERROR_BUNDLE_BUILD", format!("write failed: {e}"))
                 .with_out(&out_dir)
-                .with_details(json!({"path": rel}))
+                .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("path".to_string(), Value::Str(format!("{}",rel))); Value::Object(_m) })
         })?;
 
         let mut rec = BTreeMap::<String, Value>::new();
-        rec.insert("path".to_string(), Value::String(rel.to_string()));
-        rec.insert("sha256".to_string(), Value::String(format!("sha256:{d}")));
+        rec.insert("path".to_string(), Value::Str(rel.to_string()));
+        rec.insert("sha256".to_string(), Value::Str(format!("sha256:{d}")));
         rec.insert(
             "len".to_string(),
-            Value::Number((bytes.len() as u64).into()),
+            Value::Int(bytes.len() as i64),
         );
         files.push(Value::Object(rec.into_iter().collect()));
     }
@@ -248,7 +253,7 @@ fn cmd_build(rest: &[String]) -> Result<(), FardBundleError> {
         let bytes = fs::read(&entry_path).map_err(|e| {
             FardBundleError::new("ERROR_BUNDLE_BUILD", format!("read entry failed: {e}"))
                 .with_out(&out_dir)
-                .with_details(json!({"entry": entry}))
+                .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("entry".to_string(), Value::Str(format!("{}",entry))); Value::Object(_m) })
         })?;
         let d = sha256_hex(&bytes);
         let dst = files_dir.join(&entry);
@@ -256,21 +261,21 @@ fn cmd_build(rest: &[String]) -> Result<(), FardBundleError> {
             fs::create_dir_all(parent).map_err(|e| {
                 FardBundleError::new("ERROR_BUNDLE_BUILD", format!("mkdir failed: {e}"))
                     .with_out(&out_dir)
-                    .with_details(json!({"entry": entry}))
+                    .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("entry".to_string(), Value::Str(format!("{}",entry))); Value::Object(_m) })
             })?;
         }
         fs::write(&dst, &bytes).map_err(|e| {
             FardBundleError::new("ERROR_BUNDLE_BUILD", format!("write entry failed: {e}"))
                 .with_out(&out_dir)
-                .with_details(json!({"entry": entry}))
+                .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("entry".to_string(), Value::Str(format!("{}",entry))); Value::Object(_m) })
         })?;
 
         let mut rec = BTreeMap::<String, Value>::new();
-        rec.insert("path".to_string(), Value::String(entry.clone()));
-        rec.insert("sha256".to_string(), Value::String(format!("sha256:{d}")));
+        rec.insert("path".to_string(), Value::Str(entry.clone()));
+        rec.insert("sha256".to_string(), Value::Str(format!("sha256:{d}")));
         rec.insert(
             "len".to_string(),
-            Value::Number((bytes.len() as u64).into()),
+            Value::Int(bytes.len() as i64),
         );
         files.push(Value::Object(rec.into_iter().collect()));
     }
@@ -284,32 +289,20 @@ fn cmd_build(rest: &[String]) -> Result<(), FardBundleError> {
     let mut manifest = BTreeMap::<String, Value>::new();
     manifest.insert(
         "schema".to_string(),
-        Value::String("fard.bundle.v0_1".to_string()),
+        Value::Str("fard.bundle.v0_1".to_string()),
     );
-    manifest.insert("entry".to_string(), Value::String(entry.clone()));
+    manifest.insert("entry".to_string(), Value::Str(entry.clone()));
     manifest.insert("files".to_string(), Value::Array(files.clone()));
 
-    let manifest_bytes = serde_json::to_vec(&manifest).map_err(|e| {
-        FardBundleError::new(
-            "ERROR_BUNDLE_BUILD",
-            format!("serialize manifest failed: {e}"),
-        )
-        .with_out(&out_dir)
-    })?;
+    let manifest_bytes = to_string(&Value::Object(manifest.clone())).into_bytes();
     let bundle_digest = sha256_hex(&manifest_bytes);
     manifest.insert(
         "bundle_digest".to_string(),
-        Value::String(format!("sha256:{bundle_digest}")),
+        Value::Str(format!("sha256:{bundle_digest}")),
     );
 
     let bundle_json_path = bundle_dir.join("bundle.json");
-    let bundle_bytes = serde_json::to_vec_pretty(&manifest).map_err(|e| {
-        FardBundleError::new(
-            "ERROR_BUNDLE_BUILD",
-            format!("serialize bundle.json failed: {e}"),
-        )
-        .with_out(&out_dir)
-    })?;
+    let bundle_bytes = to_string_pretty(&Value::Object(manifest.clone())).into_bytes();
     fs::write(&bundle_json_path, bundle_bytes).map_err(|e| {
         FardBundleError::new(
             "ERROR_BUNDLE_BUILD",
@@ -318,12 +311,14 @@ fn cmd_build(rest: &[String]) -> Result<(), FardBundleError> {
         .with_out(&out_dir)
     })?;
 
-    let lock = json!({
-        "schema": "fard.imports_lock.v0_1",
-        "bundle_digest": format!("sha256:{bundle_digest}")
-    });
+    let lock = {
+        let mut m = std::collections::BTreeMap::new();
+        m.insert("bundle_digest".to_string(), Value::Str(format!("sha256:{bundle_digest}")));
+        m.insert("schema".to_string(), Value::Str("fard.imports_lock.v0_1".to_string()));
+        Value::Object(m)
+    };
     let lock_path = bundle_dir.join("imports.lock.json");
-    let lock_bytes = serde_json::to_vec_pretty(&lock).unwrap_or_else(|_| b"{}".to_vec());
+    let lock_bytes = to_string_pretty(&lock).into_bytes();
     fs::write(&lock_path, lock_bytes).map_err(|e| {
         FardBundleError::new(
             "ERROR_BUNDLE_BUILD",
@@ -349,7 +344,7 @@ fn cmd_verify(rest: &[String]) -> Result<(), FardBundleError> {
             format!("failed to read bundle.json: {e}"),
         )
         .with_out(&out_dir)
-        .with_details(json!({"bundle_arg": bundle_arg, "bundle_path": bundle_path.to_string_lossy(), "bundle_abs": bundle_abs}))
+        .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("bundle_abs".to_string(), Value::Str(format!("{}",bundle_abs))); _m.insert("bundle_arg".to_string(), Value::Str(format!("{}",bundle_arg))); _m.insert("bundle_path".to_string(), Value::Str(format!("{}",bundle_path.to_string_lossy()))); Value::Object(_m) })
     })?;
 
     verify_bundle_value(&bundle_path, &v).map_err(|mut e| {
@@ -365,7 +360,7 @@ fn cmd_verify(rest: &[String]) -> Result<(), FardBundleError> {
                     format!("failed to read imports.lock.json: {e}"),
                 )
                 .with_out(&out_dir)
-                .with_details(json!({"lock": lock_path.to_string_lossy()}))
+                .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("lock".to_string(), Value::Str(format!("{}",lock_path.to_string_lossy()))); Value::Object(_m) })
             })?;
             verify_lock_value(&v, &lock_v).map_err(|mut e| {
                 e = e.with_out(&out_dir);
@@ -391,7 +386,7 @@ fn cmd_run(rest: &[String]) -> Result<(), FardBundleError> {
             format!("failed to read bundle.json: {e}"),
         )
         .with_out(&out_dir)
-        .with_details(json!({"bundle_arg": bundle_arg, "bundle_path": bundle_path.to_string_lossy(), "bundle_abs": bundle_abs}))
+        .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("bundle_abs".to_string(), Value::Str(format!("{}",bundle_abs))); _m.insert("bundle_arg".to_string(), Value::Str(format!("{}",bundle_arg))); _m.insert("bundle_path".to_string(), Value::Str(format!("{}",bundle_path.to_string_lossy()))); Value::Object(_m) })
     })?;
 
     verify_bundle_value(&bundle_path, &v).map_err(|mut e| {
@@ -407,7 +402,7 @@ fn cmd_run(rest: &[String]) -> Result<(), FardBundleError> {
                     format!("failed to read imports.lock.json: {e}"),
                 )
                 .with_out(&out_dir)
-                .with_details(json!({"lock": lock_path.to_string_lossy()}))
+                .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("lock".to_string(), Value::Str(format!("{}",lock_path.to_string_lossy()))); Value::Object(_m) })
             })?;
             verify_lock_value(&v, &lock_v).map_err(|mut e| {
                 e = e.with_out(&out_dir);
@@ -447,7 +442,7 @@ fn cmd_run(rest: &[String]) -> Result<(), FardBundleError> {
         )
         .with_out(&out_dir)
         .with_details(
-            json!({"hint": "build target/debug/fardrun and ensure it's next to fardbundle"}),
+            { let mut _m = std::collections::BTreeMap::new(); _m.insert("hint".to_string(), Value::Str(format!("{}","build target/debug/fardrun and ensure it's next to fardbundle"))); Value::Object(_m) },
         )
     })?;
 
@@ -476,7 +471,7 @@ fn cmd_run(rest: &[String]) -> Result<(), FardBundleError> {
         return Err(
             FardBundleError::new("ERROR_BUNDLE_RUN", "fardrun returned nonzero status")
                 .with_out(&out_dir)
-                .with_details(json!({"status": status.code()})),
+                .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("status".to_string(), Value::Int(status.code().unwrap_or(-1) as i64)); Value::Object(_m) }),
         );
     }
 
@@ -485,7 +480,7 @@ fn cmd_run(rest: &[String]) -> Result<(), FardBundleError> {
 
 fn load_json(path: &Path) -> io::Result<Value> {
     let bytes = fs::read(path)?;
-    let v: Value = serde_json::from_slice(&bytes)
+    let v = from_slice(&bytes)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("{e}")))?;
     Ok(v)
 }
@@ -572,7 +567,7 @@ fn verify_bundle_value(bundle_path: &Path, v: &Value) -> Result<(), FardBundleEr
             "ERROR_BUNDLE_VERIFY",
             "DIGEST_MISMATCH: bundle_digest mismatch",
         )
-        .with_details(json!({"expected": want, "computed": computed})));
+        .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("computed".to_string(), Value::Str(format!("{}",computed))); _m.insert("expected".to_string(), Value::Str(format!("{}",want))); Value::Object(_m) }));
     }
 
     let bundle_dir = bundle_path.parent().ok_or_else(|| {
@@ -595,14 +590,14 @@ fn verify_bundle_value(bundle_path: &Path, v: &Value) -> Result<(), FardBundleEr
                 "ERROR_BUNDLE_VERIFY",
                 "bundled file missing on disk",
             )
-            .with_details(json!({"missing": rel})));
+            .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("missing".to_string(), Value::Str(format!("{}",rel))); Value::Object(_m) }));
         }
         let bytes = fs::read(&src).map_err(|e| {
             FardBundleError::new(
                 "ERROR_BUNDLE_VERIFY",
                 format!("read bundled file failed: {e}"),
             )
-            .with_details(json!({"path": rel}))
+            .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("path".to_string(), Value::Str(format!("{}",rel))); Value::Object(_m) })
         })?;
         let d = format!("sha256:{}", sha256_hex(&bytes));
         if d != sha {
@@ -610,7 +605,7 @@ fn verify_bundle_value(bundle_path: &Path, v: &Value) -> Result<(), FardBundleEr
                 "ERROR_BUNDLE_VERIFY",
                 "DIGEST_MISMATCH: bundled file digest mismatch",
             )
-            .with_details(json!({"path": rel, "expected": sha, "computed": d})));
+            .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("computed".to_string(), Value::Str(format!("{}",d))); _m.insert("expected".to_string(), Value::Str(format!("{}",sha))); _m.insert("path".to_string(), Value::Str(format!("{}",rel))); Value::Object(_m) }));
         }
     }
 
@@ -645,7 +640,7 @@ fn verify_lock_value(bundle_v: &Value, lock_v: &Value) -> Result<(), FardBundleE
     if want != bundle_digest {
         return Err(
             FardBundleError::new("ERROR_BUNDLE_LOCK_MISMATCH", "LOCK_MISMATCH").with_details(
-                json!({"lock_bundle_digest": want, "bundle_bundle_digest": bundle_digest}),
+                { let mut _m = std::collections::BTreeMap::new(); _m.insert("bundle_bundle_digest".to_string(), Value::Str(format!("{}",bundle_digest))); _m.insert("lock_bundle_digest".to_string(), Value::Str(format!("{}",want))); Value::Object(_m) },
             ),
         );
     }
@@ -663,7 +658,7 @@ fn compute_bundle_digest(v: &Value) -> Result<String, String> {
     m.insert("entry".to_string(), entry);
     m.insert("files".to_string(), files);
 
-    let bytes = serde_json::to_vec(&m).map_err(|e| format!("{e}"))?;
+    let bytes = to_string(&Value::Object(m)).into_bytes();
     let d = sha256_hex(&bytes);
     Ok(format!("sha256:{d}"))
 }
@@ -675,13 +670,13 @@ fn extract_bundle_sources(
 ) -> Result<(), FardBundleError> {
     let bundle_dir = bundle_path.parent().ok_or_else(|| {
         FardBundleError::new("ERROR_BUNDLE_VERIFY", "bundle.json has no parent dir")
-            .with_details(json!({"bundle": bundle_path.to_string_lossy()}))
+            .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("bundle".to_string(), Value::Str(format!("{}",bundle_path.to_string_lossy()))); Value::Object(_m) })
     })?;
     let files_root = bundle_dir.join("files");
 
     let files = v.get("files").and_then(|x| x.as_array()).ok_or_else(|| {
         FardBundleError::new("ERROR_BUNDLE_VERIFY", "files missing in manifest")
-            .with_details(json!({"bundle": bundle_path.to_string_lossy()}))
+            .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("bundle".to_string(), Value::Str(format!("{}",bundle_path.to_string_lossy()))); Value::Object(_m) })
     })?;
 
     for rec in files.iter() {
@@ -689,13 +684,13 @@ fn extract_bundle_sources(
         if rel.is_empty() {
             return Err(
                 FardBundleError::new("ERROR_BUNDLE_VERIFY", "file record missing path")
-                    .with_details(json!({"bundle": bundle_path.to_string_lossy()})),
+                    .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("bundle".to_string(), Value::Str(format!("{}",bundle_path.to_string_lossy()))); Value::Object(_m) }),
             );
         }
         if !is_safe_rel_path(rel) {
             return Err(
                 FardBundleError::new("ERROR_BUNDLE_VERIFY", "unsafe file path")
-                    .with_details(json!({"path": rel})),
+                    .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("path".to_string(), Value::Str(format!("{}",rel))); Value::Object(_m) }),
             );
         }
 
@@ -703,7 +698,7 @@ fn extract_bundle_sources(
         if !src.is_file() {
             return Err(
                 FardBundleError::new("ERROR_BUNDLE_VERIFY", "entry missing in manifest")
-                    .with_details(json!({"missing": rel})),
+                    .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("missing".to_string(), Value::Str(format!("{}",rel))); Value::Object(_m) }),
             );
         }
 
@@ -712,7 +707,7 @@ fn extract_bundle_sources(
                 "ERROR_BUNDLE_VERIFY",
                 format!("failed to read bundled file: {e}"),
             )
-            .with_details(json!({"path": rel, "src": src.to_string_lossy()}))
+            .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("path".to_string(), Value::Str(format!("{}",rel))); _m.insert("src".to_string(), Value::Str(format!("{}",src.to_string_lossy()))); Value::Object(_m) })
         })?;
 
         let dst = extract_root.join(rel);
@@ -722,7 +717,7 @@ fn extract_bundle_sources(
                     "ERROR_BUNDLE_RUN",
                     format!("failed to create extract subdir: {e}"),
                 )
-                .with_details(json!({"path": rel}))
+                .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("path".to_string(), Value::Str(format!("{}",rel))); Value::Object(_m) })
             })?;
         }
         fs::write(&dst, &bytes).map_err(|e| {
@@ -730,7 +725,7 @@ fn extract_bundle_sources(
                 "ERROR_BUNDLE_RUN",
                 format!("failed to write extracted file: {e}"),
             )
-            .with_details(json!({"path": rel, "dst": dst.to_string_lossy()}))
+            .with_details({ let mut _m = std::collections::BTreeMap::new(); _m.insert("dst".to_string(), Value::Str(format!("{}",dst.to_string_lossy()))); _m.insert("path".to_string(), Value::Str(format!("{}",rel))); Value::Object(_m) })
         })?;
     }
 

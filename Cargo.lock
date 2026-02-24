@@ -484,8 +484,6 @@ dependencies = [
  "anyhow",
  "fardlang",
  "pretty_assertions",
- "serde",
- "serde_json",
  "tempfile",
  "valuecore",
 ]
@@ -502,6 +500,7 @@ dependencies = [
  "p256",
  "rsa",
  "serde_json",
+ "sha2",
  "signature",
  "valuecore",
 ]

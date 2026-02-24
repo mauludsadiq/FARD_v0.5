@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use valuecore::hex_lower;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -177,7 +178,7 @@ fn main() -> Result<()> {
 
     // module_graph.json: canonical graph (not used by runner yet, but part of frontend contract)
     let mg = modgraph::ModuleGraph::single("main", "main", &source_cid);
-    let mg_json = serde_json::to_string_pretty(&mg).unwrap();
+    let mg_json = mg.to_json_pretty();
     write_text(&out.join("module_graph.json"), &mg_json)?;
 
     // Compiler contract (v0): prints CID(canonical module bytes)

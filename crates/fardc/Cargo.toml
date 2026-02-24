@@ -5,8 +5,6 @@ edition = "2021"
 
 [dependencies]
 fardlang = { path = "../fardlang" }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 anyhow = "1"
 valuecore = { path = "../valuecore" }
 

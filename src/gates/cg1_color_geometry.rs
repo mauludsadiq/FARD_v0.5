@@ -2,7 +2,6 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use serde_json;
 
 use crate::Config;
 
@@ -75,13 +74,15 @@ pub fn run(cfg: &Config, root: &Path) -> Result<(), String> {
         )
     })?;
 
-    let v: serde_json::Value = serde_json::from_slice(&result_bytes)
+    let v = valuecore::json::from_slice(&result_bytes)
         .map_err(|e| format!("CG1: invalid result.json: {}", e))?;
 
-    let md = v
-        .get("result")
-        .and_then(|x| x.as_str())
-        .ok_or_else(|| "CG1: result not a string".to_string())?;
+    let md = match &v {
+        valuecore::json::JsonVal::Object(m) => m.get("result")
+            .and_then(|x| if let valuecore::json::JsonVal::Str(s) = x { Some(s.as_str()) } else { None })
+            .ok_or_else(|| "CG1: result not a string".to_string())?,
+        _ => return Err("CG1: result.json not an object".to_string()),
+    };
 
     fs::write(&out_path, md.as_bytes()).map_err(|e| {
         format!(

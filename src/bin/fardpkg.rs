@@ -3,7 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
-use serde_json::{json, Value as J};
+use valuecore::json::{JsonVal as J, from_slice, to_string_pretty};
+use std::collections::BTreeMap as JMap;
 
 fn sha256_bytes(bytes: &[u8]) -> String {
         let mut h = valuecore::Sha256::new();
@@ -13,13 +14,13 @@ fn sha256_bytes(bytes: &[u8]) -> String {
 
 fn read_json(p: &Path) -> Result<J> {
     let b = fs::read(p).with_context(|| format!("cannot read: {}", p.display()))?;
-    Ok(serde_json::from_slice(&b).with_context(|| format!("bad json: {}", p.display()))?)
+    from_slice(&b).with_context(|| format!("bad json: {}", p.display()))
 }
 
 fn write_json(p: &Path, v: &J) -> Result<()> {
-    let s = serde_json::to_vec_pretty(v)?;
+    let s = to_string_pretty(v);
     fs::create_dir_all(p.parent().unwrap())?;
-    fs::write(p, s)?;
+    fs::write(p, s.as_bytes())?;
     Ok(())
 }
 
@@ -95,15 +96,15 @@ fn main() -> Result<()> {
     fs::create_dir_all(&files_dir)?;
 
     // entrypoints: module_id -> path
-    let eps = m
+    let eps_val = m
         .get("entrypoints")
-        .and_then(|x| x.as_object())
         .ok_or_else(|| anyhow!("missing entrypoints"))?;
+    let eps = eps_val.as_object()
+        .ok_or_else(|| anyhow!("entrypoints must be object"))?;
     let exports = m
         .get("exports")
-        .and_then(|x| x.as_object())
         .cloned()
-        .unwrap_or_default();
+        .unwrap_or(J::Object(std::collections::BTreeMap::new()));
 
     let mut digests: BTreeMap<String, String> = BTreeMap::new();
     let mut copied: BTreeSet<String> = BTreeSet::new();
@@ -126,39 +127,45 @@ fn main() -> Result<()> {
     }
 
     // package digest = sha256 of deterministic JSON of digests map
-    let digests_json = json!({
-        "schema": "fard.pkg_digests.v0_1",
-        "package": format!("{name}@{ver}"),
-        "modules": digests
-    });
-    let dig_bytes = serde_json::to_vec(&digests_json)?;
+    let digests_json = {
+        let mut m = JMap::new();
+        m.insert("modules".to_string(), J::Object(digests.into_iter().map(|(k,v)| (k, J::Str(v))).collect()));
+        m.insert("package".to_string(), J::Str(format!("{name}@{ver}")));
+        m.insert("schema".to_string(), J::Str("fard.pkg_digests.v0_1".to_string()));
+        J::Object(m)
+    };
+    let dig_bytes = valuecore::json::to_string(&digests_json).into_bytes();
     let pkg_digest = sha256_bytes(&dig_bytes);
 
     // write registry files
     write_json(
         &base.join("package.json"),
-        &json!({
-            "schema": "fard.package_record.v0_1",
-            "name": name,
-            "version": ver,
-            "entrypoints": m.get("entrypoints").cloned().unwrap_or(json!({})),
-            "exports": exports,
-            "package_digest": pkg_digest
-        }),
+        &{
+            let mut obj = JMap::new();
+            obj.insert("entrypoints".to_string(), m.get("entrypoints").cloned().unwrap_or(J::Object(JMap::new())));
+            obj.insert("exports".to_string(), exports);
+            obj.insert("name".to_string(), J::Str(name.to_string()));
+            obj.insert("package_digest".to_string(), J::Str(pkg_digest.clone()));
+            obj.insert("schema".to_string(), J::Str("fard.package_record.v0_1".to_string()));
+            obj.insert("version".to_string(), J::Str(ver.to_string()));
+            J::Object(obj)
+        },
     )?;
     write_json(&base.join("digests.json"), &digests_json)?;
 
     // write out summary
     write_json(
         &out.join("publish.json"),
-        &json!({
-            "ok": true,
-            "schema": "fard.publish_out.v0_1",
-            "name": name,
-            "version": ver,
-            "package_digest": pkg_digest,
-            "copied_files": copied.into_iter().collect::<Vec<_>>()
-        }),
+        &{
+            let mut obj = JMap::new();
+            obj.insert("copied_files".to_string(), J::Array(copied.into_iter().map(J::Str).collect()));
+            obj.insert("name".to_string(), J::Str(name.to_string()));
+            obj.insert("ok".to_string(), J::Bool(true));
+            obj.insert("package_digest".to_string(), J::Str(pkg_digest.clone()));
+            obj.insert("schema".to_string(), J::Str("fard.publish_out.v0_1".to_string()));
+            obj.insert("version".to_string(), J::Str(ver.to_string()));
+            J::Object(obj)
+        },
     )?;
 
     Ok(())

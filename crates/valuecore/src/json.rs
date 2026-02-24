@@ -342,6 +342,36 @@ impl<'a> Parser<'a> {
     }
 }
 
+
+impl JsonVal {
+    pub fn get(&self, key: &str) -> Option<&JsonVal> {
+        match self { JsonVal::Object(m) => m.get(key), _ => None }
+    }
+    pub fn as_str(&self) -> Option<&str> {
+        match self { JsonVal::Str(s) => Some(s.as_str()), _ => None }
+    }
+    pub fn as_bool(&self) -> Option<bool> {
+        match self { JsonVal::Bool(b) => Some(*b), _ => None }
+    }
+    pub fn as_i64(&self) -> Option<i64> {
+        match self { JsonVal::Int(n) => Some(*n), _ => None }
+    }
+    pub fn as_f64(&self) -> Option<f64> {
+        match self {
+            JsonVal::Float(f) => Some(*f),
+            JsonVal::Int(n) => Some(*n as f64),
+            _ => None,
+        }
+    }
+    pub fn as_array(&self) -> Option<&Vec<JsonVal>> {
+        match self { JsonVal::Array(a) => Some(a), _ => None }
+    }
+    pub fn as_object(&self) -> Option<&std::collections::BTreeMap<String, JsonVal>> {
+        match self { JsonVal::Object(m) => Some(m), _ => None }
+    }
+    pub fn is_null(&self) -> bool { matches!(self, JsonVal::Null) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
