@@ -4,6 +4,7 @@ pub mod builtin_pipe_v1;
 pub mod builtin_sig_table_v1;
 
 use anyhow::{anyhow, bail, Context, Result};
+use valuecore::json::{JsonVal, from_slice, from_str as json_from_str};
 use regex::Regex;
 use serde::Deserialize;
 use std::ffi::OsString;
@@ -156,7 +157,7 @@ pub fn assert_artifacts_exist(cfg: &Config, r: &RunResult) -> Result<()> {
     Ok(())
 }
 
-pub fn parse_ndjson_bytes(trace_bytes: &[u8]) -> Result<Vec<serde_json::Value>> {
+pub fn parse_ndjson_bytes(trace_bytes: &[u8]) -> Result<Vec<JsonVal>> {
     let s = std::str::from_utf8(trace_bytes).context("trace.ndjson is not UTF-8")?;
     let mut out = Vec::new();
     for (idx, line) in s.lines().enumerate() {
@@ -164,21 +165,21 @@ pub fn parse_ndjson_bytes(trace_bytes: &[u8]) -> Result<Vec<serde_json::Value>> 
         if line.is_empty() {
             continue;
         }
-        let v: serde_json::Value = serde_json::from_str(line)
+        let v: JsonVal = json_from_str(line)
             .with_context(|| format!("invalid JSON on trace line {}: {}", idx + 1, line))?;
         out.push(v);
     }
     Ok(out)
 }
 
-pub fn find_events<'a>(trace: &'a [serde_json::Value], t: &str) -> Vec<&'a serde_json::Value> {
+pub fn find_events<'a>(trace: &'a [JsonVal], t: &str) -> Vec<&'a JsonVal> {
     trace
         .iter()
         .filter(|v| v.get("t").and_then(|x| x.as_str()) == Some(t))
         .collect()
 }
 
-pub fn require_event(trace: &[serde_json::Value], t: &str) -> Result<()> {
+pub fn require_event(trace: &[JsonVal], t: &str) -> Result<()> {
     if find_events(trace, t).is_empty() {
         bail!("trace missing event type t={}", t);
     }
@@ -235,16 +236,15 @@ pub fn sha256_file_hex(path: &Path) -> Result<String> {
     Ok(sha256_hex(&bytes))
 }
 
-pub fn read_json_value(path: &Path) -> Result<serde_json::Value> {
+pub fn read_json_value(path: &Path) -> Result<JsonVal> {
     let bytes = read_bytes(path)?;
-    let v: serde_json::Value =
-        serde_json::from_slice(&bytes).with_context(|| format!("parse JSON {path:?}"))?;
+    let v = from_slice(&bytes).with_context(|| format!("parse JSON {path:?}"))?;
     Ok(v)
 }
 
-pub fn extract_result_value(result_json: &serde_json::Value) -> serde_json::Value {
+pub fn extract_result_value(result_json: &JsonVal) -> JsonVal {
     match result_json {
-        serde_json::Value::Object(map) => {
+        JsonVal::Object(map) => {
             if let Some(v) = map.get("result") {
                 return v.clone();
             }
@@ -260,7 +260,7 @@ pub fn extract_result_value(result_json: &serde_json::Value) -> serde_json::Valu
     }
 }
 
-pub fn parse_ndjson_lines(path: &Path) -> Result<Vec<serde_json::Value>> {
+pub fn parse_ndjson_lines(path: &Path) -> Result<Vec<JsonVal>> {
     let s = fs::read_to_string(path).with_context(|| format!("read {path:?}"))?;
     let mut out = Vec::new();
     for (i, line) in s.lines().enumerate() {
@@ -268,16 +268,16 @@ pub fn parse_ndjson_lines(path: &Path) -> Result<Vec<serde_json::Value>> {
         if l.is_empty() {
             continue;
         }
-        let v: serde_json::Value = serde_json::from_str(l)
+        let v: JsonVal = json_from_str(l)
             .with_context(|| format!("ndjson parse error at line {} in {path:?}", i + 1))?;
         out.push(v);
     }
     Ok(out)
 }
 
-pub fn extract_result_from_trace(events: &[serde_json::Value]) -> Option<serde_json::Value> {
+pub fn extract_result_from_trace(events: &[JsonVal]) -> Option<JsonVal> {
     for ev in events.iter().rev() {
-        if let serde_json::Value::Object(map) = ev {
+        if let JsonVal::Object(map) = ev {
             if map.get("t").and_then(|v| v.as_str()) == Some("result") {
                 if let Some(v) = map.get("v") {
                     return Some(v.clone());
