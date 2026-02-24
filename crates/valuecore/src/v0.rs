@@ -1,4 +1,5 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
+use crate::json::{self, JsonVal};
 use crate::sha256::Sha256;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -240,25 +241,20 @@ pub fn encode_json(v: &V) -> Vec<u8> {
     out
 }
 
-fn expect_obj<'a>(
-    j: &'a serde_json::Value,
-) -> Result<&'a serde_json::Map<String, serde_json::Value>> {
-    j.as_object()
-        .ok_or_else(|| anyhow!("ERROR_JSON expected object"))
+fn expect_obj<'a>(j: &'a JsonVal) -> Result<&'a std::collections::BTreeMap<String, JsonVal>> {
+    match j { JsonVal::Object(m) => Ok(m), _ => Err(anyhow!("ERROR_JSON expected object")) }
 }
 
-fn expect_str<'a>(j: &'a serde_json::Value) -> Result<&'a str> {
-    j.as_str()
-        .ok_or_else(|| anyhow!("ERROR_JSON expected string"))
+fn expect_str<'a>(j: &'a JsonVal) -> Result<&'a str> {
+    match j { JsonVal::Str(s) => Ok(s.as_str()), _ => Err(anyhow!("ERROR_JSON expected string")) }
 }
 
-fn expect_i64(j: &serde_json::Value) -> Result<i64> {
-    j.as_i64().ok_or_else(|| anyhow!("ERROR_JSON expected int"))
+fn expect_i64(j: &JsonVal) -> Result<i64> {
+    match j { JsonVal::Int(n) => Ok(*n), _ => Err(anyhow!("ERROR_JSON expected int")) }
 }
 
-fn expect_bool(j: &serde_json::Value) -> Result<bool> {
-    j.as_bool()
-        .ok_or_else(|| anyhow!("ERROR_JSON expected bool"))
+fn expect_bool(j: &JsonVal) -> Result<bool> {
+    match j { JsonVal::Bool(b) => Ok(*b), _ => Err(anyhow!("ERROR_JSON expected bool")) }
 }
 
 fn parse_hex_bytes(s: &str) -> Result<Vec<u8>> {
@@ -288,12 +284,11 @@ fn parse_hex_bytes(s: &str) -> Result<Vec<u8>> {
 }
 
 pub fn decode_json(bytes: &[u8]) -> Result<V> {
-    let j: serde_json::Value =
-        serde_json::from_slice(bytes).map_err(|e| anyhow!("ERROR_JSON {}", e))?;
+    let j = json::from_slice(bytes).map_err(|e| anyhow!("ERROR_JSON {}", e))?;
     decode_value(&j)
 }
 
-fn decode_value(j: &serde_json::Value) -> Result<V> {
+fn decode_value(j: &JsonVal) -> Result<V> {
     let obj = expect_obj(j)?;
     let t = obj
         .get("t")
@@ -330,9 +325,7 @@ fn decode_value(j: &serde_json::Value) -> Result<V> {
             let v = obj
                 .get("v")
                 .ok_or_else(|| anyhow!("ERROR_JSON missing v"))?;
-            let arr = v
-                .as_array()
-                .ok_or_else(|| anyhow!("ERROR_JSON list v must be array"))?;
+            let arr = match v { JsonVal::Array(a) => a, _ => return Err(anyhow!("ERROR_JSON list v must be array")) };
             let mut out = Vec::with_capacity(arr.len());
             for x in arr {
                 out.push(decode_value(x)?);
@@ -343,9 +336,7 @@ fn decode_value(j: &serde_json::Value) -> Result<V> {
             let v = obj
                 .get("v")
                 .ok_or_else(|| anyhow!("ERROR_JSON missing v"))?;
-            let arr = v
-                .as_array()
-                .ok_or_else(|| anyhow!("ERROR_JSON map v must be array"))?;
+            let arr = match v { JsonVal::Array(a) => a, _ => return Err(anyhow!("ERROR_JSON map v must be array")) };
             let mut out = Vec::with_capacity(arr.len());
 
             // Gate 11: canonical-only decode
@@ -354,9 +345,7 @@ fn decode_value(j: &serde_json::Value) -> Result<V> {
             let mut prev_key: Option<String> = None;
 
             for pair in arr {
-                let p = pair
-                    .as_array()
-                    .ok_or_else(|| anyhow!("ERROR_JSON map pair must be array"))?;
+                let p = match pair { JsonVal::Array(a) => a, _ => return Err(anyhow!("ERROR_JSON map pair must be array")) };
                 if p.len() != 2 {
                     return Err(anyhow!("ERROR_JSON map pair len must be 2"));
                 }
