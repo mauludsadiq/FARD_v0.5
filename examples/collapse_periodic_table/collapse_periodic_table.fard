@@ -1,0 +1,121 @@
+import("std/float") as float
+import("std/linalg") as linalg
+
+// Collapse Periodic Table — synthetic 5-element demo
+// Elements: H, He, Li, Be, B
+// Families: {H,He}=family0 rep=H, {Li,Be,B}=family1 rep=Li
+// Reference (Python/numpy): H0=2.851, H1=0.476, phi_norm=0.554
+//
+// linalg.eigh(M) returns:
+//   vals: list of eigenvalues (ascending)
+//   vecs: list of eigenvectors as ROWS, so matvec(vecs, x) = V^T x
+//         and matvec(transpose(vecs), coords) = V coords
+
+fn make_L() {
+  let w01 = float.from_text("0.119433")
+  let w02 = float.from_text("0.367879")
+  let w03 = float.from_text("0.195499")
+  let w04 = float.from_text("0.029951")
+  let w12 = float.from_text("0.072440")
+  let w13 = float.from_text("0.062838")
+  let w14 = float.from_text("0.166427")
+  let w23 = float.from_text("0.876166")
+  let w24 = float.from_text("0.221308")
+  let w34 = float.from_text("0.379083")
+  let z = float.from_int(0)
+  let d0 = float.add(float.add(float.add(w01, w02), w03), w04)
+  let d1 = float.add(float.add(float.add(w01, w12), w13), w14)
+  let d2 = float.add(float.add(float.add(w02, w12), w23), w24)
+  let d3 = float.add(float.add(float.add(w03, w13), w23), w34)
+  let d4 = float.add(float.add(float.add(w04, w14), w24), w34)
+  let nw01 = float.neg(w01)
+  let nw02 = float.neg(w02)
+  let nw03 = float.neg(w03)
+  let nw04 = float.neg(w04)
+  let nw12 = float.neg(w12)
+  let nw13 = float.neg(w13)
+  let nw14 = float.neg(w14)
+  let nw23 = float.neg(w23)
+  let nw24 = float.neg(w24)
+  let nw34 = float.neg(w34)
+  [[d0, nw01, nw02, nw03, nw04],
+   [nw01, d1, nw12, nw13, nw14],
+   [nw02, nw12, d2, nw23, nw24],
+   [nw03, nw13, nw23, d3, nw34],
+   [nw04, nw14, nw24, nw34, d4]]
+}
+
+fn dirichlet(L, x) {
+  linalg.dot(x, linalg.matvec(L, x))
+}
+
+fn pick5(v, i) {
+  let z = float.from_int(0)
+  let one = float.from_int(1)
+  if i == 0 then linalg.dot(v, [one, z, z, z, z])
+  else if i == 1 then linalg.dot(v, [z, one, z, z, z])
+  else if i == 2 then linalg.dot(v, [z, z, one, z, z])
+  else if i == 3 then linalg.dot(v, [z, z, z, one, z])
+  else linalg.dot(v, [z, z, z, z, one])
+}
+
+fn t_family(R, S, x) {
+  linalg.matvec(S, linalg.matvec(R, x))
+}
+
+let L = make_L()
+let tau = float.from_int(1)
+let z = float.from_int(0)
+let one = float.from_int(1)
+let x0 = [float.from_int(2), z, z, z, z]
+
+let H0 = dirichlet(L, x0)
+
+// eigh: vecs rows are eigenvectors, matvec(vecs,x) = V^T x
+let eig = linalg.eigh(L)
+let vecs = eig.vecs
+let vals = eig.vals
+
+// coords = V^T x0
+let coords = linalg.matvec(vecs, x0)
+
+// scale each coord by exp(-tau * lambda_i)
+let e0 = float.exp(float.neg(float.mul(tau, pick5(vals, 0))))
+let e1 = float.exp(float.neg(float.mul(tau, pick5(vals, 1))))
+let e2 = float.exp(float.neg(float.mul(tau, pick5(vals, 2))))
+let e3 = float.exp(float.neg(float.mul(tau, pick5(vals, 3))))
+let e4 = float.exp(float.neg(float.mul(tau, pick5(vals, 4))))
+
+let scaled = [
+  float.mul(e0, pick5(coords, 0)),
+  float.mul(e1, pick5(coords, 1)),
+  float.mul(e2, pick5(coords, 2)),
+  float.mul(e3, pick5(coords, 3)),
+  float.mul(e4, pick5(coords, 4))
+]
+
+// x_heat = V scaled = transpose(vecs) @ scaled
+let x_heat = linalg.matvec(linalg.transpose(vecs), scaled)
+let H1 = dirichlet(L, x_heat)
+
+// Family collapse: R (2x5), S (5x2)
+// family0={H,He} rep=H(idx0), family1={Li,Be,B} rep=Li(idx2)
+let R = [[one, one, z, z, z], [z, z, one, one, one]]
+let S = [[one, z], [z, z], [z, one], [z, z], [z, z]]
+let x_fam = t_family(R, S, x_heat)
+let phi = linalg.vec_sub(x_fam, x_heat)
+let phi_norm = linalg.norm(phi)
+
+{
+  H0: float.to_text(H0),
+  H1: float.to_text(H1),
+  phi_norm: float.to_text(phi_norm),
+  x_heat_H:  float.to_text(pick5(x_heat, 0)),
+  x_heat_He: float.to_text(pick5(x_heat, 1)),
+  x_heat_Li: float.to_text(pick5(x_heat, 2)),
+  x_heat_Be: float.to_text(pick5(x_heat, 3)),
+  x_heat_B:  float.to_text(pick5(x_heat, 4)),
+  x_fam_H:   float.to_text(pick5(x_fam, 0)),
+  x_fam_Li:  float.to_text(pick5(x_fam, 2)),
+  sum_x_heat: float.to_text(linalg.dot(x_heat, [one, one, one, one, one]))
+}

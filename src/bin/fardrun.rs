@@ -3702,7 +3702,8 @@ fn call_builtin(
             let na_mat = DMatrix::from_row_slice(n, n, &flat);
             let eig = SymmetricEigen::new(na_mat);
             let vals: Vec<Val> = eig.eigenvalues.iter().map(|&v| fv(v)).collect();
-            let vecs: Vec<Val> = (0..n).map(|j| Val::List((0..n).map(|i| fv(eig.eigenvectors[(i,j)])).collect())).collect();
+            // Store as rows: vecs[i] = i-th eigenvector (row), so matvec(vecs, x) = V^T x
+            let vecs: Vec<Val> = (0..n).map(|i| Val::List((0..n).map(|j| fv(eig.eigenvectors[(j,i)])).collect())).collect();
             { let mut m = BTreeMap::new(); m.insert("vals".into(), Val::List(vals)); m.insert("vecs".into(), Val::List(vecs)); Ok(Val::Rec(m)) }
         }
     }
