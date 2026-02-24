@@ -736,7 +736,7 @@ impl Lex {
             return Ok(Tok::OrOr);
         }
 
-        for op in ["==", "<=", ">=", "&&", "->", "=>", "|>"] {
+        for op in ["!=", "==", "<=", ">=", "&&", "->", "=>", "|>"] {
             if two.as_deref() == Some(op) {
                 self.i += 2;
                 return Ok(Tok::Sym(op.to_string()));
@@ -745,7 +745,7 @@ impl Lex {
         let one = self.bump().unwrap();
         let sym = match one {
             '(' | ')' | '{' | '}' | '[' | ']' | ',' | ':' | '.' | '+' | '-' | '*' | '/' | '='
-            | '%' | '|' | '<' | '>' | '?' => one.to_string(),
+            | '%' | '|' | '<' | '>' | '?' | '!' => one.to_string(),
             _ => bail!("unexpected char: {one}"),
         };
         Ok(Tok::Sym(sym))
@@ -1363,7 +1363,7 @@ impl Parser {
         let mut e = self.parse_add()?;
         loop {
             let op = match self.peek() {
-                Tok::Sym(x) if x == "==" || x == "<" || x == ">" || x == "<=" || x == ">=" => {
+                Tok::Sym(x) if x == "==" || x == "!=" || x == "<" || x == ">" || x == "<=" || x == ">=" => {
                     x.clone()
                 }
                 _ => break,
@@ -1408,6 +1408,10 @@ impl Parser {
         if self.eat_sym("-") {
             let e = self.parse_unary()?;
             return Ok(Expr::Unary("-".to_string(), Box::new(e)));
+        }
+        if self.eat_sym("!") {
+            let e = self.parse_unary()?;
+            return Ok(Expr::Unary("!".to_string(), Box::new(e)));
         }
         self.parse_pipe()
     }
@@ -1723,6 +1727,8 @@ enum Builtin {
     FloatInf,
     FloatIsNan,
     FloatIsFinite,
+    FloatMin,
+    FloatMax,
     // linalg builtins
     LinalgDot,
     LinalgNorm,
@@ -2053,6 +2059,7 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
             let v = eval(a, env, tracer, loader)?;
             match (op.as_str(), v) {
                 ("-", Val::Int(n)) => Ok(Val::Int(-n)),
+                ("!", Val::Bool(b)) => Ok(Val::Bool(!b)),
                 _ => bail!("bad unary op"),
             }
         }
@@ -2065,6 +2072,7 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                 ("*", Val::Int(l), Val::Int(r)) => Ok(Val::Int(l * r)),
                 ("/", Val::Int(l), Val::Int(r)) => Ok(Val::Int(l / r)),
                 ("==", l, r) => Ok(Val::Bool(val_eq(&l, &r))),
+                ("!=", l, r) => Ok(Val::Bool(!val_eq(&l, &r))),
                 ("&&", Val::Bool(l), Val::Bool(r)) => Ok(Val::Bool(l && r)),
                 ("||", Val::Bool(l), Val::Bool(r)) => Ok(Val::Bool(l || r)),
                 ("<", Val::Int(l), Val::Int(r)) => Ok(Val::Bool(l < r)),
@@ -3624,6 +3632,8 @@ fn call_builtin(
         Builtin::FloatInf  => Ok(fv(f64::INFINITY)),
         Builtin::FloatIsNan    => { let a = fb64_1(&args)?; Ok(Val::Bool(a.is_nan())) }
         Builtin::FloatIsFinite => { let a = fb64_1(&args)?; Ok(Val::Bool(a.is_finite())) }
+        Builtin::FloatMin => { let (a,b) = fb64_2(&args)?; Ok(fv(a.min(b))) }
+        Builtin::FloatMax => { let (a,b) = fb64_2(&args)?; Ok(fv(a.max(b))) }
         Builtin::LinalgZeros => {
             match args.first() {
                 Some(Val::Int(n)) => Ok(Val::List(vec![fv(0.0); *n as usize])),
@@ -4503,6 +4513,8 @@ impl ModuleLoader {
                 m.insert("inf".to_string(), Val::Builtin(Builtin::FloatInf));
                 m.insert("is_nan".to_string(), Val::Builtin(Builtin::FloatIsNan));
                 m.insert("is_finite".to_string(), Val::Builtin(Builtin::FloatIsFinite));
+                m.insert("min".to_string(), Val::Builtin(Builtin::FloatMin));
+                m.insert("max".to_string(), Val::Builtin(Builtin::FloatMax));
                 Ok(m)
             }
             "std/linalg" => {
