@@ -1,0 +1,37 @@
+import("std/float") as float
+import("std/list") as list
+import("std/str") as str
+import("lib/zproof") as zp
+
+fn run_safety(price, shares, vol, threshold) {
+  let w   = float.mul(price, shares)
+  let var = float.mul(float.mul(vol, vol), float.mul(w, w))
+  { price: float.to_text(price), shares: float.to_text(shares),
+    var: float.to_text(var), ok: float.le(var, threshold) }
+}
+
+let inputs1 = { price: "170.5", shares: "10", vol: "0.25" }
+let result1 = run_safety(170.5, 10.0, 0.25, 500000.0)
+
+let inputs2 = { price: "350.0", shares: "5", vol: "0.30" }
+let result2 = run_safety(350.0, 5.0, 0.30, 500000.0)
+
+let inputs3 = { price: "140.0", shares: "2", vol: "0.20" }
+let result3 = run_safety(140.0, 2.0, 0.20, 500000.0)
+
+let r0 = zp.genesis()
+let r1 = zp.next(r0, "qasim_safety/v1", inputs1, result1)
+let r2 = zp.next(r1, "qasim_safety/v1", inputs2, result2)
+let r3 = zp.next(r2, "qasim_safety/v1", inputs3, result3)
+
+let chain = [r0, r1, r2, r3]
+let chain_valid = zp.verify_chain(chain)
+
+{
+  chain_length: list.len(chain),
+  chain_valid:  chain_valid,
+  genesis_hash: r0.receipt_hash,
+  receipt_1: { seq: r1.seq, hash: r1.receipt_hash, prev: r1.prev_hash, ok: result1.ok },
+  receipt_2: { seq: r2.seq, hash: r2.receipt_hash, prev: r2.prev_hash, ok: result2.ok },
+  receipt_3: { seq: r3.seq, hash: r3.receipt_hash, prev: r3.prev_hash, ok: result3.ok }
+}

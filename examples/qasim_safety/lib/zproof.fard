@@ -1,0 +1,61 @@
+import("std/hash") as hash
+import("std/json") as json
+import("std/str") as str
+import("std/list") as list
+
+fn genesis() {
+  let zero = "0000000000000000000000000000000000000000000000000000000000000000"
+  { prev_hash: zero, seq: 0, receipt_hash: zero }
+}
+
+fn val_hash(v) {
+  hash.sha256_text(json.encode(v))
+}
+
+fn strip_prefix(s) {
+  if str.starts_with(s, "sha256:") then str.slice(s, 7, str.len(s)) else s
+}
+
+fn next(prev, prog_id, inputs, result) {
+  let seq       = prev.seq + 1
+  let prev_h    = strip_prefix(prev.receipt_hash)
+  let prog_h    = strip_prefix(val_hash(prog_id))
+  let inputs_h  = strip_prefix(val_hash(inputs))
+  let result_h  = strip_prefix(val_hash(result))
+  let body      = {
+    prev_hash:   prev_h,
+    seq:         seq,
+    prog_id:     prog_id,
+    prog_hash:   prog_h,
+    inputs_hash: inputs_h,
+    result_hash: result_h
+  }
+  let receipt_hash = val_hash(body)
+  {
+    prev_hash:   prev_h,
+    seq:         seq,
+    prog_id:     prog_id,
+    prog_hash:   prog_h,
+    inputs_hash: inputs_h,
+    result_hash: result_h,
+    receipt_hash: receipt_hash
+  }
+}
+
+fn verify_link(r_prev, r_next) {
+  r_next.prev_hash == strip_prefix(r_prev.receipt_hash)
+}
+
+fn verify_chain(receipts) {
+  let n = list.len(receipts)
+  list.fold(
+    list.range(1, n),
+    true,
+    fn(ok, i) {
+      if ok then verify_link(receipts[i - 1], receipts[i]) else false
+    }
+  )
+}
+
+{ genesis: genesis, next: next, verify_chain: verify_chain,
+  verify_link: verify_link, val_hash: val_hash }
