@@ -1746,6 +1746,13 @@ enum Builtin {
     IntMul,
     IntDiv,
     IntSub,
+    IntAbs,
+    IntMin,
+    IntMax,
+    IntToText,
+    IntFromText,
+    IntNeg,
+    IntClamp,
     IntMod,
     IntLt,
     IntGt,
@@ -3098,6 +3105,53 @@ fn call_builtin(
             let b = match &args[1] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
             if b == 0 { bail!("ERROR_RUNTIME int divide by zero"); }
             Ok(Val::Int(a / b))
+        }
+        Builtin::IntAbs => {
+            match args.first() {
+                Some(Val::Int(n)) => Ok(Val::Int(n.abs())),
+                _ => bail!("ERROR_BADARG int.abs expects int"),
+            }
+        }
+        Builtin::IntMin => {
+            if args.len() != 2 { bail!("ERROR_ARITY int.min"); }
+            match (&args[0], &args[1]) {
+                (Val::Int(a), Val::Int(b)) => Ok(Val::Int(*a.min(b))),
+                _ => bail!("ERROR_BADARG int.min expects int, int"),
+            }
+        }
+        Builtin::IntMax => {
+            if args.len() != 2 { bail!("ERROR_ARITY int.max"); }
+            match (&args[0], &args[1]) {
+                (Val::Int(a), Val::Int(b)) => Ok(Val::Int(*a.max(b))),
+                _ => bail!("ERROR_BADARG int.max expects int, int"),
+            }
+        }
+        Builtin::IntToText => {
+            match args.first() {
+                Some(Val::Int(n)) => Ok(Val::Str(n.to_string())),
+                _ => bail!("ERROR_BADARG int.to_text expects int"),
+            }
+        }
+        Builtin::IntFromText => {
+            match args.first() {
+                Some(Val::Str(s)) => s.trim().parse::<i64>()
+                    .map(Val::Int)
+                    .map_err(|_| anyhow!("ERROR_PARSE int.from_text: {:?}", s)),
+                _ => bail!("ERROR_BADARG int.from_text expects string"),
+            }
+        }
+        Builtin::IntNeg => {
+            match args.first() {
+                Some(Val::Int(n)) => Ok(Val::Int(-n)),
+                _ => bail!("ERROR_BADARG int.neg expects int"),
+            }
+        }
+        Builtin::IntClamp => {
+            if args.len() != 3 { bail!("ERROR_ARITY int.clamp"); }
+            match (&args[0], &args[1], &args[2]) {
+                (Val::Int(x), Val::Int(lo), Val::Int(hi)) => Ok(Val::Int((*x).max(*lo).min(*hi))),
+                _ => bail!("ERROR_BADARG int.clamp expects int, int, int"),
+            }
         }
         Builtin::IntSub => {
             if args.len() != 2 { bail!("ERROR_BADARG int.sub expects 2 args"); }
@@ -4726,6 +4780,13 @@ impl ModuleLoader {
                 m.insert("mul".to_string(), Val::Builtin(Builtin::IntMul));
                 m.insert("div".to_string(), Val::Builtin(Builtin::IntDiv));
                 m.insert("sub".to_string(), Val::Builtin(Builtin::IntSub));
+                m.insert("abs".to_string(), Val::Builtin(Builtin::IntAbs));
+                m.insert("min".to_string(), Val::Builtin(Builtin::IntMin));
+                m.insert("max".to_string(), Val::Builtin(Builtin::IntMax));
+                m.insert("to_text".to_string(), Val::Builtin(Builtin::IntToText));
+                m.insert("from_text".to_string(), Val::Builtin(Builtin::IntFromText));
+                m.insert("neg".to_string(), Val::Builtin(Builtin::IntNeg));
+                m.insert("clamp".to_string(), Val::Builtin(Builtin::IntClamp));
                 m.insert("mod".to_string(), Val::Builtin(Builtin::IntMod));
                 m.insert("lt".to_string(), Val::Builtin(Builtin::IntLt));
                 m.insert("gt".to_string(), Val::Builtin(Builtin::IntGt));
