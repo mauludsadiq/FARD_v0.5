@@ -883,10 +883,10 @@ enum Expr {
 #[derive(Clone, Debug)]
 enum Item {
     Import(String, String),
-    Let(String, Expr),
+    Let(String, Expr, Option<ErrorSpan>),
     Fn(String, Vec<(Pat, Option<Type>)>, Option<Type>, Expr),
     Export(Vec<String>),
-    Expr(Expr),
+    Expr(Expr, Option<ErrorSpan>),
 }
 struct Parser {
     toks: Vec<Tok>,
@@ -1182,7 +1182,7 @@ impl Parser {
             if matches!(self.peek(), Tok::Kw(s) if s == "let") {
                 let __save = self.i;
                 if let Ok(e) = self.parse_expr() {
-                    items.push(Item::Expr(e));
+                    items.push(Item::Expr(e, Some(self.cur_span())));
                     continue;
                 }
                 self.i = __save;
@@ -1190,11 +1190,11 @@ impl Parser {
                 let name = self.expect_ident()?;
                 self.expect_sym("=")?;
                 let rhs = self.parse_expr()?;
-                items.push(Item::Let(name, rhs));
+                items.push(Item::Let(name, rhs, Some(self.cur_span())));
                 continue;
             }
             let e = self.parse_expr()?;
-            items.push(Item::Expr(e));
+            items.push(Item::Expr(e, Some(self.cur_span())));
             continue;
         }
         Ok(items)
@@ -4164,8 +4164,12 @@ impl ModuleLoader {
                     let ex = self.load_module(&path, here, tracer)?;
                     env.set(alias, Val::Rec(ex));
                 }
-                Item::Let(name, rhs) => {
-                    let v = eval(&rhs, env, tracer, self)?;
+                Item::Let(name, rhs, span) => {
+                    let v = eval(&rhs, env, tracer, self).map_err(|e| {
+                        if let Some(sp) = &span {
+                            e.context(format!("  --> {}:{}:{}", sp.file, sp.line, sp.col))
+                        } else { e }
+                    })?;
                     env.set(name, v);
                 }
                 Item::Fn(name, params, _ret, body) => {
@@ -4177,7 +4181,13 @@ impl ModuleLoader {
                     env.set(name, f);
                 }
                 Item::Export(ns) => exports = Some(ns),
-                Item::Expr(e) => last = eval(&e, env, tracer, self)?,
+                Item::Expr(e, span) => {
+                    last = eval(&e, env, tracer, self).map_err(|e| {
+                        if let Some(sp) = &span {
+                            e.context(format!("  --> {}:{}:{}", sp.file, sp.line, sp.col))
+                        } else { e }
+                    })?;
+                }
             }
         }
         if let Some(ns) = exports {
