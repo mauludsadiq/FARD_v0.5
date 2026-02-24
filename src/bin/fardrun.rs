@@ -1696,6 +1696,47 @@ enum Builtin {
     IntGt,
     IntLe,
     IntGe,
+    // float builtins
+    FloatFromInt,
+    FloatToInt,
+    FloatFromText,
+    FloatToText,
+    FloatAdd,
+    FloatSub,
+    FloatMul,
+    FloatDiv,
+    FloatExp,
+    FloatLn,
+    FloatSqrt,
+    FloatPow,
+    FloatAbs,
+    FloatNeg,
+    FloatFloor,
+    FloatCeil,
+    FloatRound,
+    FloatLt,
+    FloatGt,
+    FloatLe,
+    FloatGe,
+    FloatEq,
+    FloatNan,
+    FloatInf,
+    FloatIsNan,
+    FloatIsFinite,
+    // linalg builtins
+    LinalgDot,
+    LinalgNorm,
+    LinalgZeros,
+    LinalgEye,
+    LinalgMatvec,
+    LinalgMatmul,
+    LinalgTranspose,
+    LinalgEigh,
+    LinalgVecAdd,
+    LinalgVecSub,
+    LinalgVecScale,
+    LinalgMatAdd,
+    LinalgMatScale,
 }
 
 #[derive(Debug)]
@@ -3538,8 +3579,167 @@ fn call_builtin(
             }
             Ok(Val::List(out))
         }
+        Builtin::FloatFromInt => {
+            match args.first() {
+                Some(Val::Int(n)) => Ok(Val::Bytes((*n as f64).to_le_bytes().to_vec())),
+                _ => bail!("ERROR_BADARG float.from_int"),
+            }
+        }
+        Builtin::FloatToInt => {
+            let f = fb64_1(&args)?;
+            Ok(Val::Int(f as i64))
+        }
+        Builtin::FloatFromText => {
+            match args.first() {
+                Some(Val::Str(s)) => match s.parse::<f64>() {
+                    Ok(v) => Ok(Val::Bytes(v.to_le_bytes().to_vec())),
+                    Err(_) => bail!("ERROR_PARSE float.from_text: {}", s),
+                },
+                _ => bail!("ERROR_BADARG float.from_text"),
+            }
+        }
+        Builtin::FloatToText => {
+            let f = fb64_1(&args)?;
+            Ok(Val::Str(format!("{}", f)))
+        }
+        Builtin::FloatAdd => { let (a,b) = fb64_2(&args)?; Ok(fv(a+b)) }
+        Builtin::FloatSub => { let (a,b) = fb64_2(&args)?; Ok(fv(a-b)) }
+        Builtin::FloatMul => { let (a,b) = fb64_2(&args)?; Ok(fv(a*b)) }
+        Builtin::FloatDiv => { let (a,b) = fb64_2(&args)?; Ok(fv(a/b)) }
+        Builtin::FloatExp  => { let a = fb64_1(&args)?; Ok(fv(a.exp())) }
+        Builtin::FloatLn   => { let a = fb64_1(&args)?; Ok(fv(a.ln())) }
+        Builtin::FloatSqrt => { let a = fb64_1(&args)?; Ok(fv(a.sqrt())) }
+        Builtin::FloatAbs  => { let a = fb64_1(&args)?; Ok(fv(a.abs())) }
+        Builtin::FloatNeg  => { let a = fb64_1(&args)?; Ok(fv(-a)) }
+        Builtin::FloatFloor=> { let a = fb64_1(&args)?; Ok(fv(a.floor())) }
+        Builtin::FloatCeil => { let a = fb64_1(&args)?; Ok(fv(a.ceil())) }
+        Builtin::FloatRound=> { let a = fb64_1(&args)?; Ok(fv(a.round())) }
+        Builtin::FloatPow  => { let (a,b) = fb64_2(&args)?; Ok(fv(a.powf(b))) }
+        Builtin::FloatLt   => { let (a,b) = fb64_2(&args)?; Ok(Val::Bool(a<b)) }
+        Builtin::FloatGt   => { let (a,b) = fb64_2(&args)?; Ok(Val::Bool(a>b)) }
+        Builtin::FloatLe   => { let (a,b) = fb64_2(&args)?; Ok(Val::Bool(a<=b)) }
+        Builtin::FloatGe   => { let (a,b) = fb64_2(&args)?; Ok(Val::Bool(a>=b)) }
+        Builtin::FloatEq   => { let (a,b) = fb64_2(&args)?; Ok(Val::Bool(a==b)) }
+        Builtin::FloatNan  => Ok(fv(f64::NAN)),
+        Builtin::FloatInf  => Ok(fv(f64::INFINITY)),
+        Builtin::FloatIsNan    => { let a = fb64_1(&args)?; Ok(Val::Bool(a.is_nan())) }
+        Builtin::FloatIsFinite => { let a = fb64_1(&args)?; Ok(Val::Bool(a.is_finite())) }
+        Builtin::LinalgZeros => {
+            match args.first() {
+                Some(Val::Int(n)) => Ok(Val::List(vec![fv(0.0); *n as usize])),
+                _ => bail!("ERROR_BADARG linalg.zeros"),
+            }
+        }
+        Builtin::LinalgEye => {
+            match args.first() {
+                Some(Val::Int(n)) => {
+                    let n = *n as usize;
+                    Ok(Val::List((0..n).map(|i| Val::List((0..n).map(|j| fv(if i==j {1.0} else {0.0})).collect())).collect()))
+                }
+                _ => bail!("ERROR_BADARG linalg.eye"),
+            }
+        }
+        Builtin::LinalgDot => {
+            if args.len() != 2 { bail!("ERROR_ARITY linalg.dot"); }
+            let a = vl_to_f64(&args[0])?;
+            let b = vl_to_f64(&args[1])?;
+            if a.len() != b.len() { bail!("ERROR_BADARG linalg.dot length mismatch"); }
+            Ok(fv(a.iter().zip(b.iter()).map(|(x,y)| x*y).sum()))
+        }
+        Builtin::LinalgNorm => {
+            let a = vl_to_f64(&args[0])?;
+            Ok(fv(a.iter().map(|x| x*x).sum::<f64>().sqrt()))
+        }
+        Builtin::LinalgVecAdd => {
+            let a = vl_to_f64(&args[0])?;
+            let b = vl_to_f64(&args[1])?;
+            Ok(Val::List(a.iter().zip(b.iter()).map(|(x,y)| fv(x+y)).collect()))
+        }
+        Builtin::LinalgVecSub => {
+            let a = vl_to_f64(&args[0])?;
+            let b = vl_to_f64(&args[1])?;
+            Ok(Val::List(a.iter().zip(b.iter()).map(|(x,y)| fv(x-y)).collect()))
+        }
+        Builtin::LinalgVecScale => {
+            let a = vl_to_f64(&args[0])?;
+            let s = fb64_1(&args[1..])?;
+            Ok(Val::List(a.iter().map(|x| fv(x*s)).collect()))
+        }
+        Builtin::LinalgTranspose => {
+            let m = vl_to_mat(&args[0])?;
+            if m.is_empty() { return Ok(Val::List(vec![])); }
+            let rows = m.len(); let cols = m[0].len();
+            Ok(Val::List((0..cols).map(|j| Val::List((0..rows).map(|i| fv(m[i][j])).collect())).collect()))
+        }
+        Builtin::LinalgMatvec => {
+            let m = vl_to_mat(&args[0])?;
+            let x = vl_to_f64(&args[1])?;
+            Ok(Val::List(m.iter().map(|row| fv(row.iter().zip(x.iter()).map(|(a,b)| a*b).sum())).collect()))
+        }
+        Builtin::LinalgMatmul => {
+            let a = vl_to_mat(&args[0])?;
+            let b = vl_to_mat(&args[1])?;
+            if a.is_empty() || b.is_empty() { return Ok(Val::List(vec![])); }
+            let (rm, k, rn) = (a.len(), a[0].len(), b[0].len());
+            Ok(Val::List((0..rm).map(|i| Val::List((0..rn).map(|j| fv((0..k).map(|l| a[i][l]*b[l][j]).sum())).collect())).collect()))
+        }
+        Builtin::LinalgMatAdd => {
+            let a = vl_to_mat(&args[0])?;
+            let b = vl_to_mat(&args[1])?;
+            Ok(Val::List(a.iter().zip(b.iter()).map(|(ra,rb)| Val::List(ra.iter().zip(rb.iter()).map(|(x,y)| fv(x+y)).collect())).collect()))
+        }
+        Builtin::LinalgMatScale => {
+            let m = vl_to_mat(&args[0])?;
+            let s = fb64_1(&args[1..])?;
+            Ok(Val::List(m.iter().map(|r| Val::List(r.iter().map(|x| fv(x*s)).collect())).collect()))
+        }
+        Builtin::LinalgEigh => {
+            use nalgebra::{DMatrix, SymmetricEigen};
+            let m = vl_to_mat(&args[0])?;
+            let n = m.len();
+            if n == 0 { let mut m = BTreeMap::new(); m.insert("vals".into(), Val::List(vec![])); m.insert("vecs".into(), Val::List(vec![])); return Ok(Val::Rec(m)); }
+            let flat: Vec<f64> = m.iter().flat_map(|r| r.iter().cloned()).collect();
+            let na_mat = DMatrix::from_row_slice(n, n, &flat);
+            let eig = SymmetricEigen::new(na_mat);
+            let vals: Vec<Val> = eig.eigenvalues.iter().map(|&v| fv(v)).collect();
+            let vecs: Vec<Val> = (0..n).map(|j| Val::List((0..n).map(|i| fv(eig.eigenvectors[(i,j)])).collect())).collect();
+            { let mut m = BTreeMap::new(); m.insert("vals".into(), Val::List(vals)); m.insert("vecs".into(), Val::List(vecs)); Ok(Val::Rec(m)) }
+        }
     }
 }
+
+fn fv(f: f64) -> Val { Val::Bytes(f.to_le_bytes().to_vec()) }
+
+fn fb64_1(args: &[Val]) -> anyhow::Result<f64> {
+    match args.first() {
+        Some(Val::Bytes(b)) if b.len() == 8 => {
+            let arr: [u8;8] = b.as_slice().try_into().unwrap();
+            Ok(f64::from_le_bytes(arr))
+        }
+        Some(Val::Int(n)) => Ok(*n as f64),
+        _ => anyhow::bail!("ERROR_BADARG expected float (8-byte Bytes)"),
+    }
+}
+
+fn fb64_2(args: &[Val]) -> anyhow::Result<(f64,f64)> {
+    if args.len() < 2 { anyhow::bail!("ERROR_ARITY expected 2 float args"); }
+    Ok((fb64_1(&args[0..1])?, fb64_1(&args[1..2])?))
+}
+
+fn vl_to_f64(v: &Val) -> anyhow::Result<Vec<f64>> {
+    match v {
+        Val::List(items) => items.iter().map(|x| fb64_1(std::slice::from_ref(x))).collect(),
+        _ => anyhow::bail!("ERROR_BADARG expected list of floats"),
+    }
+}
+
+fn vl_to_mat(v: &Val) -> anyhow::Result<Vec<Vec<f64>>> {
+    match v {
+        Val::List(rows) => rows.iter().map(vl_to_f64).collect(),
+        _ => anyhow::bail!("ERROR_BADARG expected list of list of floats"),
+    }
+}
+
 fn insertion_sort(xs: &mut [i64]) {
     for i in 1..xs.len() {
         let key = xs[i];
@@ -4272,6 +4472,53 @@ impl ModuleLoader {
                 let mut m = BTreeMap::new();
                 m.insert("ed25519_verify".to_string(), Val::Builtin(Builtin::CryptoEd25519Verify));
                 m.insert("hmac_sha256".to_string(), Val::Builtin(Builtin::CryptoHmacSha256));
+                Ok(m)
+            }
+            "std/float" => {
+                let mut m = BTreeMap::new();
+                m.insert("from_int".to_string(), Val::Builtin(Builtin::FloatFromInt));
+                m.insert("to_int".to_string(), Val::Builtin(Builtin::FloatToInt));
+                m.insert("from_text".to_string(), Val::Builtin(Builtin::FloatFromText));
+                m.insert("to_text".to_string(), Val::Builtin(Builtin::FloatToText));
+                m.insert("add".to_string(), Val::Builtin(Builtin::FloatAdd));
+                m.insert("sub".to_string(), Val::Builtin(Builtin::FloatSub));
+                m.insert("mul".to_string(), Val::Builtin(Builtin::FloatMul));
+                m.insert("div".to_string(), Val::Builtin(Builtin::FloatDiv));
+                m.insert("exp".to_string(), Val::Builtin(Builtin::FloatExp));
+                m.insert("ln".to_string(), Val::Builtin(Builtin::FloatLn));
+                m.insert("sqrt".to_string(), Val::Builtin(Builtin::FloatSqrt));
+                m.insert("pow".to_string(), Val::Builtin(Builtin::FloatPow));
+                m.insert("abs".to_string(), Val::Builtin(Builtin::FloatAbs));
+                m.insert("neg".to_string(), Val::Builtin(Builtin::FloatNeg));
+                m.insert("floor".to_string(), Val::Builtin(Builtin::FloatFloor));
+                m.insert("ceil".to_string(), Val::Builtin(Builtin::FloatCeil));
+                m.insert("round".to_string(), Val::Builtin(Builtin::FloatRound));
+                m.insert("lt".to_string(), Val::Builtin(Builtin::FloatLt));
+                m.insert("gt".to_string(), Val::Builtin(Builtin::FloatGt));
+                m.insert("le".to_string(), Val::Builtin(Builtin::FloatLe));
+                m.insert("ge".to_string(), Val::Builtin(Builtin::FloatGe));
+                m.insert("eq".to_string(), Val::Builtin(Builtin::FloatEq));
+                m.insert("nan".to_string(), Val::Builtin(Builtin::FloatNan));
+                m.insert("inf".to_string(), Val::Builtin(Builtin::FloatInf));
+                m.insert("is_nan".to_string(), Val::Builtin(Builtin::FloatIsNan));
+                m.insert("is_finite".to_string(), Val::Builtin(Builtin::FloatIsFinite));
+                Ok(m)
+            }
+            "std/linalg" => {
+                let mut m = BTreeMap::new();
+                m.insert("dot".to_string(), Val::Builtin(Builtin::LinalgDot));
+                m.insert("norm".to_string(), Val::Builtin(Builtin::LinalgNorm));
+                m.insert("zeros".to_string(), Val::Builtin(Builtin::LinalgZeros));
+                m.insert("eye".to_string(), Val::Builtin(Builtin::LinalgEye));
+                m.insert("matvec".to_string(), Val::Builtin(Builtin::LinalgMatvec));
+                m.insert("matmul".to_string(), Val::Builtin(Builtin::LinalgMatmul));
+                m.insert("transpose".to_string(), Val::Builtin(Builtin::LinalgTranspose));
+                m.insert("eigh".to_string(), Val::Builtin(Builtin::LinalgEigh));
+                m.insert("vec_add".to_string(), Val::Builtin(Builtin::LinalgVecAdd));
+                m.insert("vec_sub".to_string(), Val::Builtin(Builtin::LinalgVecSub));
+                m.insert("vec_scale".to_string(), Val::Builtin(Builtin::LinalgVecScale));
+                m.insert("mat_add".to_string(), Val::Builtin(Builtin::LinalgMatAdd));
+                m.insert("mat_scale".to_string(), Val::Builtin(Builtin::LinalgMatScale));
                 Ok(m)
             }
             _ => bail!("unknown std module: {name}"),

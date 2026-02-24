@@ -129,6 +129,8 @@ pub fn std_aliases() -> BTreeMap<String, BTreeMap<String, String>> {
         ("map",   &["new","set","get","has","keys","delete"]),
         ("crypto",&["sha256","hkdf_sha256","xchacha20poly1305_seal","xchacha20poly1305_open","rsa_verify_pkcs1_sha256","ecdsa_p256_verify"]),
         ("encode",&["base64url_encode","base64url_decode","json_parse","json_emit"]),
+        ("float",&["from_int","to_int","from_text","to_text","add","sub","mul","div","exp","ln","sqrt","pow","abs","neg","lt","gt","le","ge","eq","nan","inf","is_nan","is_finite","floor","ceil","round"]),
+        ("linalg",&["dot","norm","zeros","eye","matvec","matmul","transpose","eigh","vec_add","vec_sub","vec_scale","mat_add","mat_scale"]),
         ("result",&["ok","err"]),
         ("io",    &["read_file","write_file","clock_now","random_bytes"]),
         ("http",  &["http_get"]),
@@ -685,10 +687,51 @@ fn is_builtin(f: &str) -> bool {
             | "ecdsa_p256_verify"
             | "ok"
             | "err"
+            | "float_from_int"
+            | "float_to_int"
+            | "float_from_text"
+            | "float_to_text"
+            | "float_add"
+            | "float_sub"
+            | "float_mul"
+            | "float_div"
+            | "float_exp"
+            | "float_ln"
+            | "float_sqrt"
+            | "float_pow"
+            | "float_abs"
+            | "float_neg"
+            | "float_lt"
+            | "float_gt"
+            | "float_le"
+            | "float_ge"
+            | "float_eq"
+            | "float_nan"
+            | "float_inf"
+            | "float_is_nan"
+            | "float_is_finite"
+            | "float_floor"
+            | "float_ceil"
+            | "float_round"
+            | "linalg_dot"
+            | "linalg_norm"
+            | "linalg_zeros"
+            | "linalg_eye"
+            | "linalg_matvec"
+            | "linalg_matmul"
+            | "linalg_transpose"
+            | "linalg_eigh"
+            | "linalg_vec_add"
+            | "linalg_vec_sub"
+            | "linalg_vec_scale"
+            | "linalg_mat_add"
+            | "linalg_mat_scale"
     )
 }
 
 fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
+    if f.starts_with("float_") { return eval_float_builtin(f, args); }
+    if f.starts_with("linalg_") { return eval_linalg_builtin(f, args); }
     match f {
         "add" => {
             let (a, b) = match expect_i64_2(args) { Ok(v) => v, Err(e) => return Ok(V::Err(e.to_string())) };
@@ -1308,4 +1351,239 @@ fn decode_hex(s: &str) -> Result<Vec<u8>> {
         i += 2;
     }
     Ok(out)
+}
+
+
+// ── float helpers ─────────────────────────────────────────────────────────────
+
+fn f64_to_bytes(f: f64) -> V {
+    V::Bytes(f.to_le_bytes().to_vec())
+}
+
+fn bytes_to_f64(v: &V) -> Result<f64> {
+    match v {
+        V::Bytes(b) if b.len() == 8 => {
+            let arr: [u8; 8] = b.as_slice().try_into().unwrap();
+            Ok(f64::from_le_bytes(arr))
+        }
+        V::Int(n) => {
+            // allow passing plain ints as floats for convenience
+            let s = n.to_string();
+            Ok(s.parse::<f64>().unwrap_or(f64::NAN))
+        }
+        _ => Err(anyhow!("ERROR_BADARG expected float (8-byte Bytes), got {:?}", v)),
+    }
+}
+
+fn expect_f64_1(args: &[V]) -> Result<f64> {
+    if args.len() != 1 { return Err(anyhow!("ERROR_ARITY expected 1 arg")); }
+    bytes_to_f64(&args[0])
+}
+
+fn expect_f64_2(args: &[V]) -> Result<(f64, f64)> {
+    if args.len() != 2 { return Err(anyhow!("ERROR_ARITY expected 2 args")); }
+    Ok((bytes_to_f64(&args[0])?, bytes_to_f64(&args[1])?))
+}
+
+fn eval_float_builtin(f: &str, args: &[V]) -> Result<V> {
+    match f {
+        "float_from_int" => {
+            match args.first() {
+                Some(V::Int(n)) => {
+                    let s = n.to_string();
+                    let v: f64 = s.parse().unwrap_or(f64::NAN);
+                    Ok(f64_to_bytes(v))
+                }
+                _ => Ok(V::Err("ERROR_BADARG float_from_int expects int".into())),
+            }
+        }
+        "float_to_int" => {
+            let f = match expect_f64_1(args) { Ok(v) => v, Err(e) => return Ok(V::Err(e.to_string())) };
+            Ok(V::Int(f as i64))
+        }
+        "float_from_text" => {
+            match args.first() {
+                Some(V::Text(s)) => match s.parse::<f64>() {
+                    Ok(v) => Ok(f64_to_bytes(v)),
+                    Err(_) => Ok(V::Err(format!("ERROR_PARSE cannot parse float: {}", s))),
+                },
+                _ => Ok(V::Err("ERROR_BADARG float_from_text expects text".into())),
+            }
+        }
+        "float_to_text" => {
+            let f = match expect_f64_1(args) { Ok(v) => v, Err(e) => return Ok(V::Err(e.to_string())) };
+            Ok(V::Text(format!("{}", f)))
+        }
+        "float_add" => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a+b)) }
+        "float_sub" => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a-b)) }
+        "float_mul" => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a*b)) }
+        "float_div" => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a/b)) }
+        "float_exp"  => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a.exp())) }
+        "float_ln"   => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a.ln())) }
+        "float_sqrt" => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a.sqrt())) }
+        "float_abs"  => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a.abs())) }
+        "float_neg"  => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(-a)) }
+        "float_floor"=> { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a.floor())) }
+        "float_ceil" => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a.ceil())) }
+        "float_round"=> { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a.round())) }
+        "float_pow"  => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a.powf(b))) }
+        "float_lt"   => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(V::Bool(a<b)) }
+        "float_gt"   => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(V::Bool(a>b)) }
+        "float_le"   => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(V::Bool(a<=b)) }
+        "float_ge"   => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(V::Bool(a>=b)) }
+        "float_eq"   => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(V::Bool(a==b)) }
+        "float_nan"  => Ok(f64_to_bytes(f64::NAN)),
+        "float_inf"  => Ok(f64_to_bytes(f64::INFINITY)),
+        "float_is_nan"    => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(V::Bool(a.is_nan())) }
+        "float_is_finite" => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(V::Bool(a.is_finite())) }
+        _ => Err(anyhow!("ERROR_EVAL unknown float builtin: {}", f)),
+    }
+}
+
+// ── linalg helpers ────────────────────────────────────────────────────────────
+
+fn v_to_vec(v: &V) -> Result<Vec<f64>> {
+    match v {
+        V::List(items) => items.iter().map(bytes_to_f64).collect(),
+        _ => Err(anyhow!("ERROR_BADARG expected list of floats")),
+    }
+}
+
+fn vec_to_v(v: &[f64]) -> V {
+    V::List(v.iter().map(|&x| f64_to_bytes(x)).collect())
+}
+
+fn v_to_mat(v: &V) -> Result<Vec<Vec<f64>>> {
+    match v {
+        V::List(rows) => rows.iter().map(v_to_vec).collect(),
+        _ => Err(anyhow!("ERROR_BADARG expected list of list of floats")),
+    }
+}
+
+fn mat_to_v(m: &[Vec<f64>]) -> V {
+    V::List(m.iter().map(|r| vec_to_v(r)).collect())
+}
+
+fn eval_linalg_builtin(f: &str, args: &[V]) -> Result<V> {
+    match f {
+        "linalg_zeros" => {
+            match args.first() {
+                Some(V::Int(n)) => {
+                    let s = n.to_string();
+                    let n: usize = s.parse().map_err(|_| anyhow!("ERROR_BADARG linalg_zeros expects non-negative int"))?;
+                    Ok(vec_to_v(&vec![0.0f64; n]))
+                }
+                _ => Ok(V::Err("ERROR_BADARG linalg_zeros expects int".into())),
+            }
+        }
+        "linalg_eye" => {
+            match args.first() {
+                Some(V::Int(n)) => {
+                    let s = n.to_string();
+                    let n: usize = s.parse().map_err(|_| anyhow!("ERROR_BADARG linalg_eye expects non-negative int"))?;
+                    let m: Vec<Vec<f64>> = (0..n).map(|i| (0..n).map(|j| if i==j {1.0} else {0.0}).collect()).collect();
+                    Ok(mat_to_v(&m))
+                }
+                _ => Ok(V::Err("ERROR_BADARG linalg_eye expects int".into())),
+            }
+        }
+        "linalg_dot" => {
+            if args.len() != 2 { return Ok(V::Err("ERROR_ARITY linalg_dot expects 2 args".into())); }
+            let a = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            let b = match v_to_vec(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            if a.len() != b.len() { return Ok(V::Err("ERROR_BADARG linalg_dot length mismatch".into())); }
+            Ok(f64_to_bytes(a.iter().zip(b.iter()).map(|(x,y)| x*y).sum()))
+        }
+        "linalg_norm" => {
+            let a = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            Ok(f64_to_bytes(a.iter().map(|x| x*x).sum::<f64>().sqrt()))
+        }
+        "linalg_vec_add" => {
+            if args.len() != 2 { return Ok(V::Err("ERROR_ARITY".into())); }
+            let a = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            let b = match v_to_vec(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            if a.len() != b.len() { return Ok(V::Err("ERROR_BADARG length mismatch".into())); }
+            Ok(vec_to_v(&a.iter().zip(b.iter()).map(|(x,y)| x+y).collect::<Vec<_>>()))
+        }
+        "linalg_vec_sub" => {
+            if args.len() != 2 { return Ok(V::Err("ERROR_ARITY".into())); }
+            let a = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            let b = match v_to_vec(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            if a.len() != b.len() { return Ok(V::Err("ERROR_BADARG length mismatch".into())); }
+            Ok(vec_to_v(&a.iter().zip(b.iter()).map(|(x,y)| x-y).collect::<Vec<_>>()))
+        }
+        "linalg_vec_scale" => {
+            if args.len() != 2 { return Ok(V::Err("ERROR_ARITY".into())); }
+            let a = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            let s = match bytes_to_f64(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            Ok(vec_to_v(&a.iter().map(|x| x*s).collect::<Vec<_>>()))
+        }
+        "linalg_transpose" => {
+            let m = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            if m.is_empty() { return Ok(mat_to_v(&[])); }
+            let rows = m.len(); let cols = m[0].len();
+            let t: Vec<Vec<f64>> = (0..cols).map(|j| (0..rows).map(|i| m[i][j]).collect()).collect();
+            Ok(mat_to_v(&t))
+        }
+        "linalg_matvec" => {
+            if args.len() != 2 { return Ok(V::Err("ERROR_ARITY linalg_matvec expects 2 args".into())); }
+            let m = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            let x = match v_to_vec(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            let result: Vec<f64> = m.iter().map(|row| {
+                row.iter().zip(x.iter()).map(|(a,b)| a*b).sum()
+            }).collect();
+            Ok(vec_to_v(&result))
+        }
+        "linalg_matmul" => {
+            if args.len() != 2 { return Ok(V::Err("ERROR_ARITY linalg_matmul expects 2 args".into())); }
+            let a = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            let b = match v_to_mat(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            if a.is_empty() || b.is_empty() { return Ok(mat_to_v(&[])); }
+            let m = a.len(); let k = a[0].len(); let n = b[0].len();
+            let c: Vec<Vec<f64>> = (0..m).map(|i|
+                (0..n).map(|j|
+                    (0..k).map(|l| a[i][l]*b[l][j]).sum()
+                ).collect()
+            ).collect();
+            Ok(mat_to_v(&c))
+        }
+        "linalg_mat_add" => {
+            if args.len() != 2 { return Ok(V::Err("ERROR_ARITY".into())); }
+            let a = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            let b = match v_to_mat(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            let c: Vec<Vec<f64>> = a.iter().zip(b.iter()).map(|(ra,rb)|
+                ra.iter().zip(rb.iter()).map(|(x,y)| x+y).collect()
+            ).collect();
+            Ok(mat_to_v(&c))
+        }
+        "linalg_mat_scale" => {
+            if args.len() != 2 { return Ok(V::Err("ERROR_ARITY".into())); }
+            let m = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            let s = match bytes_to_f64(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            Ok(mat_to_v(&m.iter().map(|r| r.iter().map(|x| x*s).collect()).collect::<Vec<_>>()))
+        }
+        "linalg_eigh" => {
+            // Symmetric eigendecomposition using nalgebra
+            let m = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            let n = m.len();
+            if n == 0 { return Ok(V::Map(vec![
+                ("vals".into(), V::List(vec![])),
+                ("vecs".into(), V::List(vec![])),
+            ])); }
+            use nalgebra::{DMatrix, SymmetricEigen};
+            let mut flat = Vec::with_capacity(n*n);
+            for row in &m { for &x in row { flat.push(x); } }
+            let na_mat = DMatrix::from_row_slice(n, n, &flat);
+            let eig = SymmetricEigen::new(na_mat);
+            let eigenvalues: Vec<f64> = eig.eigenvalues.iter().cloned().collect();
+            let eigenvecs: Vec<Vec<f64>> = (0..n).map(|j|
+                (0..n).map(|i| eig.eigenvectors[(i,j)]).collect()
+            ).collect();
+            Ok(V::Map(vec![
+                ("vals".into(), vec_to_v(&eigenvalues)),
+                ("vecs".into(), mat_to_v(&eigenvecs)),
+            ]))
+        }
+        _ => Err(anyhow!("ERROR_EVAL unknown linalg builtin: {}", f)),
+    }
 }
