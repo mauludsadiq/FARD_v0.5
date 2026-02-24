@@ -1681,6 +1681,13 @@ enum Builtin {
     RecUpdate,
     ResultErr,
     ListGet,
+    ListLen,
+    ListHead,
+    ListTail,
+    ListAppend,
+    ListZip,
+    ListReverse,
+    ListFlatten,
     ListSortByIntKey,
     GrowUnfoldTree,
     GrowAppend,
@@ -2602,6 +2609,75 @@ fn call_builtin(
         Builtin::RandUuidV4 => {
             if args.len() != 0 { bail!("ERROR_RUNTIME rand.uuid_v4 expects 0 args"); }
             Ok(Val::Str(uuid::Uuid::new_v4().to_string()))
+        }
+        Builtin::ListLen => {
+            match args.first() {
+                Some(Val::List(xs)) => Ok(Val::Int(xs.len() as i64)),
+                Some(Val::Str(s)) => Ok(Val::Int(s.chars().count() as i64)),
+                _ => bail!("ERROR_BADARG list.len expects list or str"),
+            }
+        }
+        Builtin::ListHead => {
+            match args.first() {
+                Some(Val::List(xs)) if !xs.is_empty() => Ok(xs[0].clone()),
+                Some(Val::List(_)) => bail!("ERROR_OOB list.head on empty list"),
+                _ => bail!("ERROR_BADARG list.head expects list"),
+            }
+        }
+        Builtin::ListTail => {
+            match args.first() {
+                Some(Val::List(xs)) if !xs.is_empty() => Ok(Val::List(xs[1..].to_vec())),
+                Some(Val::List(_)) => bail!("ERROR_OOB list.tail on empty list"),
+                _ => bail!("ERROR_BADARG list.tail expects list"),
+            }
+        }
+        Builtin::ListAppend => {
+            if args.len() != 2 { bail!("ERROR_BADARG list.append expects 2 args"); }
+            match (&args[0], &args[1]) {
+                (Val::List(xs), v) => {
+                    let mut out = xs.clone();
+                    out.push(v.clone());
+                    Ok(Val::List(out))
+                }
+                _ => bail!("ERROR_BADARG list.append expects list, val"),
+            }
+        }
+        Builtin::ListZip => {
+            if args.len() != 2 { bail!("ERROR_BADARG list.zip expects 2 args"); }
+            match (&args[0], &args[1]) {
+                (Val::List(xs), Val::List(ys)) => {
+                    let out: Vec<Val> = xs.iter().zip(ys.iter()).map(|(x, y)| {
+                        Val::List(vec![x.clone(), y.clone()])
+                    }).collect();
+                    Ok(Val::List(out))
+                }
+                _ => bail!("ERROR_BADARG list.zip expects two lists"),
+            }
+        }
+        Builtin::ListReverse => {
+            match args.first() {
+                Some(Val::List(xs)) => {
+                    let mut out = xs.clone();
+                    out.reverse();
+                    Ok(Val::List(out))
+                }
+                _ => bail!("ERROR_BADARG list.reverse expects list"),
+            }
+        }
+        Builtin::ListFlatten => {
+            match args.first() {
+                Some(Val::List(xs)) => {
+                    let mut out = Vec::new();
+                    for x in xs {
+                        match x {
+                            Val::List(inner) => out.extend(inner.clone()),
+                            other => out.push(other.clone()),
+                        }
+                    }
+                    Ok(Val::List(out))
+                }
+                _ => bail!("ERROR_BADARG list.flatten expects list"),
+            }
         }
         Builtin::ListGet => {
             if args.len() != 2 {
@@ -4288,6 +4364,13 @@ impl ModuleLoader {
                 m.insert("map".to_string(), Val::Builtin(Builtin::ListMap));
                 m.insert("filter".to_string(), Val::Builtin(Builtin::ListFilter));
                 m.insert("get".to_string(), Val::Builtin(Builtin::ListGet));
+                m.insert("len".to_string(), Val::Builtin(Builtin::ListLen));
+                m.insert("head".to_string(), Val::Builtin(Builtin::ListHead));
+                m.insert("tail".to_string(), Val::Builtin(Builtin::ListTail));
+                m.insert("append".to_string(), Val::Builtin(Builtin::ListAppend));
+                m.insert("zip".to_string(), Val::Builtin(Builtin::ListZip));
+                m.insert("reverse".to_string(), Val::Builtin(Builtin::ListReverse));
+                m.insert("flatten".to_string(), Val::Builtin(Builtin::ListFlatten));
                 m.insert(
                     "sort_by_int_key".to_string(),
                     Val::Builtin(Builtin::ListSortByIntKey),
