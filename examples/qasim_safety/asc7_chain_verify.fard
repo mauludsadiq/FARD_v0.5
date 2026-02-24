@@ -1,54 +1,95 @@
-import("std/hash") as hash
-import("std/json") as json
+import("std/fs") as fs
 import("std/str") as str
 import("std/list") as list
+import("std/json") as json
+import("std/hash") as hash
 
-// ── load the ASC7 ZProof chain (embedded as a record for now) ─────────────
-// Chain tip from asc7_zproof_chain.jsonl — we verify the key invariants:
-// 1. tip receipt_hash matches recomputed hash of its body
-// 2. chain metadata is consistent
+// ── strip sha256: prefix ──────────────────────────────────────────────────
+fn strip(s) {
+  if str.starts_with(s, "sha256:") then str.slice(s, 7, str.len(s)) else s
+}
 
-// Chain facts extracted from asc7_zproof_chain.jsonl
-let chain_length  = 50
-let ok_count      = 32
-let fail_count    = 12
-let crashed_count = 6
-let genesis_prev  = "0000000000000000000000000000000000000000000000000000000000000000"
-let tip_hash      = "52ee4427cbe5dc9b81207e252aa598843b31a7a2a50077e44e80947571b22586"
-let tip_seq       = 49
+// ── canonicalize a receipt body and compute its hash ─────────────────────
+// Fields in sort_keys (alphabetical) order — must match Python json.dumps(sort_keys=True)
+fn receipt_body_hash(r) {
+  let ok_val = if r.ok == true then true else if r.ok == false then false else null
+  let body = {
+    env_after_hash:  r.env_after_hash,
+    env_before_hash: r.env_before_hash,
+    ok:              ok_val,
+    prev_hash:       r.prev_hash,
+    seq:             r.seq,
+    src:             r.src,
+    src_hash:        r.src_hash,
+    ts_post:         r.ts_post,
+    ts_pre:          r.ts_pre
+  }
+  strip(hash.sha256_text(json.encode(body)))
+}
 
-// ── verify chain metadata integrity ──────────────────────────────────────
-let total_accounted = ok_count + fail_count + crashed_count
-let counts_ok       = total_accounted == chain_length
+// ── load and parse JSONL chain ────────────────────────────────────────────
+let raw     = fs.read_text("examples/qasim_safety/asc7_zproof_chain.jsonl")
+let lines   = list.filter(str.split_lines(raw), fn(l) { str.len(l) > 0 })
+let chain   = list.map(lines, fn(l) { json.decode(l) })
+let n       = list.len(chain)
 
-// ── hash the tip facts as a FARD-side witness ─────────────────────────────
-let tip_witness = json.encode({
-  chain_length:  chain_length,
-  tip_seq:       tip_seq,
-  tip_hash:      tip_hash,
-  genesis_prev:  genesis_prev,
-  ok_count:      ok_count,
-  fail_count:    fail_count,
-  crashed_count: crashed_count
+// ── verify each receipt hash ──────────────────────────────────────────────
+let hash_oks = list.map(chain, fn(r) {
+  let computed = receipt_body_hash(r)
+  computed == r.receipt_hash
 })
-let witness_hash = hash.sha256_text(tip_witness)
+let all_hashes_ok = list.fold(hash_oks, true, fn(acc, ok) { if acc then ok else false })
 
-// ── verify tip hash starts with expected prefix ───────────────────────────
-let tip_prefix_ok = str.starts_with(tip_hash, "52ee4427")
+// ── verify chain links (prev_hash[i] == receipt_hash[i-1]) ───────────────
+let link_oks = list.map(
+  list.range(1, n),
+  fn(i) { chain[i].prev_hash == chain[i-1].receipt_hash }
+)
+let all_links_ok = list.fold(link_oks, true, fn(acc, ok) { if acc then ok else false })
 
-// ── summary ───────────────────────────────────────────────────────────────
-let health_pct = ok_count * 100 / chain_length
+// ── verify seq monotonicity ───────────────────────────────────────────────
+let seq_oks = list.map(
+  list.range(1, n),
+  fn(i) { chain[i].seq == chain[i-1].seq + 1 }
+)
+let all_seqs_ok = list.fold(seq_oks, true, fn(acc, ok) { if acc then ok else false })
+
+// ── verify genesis prev_hash == 0...0 ────────────────────────────────────
+let zero        = "0000000000000000000000000000000000000000000000000000000000000000"
+let genesis_ok  = chain[0].prev_hash == zero
+
+// ── compute counts from data ──────────────────────────────────────────────
+let ok_count      = list.len(list.filter(chain, fn(r) { r.ok == true }))
+let fail_count    = list.len(list.filter(chain, fn(r) { r.ok == false }))
+let crashed_count = list.len(list.filter(chain, fn(r) { r.ok == null }))
+let health_pct    = ok_count * 100 / n
+
+// ── tip verification ──────────────────────────────────────────────────────
+let tip          = chain[n - 1]
+let tip_hash_ok  = tip.receipt_hash == "52ee4427cbe5dc9b81207e252aa598843b31a7a2a50077e44e80947571b22586"
+
+// ── final verdict ─────────────────────────────────────────────────────────
+let valid = if genesis_ok then
+              if all_hashes_ok then
+                if all_links_ok then
+                  if all_seqs_ok then
+                    tip_hash_ok
+                  else false
+                else false
+              else false
+            else false
 
 {
-  chain_length:    chain_length,
-  counts_ok:       counts_ok,
-  total_accounted: total_accounted,
-  tip_hash:        tip_hash,
-  tip_prefix_ok:   tip_prefix_ok,
-  witness_hash:    witness_hash,
-  health_pct:      health_pct,
+  chain_length:    n,
+  genesis_ok:      genesis_ok,
+  all_hashes_ok:   all_hashes_ok,
+  all_links_ok:    all_links_ok,
+  all_seqs_ok:     all_seqs_ok,
+  tip_hash_ok:     tip_hash_ok,
   ok_count:        ok_count,
   fail_count:      fail_count,
   crashed_count:   crashed_count,
-  verdict:         if counts_ok then if tip_prefix_ok then "CHAIN_VALID" else "TIP_MISMATCH" else "COUNT_MISMATCH"
+  health_pct:      health_pct,
+  tip_hash:        tip.receipt_hash,
+  verdict:         if valid then "CHAIN_VALID" else "CHAIN_INVALID"
 }

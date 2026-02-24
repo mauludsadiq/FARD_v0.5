@@ -1739,6 +1739,7 @@ enum Builtin {
     StrRepeat,
     StrIndexOf,
     StrChars,
+    FsReadText,
     CodecHexEncode,
     CodecHexDecode,
     HashSha256Text,
@@ -2636,7 +2637,33 @@ fn call_builtin(
             let j = args[0]
                 .to_json()
                 .ok_or_else(|| anyhow!("ERROR_RUNTIME json encode non-jsonable"))?;
-            Ok(Val::Str(serde_json::to_string(&j)?))
+            // Use ASCII-safe encoding: escape non-ASCII as \uXXXX to match
+            // Python json.dumps default (ensure_ascii=True)
+            let raw = serde_json::to_string(&j)?;
+            let mut escaped = String::with_capacity(raw.len());
+            for c in raw.chars() {
+                if c.is_ascii() {
+                    escaped.push(c);
+                } else {
+                    let n = c as u32;
+                    if n <= 0xFFFF {
+                        escaped.push('\\');
+                        escaped.push('u');
+                        escaped.push_str(&format!("{:04x}", n));
+                    } else {
+                        let n2 = n - 0x10000;
+                        let hi = 0xD800 + (n2 >> 10);
+                        let lo = 0xDC00 + (n2 & 0x3FF);
+                        escaped.push('\\');
+                        escaped.push('u');
+                        escaped.push_str(&format!("{:04x}", hi));
+                        escaped.push('\\');
+                        escaped.push('u');
+                        escaped.push_str(&format!("{:04x}", lo));
+                    }
+                }
+            }
+            Ok(Val::Str(escaped))
         }
         Builtin::JsonDecode => {
             if args.len() != 1 {
@@ -3360,6 +3387,17 @@ fn call_builtin(
             match args.first() {
                 Some(Val::Str(s)) => Ok(Val::List(s.chars().map(|c| Val::Str(c.to_string())).collect())),
                 _ => bail!("ERROR_BADARG str.chars expects string"),
+            }
+        }
+        Builtin::FsReadText => {
+            if args.len() != 1 { bail!("ERROR_ARITY fs.read_text"); }
+            match &args[0] {
+                Val::Str(path) => {
+                    let content = std::fs::read_to_string(path.as_str())
+                        .map_err(|e| anyhow!("ERROR_IO fs.read_text {}: {}", path, e))?;
+                    Ok(Val::Str(content))
+                }
+                _ => bail!("ERROR_BADARG fs.read_text expects string path"),
             }
         }
         Builtin::StrSplitLines => {
@@ -4792,6 +4830,11 @@ impl ModuleLoader {
                 m.insert("gt".to_string(), Val::Builtin(Builtin::IntGt));
                 m.insert("le".to_string(), Val::Builtin(Builtin::IntLe));
                 m.insert("ge".to_string(), Val::Builtin(Builtin::IntGe));
+                Ok(m)
+            }
+            "std/fs" => {
+                let mut m = BTreeMap::new();
+                m.insert("read_text".to_string(), Val::Builtin(Builtin::FsReadText));
                 Ok(m)
             }
             "std/option" => {
