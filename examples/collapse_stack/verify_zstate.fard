@@ -1,0 +1,26 @@
+import("std/json") as json
+import("std/hash") as hash
+import("std/rec") as rec
+import("std/list") as list
+
+fn extract_info(z, computed) {
+  let sig = rec.get(z, "signature")
+  let defs = rec.get(sig, "defs")
+  let theorems = rec.get(sig, "theorems")
+  let thm_names = list.map(theorems, fn(t) { rec.get(t, "name") })
+  let def_names = list.map(defs, fn(d) { rec.get(d, "name") })
+  let focus = rec.get(z, "focus")
+  let history = rec.get(z, "history")
+  {ok: true, hash: computed, theorem_count: list.len(theorems), def_count: list.len(defs), theorems: thm_names, defs: def_names, focus_root: rec.get(focus, "root"), history_depth: list.len(history)}
+}
+
+fn verify_zstate(zstate_json, claimed_hash) {
+  let computed = hash.sha256_text(zstate_json)
+  if computed == claimed_hash
+  then extract_info(json.decode(zstate_json), computed)
+  else {ok: false, reason: "hash_mismatch", computed: computed, claimed: claimed_hash}
+}
+
+let zstate_json = "{\"context\":{\"edges\":[{\"from_id\":\"Theorem_1\",\"label\":\"uses\",\"to_id\":\"Φ\"},{\"from_id\":\"Theorem_2\",\"label\":\"uses\",\"to_id\":\"Φ\"}],\"nodes\":[{\"id\":\"Φ\",\"kind\":\"def\"},{\"id\":\"Theorem_1\",\"kind\":\"theorem\"},{\"id\":\"Theorem_2\",\"kind\":\"theorem\"}]},\"focus\":{\"neighbors\":[\"Φ\"],\"root\":\"Theorem_2\"},\"history\":[],\"kernel\":\"math/lean4\",\"repo\":{\"main_file\":\"lean/unified_collapse.lean\",\"root\":\"collapse_stack-2\"},\"signature\":{\"defs\":[{\"file\":\"lean/unified_collapse.lean\",\"kind\":\"def\",\"line\":1,\"name\":\"Φ\",\"type\":\"def Φ (X : Type) : X → X :=\"}],\"theorems\":[{\"file\":\"lean/unified_collapse.lean\",\"kind\":\"theorem\",\"line\":4,\"name\":\"Theorem_1\",\"type\":\"theorem Theorem_1 : ∀ (X : Type) (x : X), Φ X x = x := by\"},{\"file\":\"lean/unified_collapse.lean\",\"kind\":\"theorem\",\"line\":8,\"name\":\"Theorem_2\",\"type\":\"theorem Theorem_2 : ∀ (X : Type) (x y : X), Φ X x = Φ X y → x = y := by\"}]},\"version\":\"ZState-0.1\"}"
+let claimed = "sha256:be42475bda29dfb6d84dada9c6aec9779930790e42a4b1d47872376ddbdc06cf"
+verify_zstate(zstate_json, claimed)
