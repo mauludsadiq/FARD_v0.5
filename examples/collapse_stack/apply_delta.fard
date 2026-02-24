@@ -1,0 +1,43 @@
+import("std/json") as json
+import("std/hash") as hash
+import("std/rec") as rec
+import("std/list") as list
+import("std/grow") as grow
+
+fn load_verified(zstate_json, claimed_hash) {
+  let computed = hash.sha256_text(zstate_json)
+  if computed == claimed_hash
+  then {t: "ok", v: json.decode(zstate_json)}
+  else {t: "err", e: "hash_mismatch"}
+}
+
+fn apply_add_theorem(z, parent_hash, thm_name, thm_type, thm_file, thm_line, thm_uses) {
+  let sig = rec.get(z, "signature")
+  let theorems = rec.get(sig, "theorems")
+  let new_thm = {content_hash: null, file: thm_file, kind: "theorem", line: thm_line, name: thm_name, status: "declared", type: thm_type}
+  let new_theorems = grow.append(theorems, new_thm)
+  let new_sig = rec.set(sig, "theorems", new_theorems)
+  let ctx = rec.get(z, "context")
+  let nodes = rec.get(ctx, "nodes")
+  let edges = rec.get(ctx, "edges")
+  let new_node = {id: thm_name, kind: "theorem"}
+  let new_nodes = grow.append(nodes, new_node)
+  let new_edge = {from_id: thm_name, label: "uses", to_id: thm_uses}
+  let new_edges = grow.append(edges, new_edge)
+  let new_ctx = rec.set(rec.set(ctx, "nodes", new_nodes), "edges", new_edges)
+  let delta_rec = {file: thm_file, line: thm_line, name: thm_name, op: "AddTheorem", type: thm_type, uses: [thm_uses]}
+  let hist_entry = {delta: delta_rec, parent_hash: parent_hash}
+  let history = rec.get(z, "history")
+  let new_history = grow.append(history, hist_entry)
+  let new_z = rec.set(rec.set(rec.set(z, "signature", new_sig), "context", new_ctx), "history", new_history)
+  let new_canon = json.canonicalize(new_z)
+  let new_hash = hash.sha256_text(new_canon)
+  {hash: new_hash, canonical: new_canon, parent_hash: parent_hash}
+}
+
+let parent_json = "{\"context\":{\"edges\":[{\"from_id\":\"Theorem_1\",\"label\":\"uses\",\"to_id\":\"Φ\"},{\"from_id\":\"Theorem_2\",\"label\":\"uses\",\"to_id\":\"Φ\"}],\"nodes\":[{\"id\":\"Φ\",\"kind\":\"def\"},{\"id\":\"Theorem_1\",\"kind\":\"theorem\"},{\"id\":\"Theorem_2\",\"kind\":\"theorem\"}]},\"focus\":{\"neighbors\":[\"Φ\"],\"root\":\"Theorem_2\"},\"history\":[],\"kernel\":\"math/lean4\",\"repo\":{\"main_file\":\"lean/unified_collapse.lean\",\"root\":\"collapse_stack-2\"},\"signature\":{\"defs\":[{\"file\":\"lean/unified_collapse.lean\",\"kind\":\"def\",\"line\":1,\"name\":\"Φ\",\"type\":\"def Φ (X : Type) : X → X :=\"}],\"theorems\":[{\"file\":\"lean/unified_collapse.lean\",\"kind\":\"theorem\",\"line\":4,\"name\":\"Theorem_1\",\"type\":\"theorem Theorem_1 : ∀ (X : Type) (x : X), Φ X x = x := by\"},{\"file\":\"lean/unified_collapse.lean\",\"kind\":\"theorem\",\"line\":8,\"name\":\"Theorem_2\",\"type\":\"theorem Theorem_2 : ∀ (X : Type) (x y : X), Φ X x = Φ X y → x = y := by\"}]},\"version\":\"ZState-0.1\"}"
+let parent_hash = "sha256:be42475bda29dfb6d84dada9c6aec9779930790e42a4b1d47872376ddbdc06cf"
+let loaded = load_verified(parent_json, parent_hash)
+if loaded.t == "ok"
+then apply_add_theorem(loaded.v, parent_hash, "unified_collapse.Theorem_3", "theorem Theorem_3 : ∀ (X : Type) (x : X), Φ X (Φ X x) = Φ X x := by\n  intro X x\n  simp [Φ]", "lean/unified_collapse.lean", 40, "Φ")
+else loaded
