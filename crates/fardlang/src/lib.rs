@@ -10,3 +10,4 @@ pub use parse::parse_module;
 
 pub mod eval;
 pub mod effects;
+pub mod algebra;

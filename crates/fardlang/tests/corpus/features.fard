@@ -1,0 +1,23 @@
+module corpus_features
+
+fn double(n: Int) : Int
+  mul(n, 2)
+
+fn negate_if_neg(n: Int) : Int
+  if lt(n, 0) { neg(n) } else { n }
+
+fn make_pair(a: Int, b: Int) : Value
+  {a: a, b: b}
+
+fn sum_list(xs: Value, acc: Int) : Int
+  if eq(list_len(xs), 0) { acc }
+  else { sum_list(list_tail(xs), add(acc, list_head(xs))) }
+
+fn main() : Value {
+  let a = double(5)
+  let b = negate_if_neg(-3)
+  let c = make_pair(a, b)
+  let xs = [1, 2, 3, 4]
+  let s = sum_list(xs, 0)
+  {double: a, abs: b, pair: c, sum: s}
+}

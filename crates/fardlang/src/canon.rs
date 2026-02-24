@@ -196,11 +196,11 @@ fn print_block(b: &Block) -> String {
                 s.push_str(name);
                 s.push_str(" = ");
                 s.push_str(&print_expr(expr));
-                s.push_str("; ");
+                s.push(' ');
             }
             Stmt::Expr(e) => {
                 s.push_str(&print_expr(e));
-                s.push_str("; ");
+                s.push(' ');
             }
         }
     }
