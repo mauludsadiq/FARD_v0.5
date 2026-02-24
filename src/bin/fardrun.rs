@@ -1725,6 +1725,20 @@ enum Builtin {
     CodecBase64UrlDecode,
     RandUuidV4,
     StrSplit,
+    StrUpper,
+    StrContains,
+    StrStartsWith,
+    StrEndsWith,
+    StrReplace,
+    StrSlice,
+    StrFormat,
+    StrFromInt,
+    StrFromFloat,
+    StrPadLeft,
+    StrPadRight,
+    StrRepeat,
+    StrIndexOf,
+    StrChars,
     CodecHexEncode,
     CodecHexDecode,
     HashSha256Text,
@@ -3156,6 +3170,144 @@ fn call_builtin(
             let parts: Vec<Val> = s.split(delim.as_str()).map(|p| Val::Str(p.to_string())).collect();
             Ok(Val::List(parts))
         }
+        Builtin::StrUpper => {
+            match args.first() {
+                Some(Val::Str(s)) => Ok(Val::Str(s.to_uppercase())),
+                _ => bail!("ERROR_BADARG str.upper expects string"),
+            }
+        }
+        Builtin::StrContains => {
+            if args.len() != 2 { bail!("ERROR_ARITY str.contains"); }
+            match (&args[0], &args[1]) {
+                (Val::Str(s), Val::Str(sub)) => Ok(Val::Bool(s.contains(sub.as_str()))),
+                _ => bail!("ERROR_BADARG str.contains expects string, string"),
+            }
+        }
+        Builtin::StrStartsWith => {
+            if args.len() != 2 { bail!("ERROR_ARITY str.starts_with"); }
+            match (&args[0], &args[1]) {
+                (Val::Str(s), Val::Str(pre)) => Ok(Val::Bool(s.starts_with(pre.as_str()))),
+                _ => bail!("ERROR_BADARG str.starts_with expects string, string"),
+            }
+        }
+        Builtin::StrEndsWith => {
+            if args.len() != 2 { bail!("ERROR_ARITY str.ends_with"); }
+            match (&args[0], &args[1]) {
+                (Val::Str(s), Val::Str(suf)) => Ok(Val::Bool(s.ends_with(suf.as_str()))),
+                _ => bail!("ERROR_BADARG str.ends_with expects string, string"),
+            }
+        }
+        Builtin::StrReplace => {
+            if args.len() != 3 { bail!("ERROR_ARITY str.replace expects 3 args"); }
+            match (&args[0], &args[1], &args[2]) {
+                (Val::Str(s), Val::Str(from), Val::Str(to)) => Ok(Val::Str(s.replace(from.as_str(), to.as_str()))),
+                _ => bail!("ERROR_BADARG str.replace expects string, string, string"),
+            }
+        }
+        Builtin::StrSlice => {
+            if args.len() != 3 { bail!("ERROR_ARITY str.slice expects 3 args"); }
+            match (&args[0], &args[1], &args[2]) {
+                (Val::Str(s), Val::Int(start), Val::Int(end)) => {
+                    let chars: Vec<char> = s.chars().collect();
+                    let len = chars.len() as i64;
+                    let s2 = (*start).max(0).min(len) as usize;
+                    let e2 = (*end).max(0).min(len) as usize;
+                    Ok(Val::Str(chars[s2..e2.max(s2)].iter().collect()))
+                }
+                _ => bail!("ERROR_BADARG str.slice expects string, int, int"),
+            }
+        }
+        Builtin::StrFormat => {
+            // str.format(template, rec) — replaces {key} with rec.key
+            if args.len() != 2 { bail!("ERROR_ARITY str.format expects 2 args"); }
+            match (&args[0], &args[1]) {
+                (Val::Str(tmpl), Val::Rec(m)) => {
+                    let mut out = tmpl.clone();
+                    for (k, v) in m {
+                        let placeholder = format!("{{{}}}", k);
+                        let val_str = match v {
+                            Val::Str(s) => s.clone(),
+                            Val::Int(n) => n.to_string(),
+                            Val::Bool(b) => b.to_string(),
+                            Val::Bytes(b) if b.len() == 8 => {
+                                let arr: [u8;8] = b.as_slice().try_into().unwrap_or([0u8;8]);
+                                f64::from_le_bytes(arr).to_string()
+                            }
+                            _ => format!("{:?}", v),
+                        };
+                        out = out.replace(&placeholder, &val_str);
+                    }
+                    Ok(Val::Str(out))
+                }
+                _ => bail!("ERROR_BADARG str.format expects string, record"),
+            }
+        }
+        Builtin::StrFromInt => {
+            match args.first() {
+                Some(Val::Int(n)) => Ok(Val::Str(n.to_string())),
+                _ => bail!("ERROR_BADARG str.from_int expects int"),
+            }
+        }
+        Builtin::StrFromFloat => {
+            match args.first() {
+                Some(Val::Bytes(b)) if b.len() == 8 => {
+                    let arr: [u8;8] = b.as_slice().try_into().unwrap_or([0u8;8]);
+                    Ok(Val::Str(f64::from_le_bytes(arr).to_string()))
+                }
+                Some(Val::Int(n)) => Ok(Val::Str((*n as f64).to_string())),
+                _ => bail!("ERROR_BADARG str.from_float expects float"),
+            }
+        }
+        Builtin::StrPadLeft => {
+            if args.len() != 3 { bail!("ERROR_ARITY str.pad_left"); }
+            match (&args[0], &args[1], &args[2]) {
+                (Val::Str(s), Val::Int(width), Val::Str(pad)) => {
+                    let w = (*width).max(0) as usize;
+                    let pc: char = pad.chars().next().unwrap_or(' ');
+                    let chars: Vec<char> = s.chars().collect();
+                    if chars.len() >= w { return Ok(Val::Str(s.clone())); }
+                    let padding: String = std::iter::repeat(pc).take(w - chars.len()).collect();
+                    Ok(Val::Str(format!("{}{}", padding, s)))
+                }
+                _ => bail!("ERROR_BADARG str.pad_left expects string, int, string"),
+            }
+        }
+        Builtin::StrPadRight => {
+            if args.len() != 3 { bail!("ERROR_ARITY str.pad_right"); }
+            match (&args[0], &args[1], &args[2]) {
+                (Val::Str(s), Val::Int(width), Val::Str(pad)) => {
+                    let w = (*width).max(0) as usize;
+                    let pc: char = pad.chars().next().unwrap_or(' ');
+                    let chars: Vec<char> = s.chars().collect();
+                    if chars.len() >= w { return Ok(Val::Str(s.clone())); }
+                    let padding: String = std::iter::repeat(pc).take(w - chars.len()).collect();
+                    Ok(Val::Str(format!("{}{}", s, padding)))
+                }
+                _ => bail!("ERROR_BADARG str.pad_right expects string, int, string"),
+            }
+        }
+        Builtin::StrRepeat => {
+            if args.len() != 2 { bail!("ERROR_ARITY str.repeat"); }
+            match (&args[0], &args[1]) {
+                (Val::Str(s), Val::Int(n)) => Ok(Val::Str(s.repeat((*n).max(0) as usize))),
+                _ => bail!("ERROR_BADARG str.repeat expects string, int"),
+            }
+        }
+        Builtin::StrIndexOf => {
+            if args.len() != 2 { bail!("ERROR_ARITY str.index_of"); }
+            match (&args[0], &args[1]) {
+                (Val::Str(s), Val::Str(sub)) => {
+                    Ok(Val::Int(s.find(sub.as_str()).map(|i| i as i64).unwrap_or(-1)))
+                }
+                _ => bail!("ERROR_BADARG str.index_of expects string, string"),
+            }
+        }
+        Builtin::StrChars => {
+            match args.first() {
+                Some(Val::Str(s)) => Ok(Val::List(s.chars().map(|c| Val::Str(c.to_string())).collect())),
+                _ => bail!("ERROR_BADARG str.chars expects string"),
+            }
+        }
         Builtin::StrSplitLines => {
             if args.len() != 1 {
                 bail!("ERROR_BADARG str.split_lines expects 1 arg");
@@ -4515,6 +4667,20 @@ impl ModuleLoader {
                 m.insert("lower".to_string(), Val::Builtin(Builtin::StrToLower));
                 m.insert("concat".to_string(), Val::Builtin(Builtin::StrConcat));
                 m.insert("split".to_string(), Val::Builtin(Builtin::StrSplit));
+                m.insert("upper".to_string(), Val::Builtin(Builtin::StrUpper));
+                m.insert("contains".to_string(), Val::Builtin(Builtin::StrContains));
+                m.insert("starts_with".to_string(), Val::Builtin(Builtin::StrStartsWith));
+                m.insert("ends_with".to_string(), Val::Builtin(Builtin::StrEndsWith));
+                m.insert("replace".to_string(), Val::Builtin(Builtin::StrReplace));
+                m.insert("slice".to_string(), Val::Builtin(Builtin::StrSlice));
+                m.insert("format".to_string(), Val::Builtin(Builtin::StrFormat));
+                m.insert("from_int".to_string(), Val::Builtin(Builtin::StrFromInt));
+                m.insert("from_float".to_string(), Val::Builtin(Builtin::StrFromFloat));
+                m.insert("pad_left".to_string(), Val::Builtin(Builtin::StrPadLeft));
+                m.insert("pad_right".to_string(), Val::Builtin(Builtin::StrPadRight));
+                m.insert("repeat".to_string(), Val::Builtin(Builtin::StrRepeat));
+                m.insert("index_of".to_string(), Val::Builtin(Builtin::StrIndexOf));
+                m.insert("chars".to_string(), Val::Builtin(Builtin::StrChars));
                 Ok(m)
             }
             "std/map" => {
