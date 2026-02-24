@@ -1,145 +1,203 @@
 import("std/float") as float
 import("std/linalg") as linalg
+import("std/list") as list
 import("std/hash") as hash
 import("std/json") as json
 
-fn flt(x) { float.from_int(x) }
-fn ftxt(x) { float.to_text(x) }
-fn fadd(a, b) { float.add(a, b) }
-fn fmul(a, b) { float.mul(a, b) }
-fn fdiv(a, b) { float.div(a, b) }
-fn fsub(a, b) { float.sub(a, b) }
-fn fsqrt(x) { float.sqrt(x) }
-fn fabs(x) { float.abs(x) }
-fn fln(x) { float.ln(x) }
-fn fpow(b, e) { float.pow(b, e) }
-fn fneg(x) { float.neg(x) }
+// ── float helpers ──────────────────────────────────────────────────────────
+fn flt(x)      { float.from_int(x) }
+fn ftxt(x)     { float.to_text(x) }
+fn fadd(a, b)  { float.add(a, b) }
+fn fmul(a, b)  { float.mul(a, b) }
+fn fdiv(a, b)  { float.div(a, b) }
+fn fsub(a, b)  { float.sub(a, b) }
+fn fsqrt(x)    { float.sqrt(x) }
+fn fabs(x)     { float.abs(x) }
+fn fln(x)      { float.ln(x) }
+fn fpow(b, e)  { float.pow(b, e) }
+fn fneg(x)     { float.neg(x) }
+fn fle(a, b)   { float.le(a, b) }
+fn fgt(a, b)   { float.gt(a, b) }
+fn flt2(a, b)  { float.lt(a, b) }
 
+// ── Acklam rational approximation — accurate to 1e-9 ─────────────────────
 fn normal_quantile(p) {
-  let a0 = float.from_text("2.50662823884")
-  let a1 = float.from_text("-18.61500062529")
-  let a2 = float.from_text("41.39119773534")
-  let a3 = float.from_text("-25.44106049637")
-  let b1 = float.from_text("-8.47351093090")
-  let b2 = float.from_text("23.08336743743")
-  let b3 = float.from_text("-21.06224101826")
-  let b4 = float.from_text("3.13082909833")
-  let c0 = float.from_text("0.3374754822726147")
-  let c1 = float.from_text("0.9761690190917186")
-  let c2 = float.from_text("0.1607979714918209")
-  let c3 = float.from_text("0.0276438810333863")
-  let c4 = float.from_text("0.0038405729373609")
-  let c5 = float.from_text("0.0003951896511919")
-  let c6 = float.from_text("0.0000321767881768")
-  let c7 = float.from_text("0.0000002888167364")
-  let c8 = float.from_text("0.0000003960315187")
-  let y = fsub(p, float.from_text("0.5"))
-  let r = fmul(y, y)
-  let num = fmul(y, fadd(fmul(r, fadd(fmul(r, fadd(fmul(a3, r), a2)), a1)), a0))
-  let den = fadd(fmul(r, fadd(fmul(r, fadd(fmul(r, fadd(fmul(b4, r), b3)), b2)), b1)), flt(1))
-  let inner = fdiv(num, den)
-  let r2 = if float.gt(y, flt(0)) then fsub(flt(1), p) else p
-  let r3 = fsqrt(fneg(fln(r2)))
-  let s = if float.le(r3, flt(5)) then fsub(r3, float.from_text("1.6")) else fsub(r3, flt(5))
-  let outer = fadd(fmul(s, fadd(fmul(s, fadd(fmul(s, fadd(fmul(s, fadd(fmul(s, fadd(fmul(s, fadd(fmul(s, fadd(fmul(s, c8), c7)), c6)), c5)), c4)), c3)), c2)), c1)), c0)
-  let outer_signed = if float.lt(y, flt(0)) then fneg(outer) else outer
-  if float.lt(fabs(y), float.from_text("0.42")) then inner else outer_signed
+  let a0 = -39.69683028665376
+  let a1 = 220.9460984245205
+  let a2 = -275.9285104469687
+  let a3 = 138.3577518672690
+  let a4 = -30.66479806614716
+  let a5 = 2.506628277459239
+  let b0 = -54.47609879822406
+  let b1 = 161.5858368580409
+  let b2 = -155.6989798598866
+  let b3 = 66.80131188771972
+  let b4 = -13.28068155288572
+  let c0 = -0.007784894002430293
+  let c1 = -0.3223964580411365
+  let c2 = -2.400758277161838
+  let c3 = -2.549732539343734
+  let c4 = 4.374664141464968
+  let c5 = 2.938163982698783
+  let d0 = 0.007784695709041462
+  let d1 = 0.3224671290700398
+  let d2 = 2.445134137142996
+  let d3 = 3.754408661907416
+  let p_low  = 0.02425
+  let p_high = 0.97575
+  let in_mid = if fle(p_low, p) then fle(p, p_high) else false
+  let q_mid  = fsub(p, 0.5)
+  let r_mid  = fmul(q_mid, q_mid)
+  let num_m  = fmul(q_mid, fadd(fmul(r_mid, fadd(fmul(r_mid, fadd(fmul(r_mid, fadd(fmul(r_mid, fadd(fmul(r_mid, a0), a1)), a2)), a3)), a4)), a5))
+  let den_m  = fadd(fmul(r_mid, fadd(fmul(r_mid, fadd(fmul(r_mid, fadd(fmul(r_mid, fadd(fmul(r_mid, b0), b1)), b2)), b3)), b4)), 1.0)
+  let mid    = fdiv(num_m, den_m)
+  let q_tail = if fgt(p, p_high) then fsqrt(fmul(2.0, fneg(fln(fsub(1.0, p))))) else fsqrt(fmul(2.0, fneg(fln(p))))
+  let num_t  = fadd(fmul(q_tail, fadd(fmul(q_tail, fadd(fmul(q_tail, fadd(fmul(q_tail, fadd(fmul(q_tail, c0), c1)), c2)), c3)), c4)), c5)
+  let den_t  = fadd(fmul(q_tail, fadd(fmul(q_tail, fadd(fmul(q_tail, fadd(fmul(q_tail, d0), d1)), d2)), d3)), 1.0)
+  let tail_pos = fdiv(num_t, den_t)
+  let tail   = if fgt(p, p_high) then fneg(tail_pos) else tail_pos
+  if in_mid then mid else tail
 }
 
 fn chi2_quantile(df, p) {
-  let z = normal_quantile(p)
+  let z    = normal_quantile(p)
   let df_f = float.from_int(df)
-  let x = fdiv(flt(2), fmul(flt(9), df_f))
-  let term = fadd(fsub(flt(1), x), fmul(z, fsqrt(x)))
-  fmul(df_f, fpow(term, flt(3)))
+  let x    = fdiv(2.0, fmul(9.0, df_f))
+  let term = fadd(fsub(1.0, x), fmul(z, fsqrt(x)))
+  fmul(df_f, fpow(term, 3.0))
 }
 
-fn portfolio_digest(total_value, equity, n_positions) {
-  let j = json.encode({total_value: ftxt(total_value), equity: ftxt(equity), n: n_positions})
-  hash.sha256_text(j)
+// ── build N×N covariance matrix from weights, vols, corr matrix ───────────
+// positions: list of {price, shares, vol} records
+// corr:      N×N correlation matrix (list of rows, each row list of floats)
+// returns:   list of rows (covariance matrix scaled by 1/sqrt(252))
+fn build_cov(positions, corr) {
+  let sq252 = fsqrt(252.0)
+  let n = list.len(positions)
+  list.map(
+    list.range(0, n),
+    fn(i) {
+      let vi = positions[i].vol
+      list.map(
+        list.range(0, n),
+        fn(j) {
+          let vj = positions[j].vol
+          fdiv(fmul(fmul(vi, vj), corr[i][j]), sq252)
+        }
+      )
+    }
+  )
 }
 
-// 2-asset quad form: w^T Sigma w where Sigma_ij = vol_i * vol_j * rho_ij / sqrt(252)
-fn compute_quad_2(w0, w1, v0, v1, r00, r01, r10, r11) {
-  let sq252 = fsqrt(float.from_text("252"))
-  let s00 = fdiv(fmul(fmul(v0,v0),r00), sq252)
-  let s01 = fdiv(fmul(fmul(v0,v1),r01), sq252)
-  let s10 = fdiv(fmul(fmul(v1,v0),r10), sq252)
-  let s11 = fdiv(fmul(fmul(v1,v1),r11), sq252)
-  fadd(fadd(fadd(fmul(fmul(w0,s00),w0), fmul(fmul(w0,s01),w1)),
-            fmul(fmul(w1,s10),w0)),
-       fmul(fmul(w1,s11),w1))
+// ── N-asset quadratic form w^T Sigma w ────────────────────────────────────
+fn quad_form(w, sigma) {
+  let sw = linalg.matvec(sigma, w)
+  linalg.dot(w, sw)
 }
 
-fn risk_check_2(w0, w1, v0, v1, rho, total_value, max_var_frac, var_pct) {
-  let quad = compute_quad_2(w0, w1, v0, v1, flt(1), rho, rho, flt(1))
-  let chi2 = chi2_quantile(2, var_pct)
+// ── risk check ────────────────────────────────────────────────────────────
+fn risk_check(positions, corr, total_value, max_var_frac, var_pct) {
+  let n     = list.len(positions)
+  let w     = list.map(positions, fn(p) { fmul(p.price, p.shares) })
+  let sigma = build_cov(positions, corr)
+  let quad  = quad_form(w, sigma)
+  let chi2  = chi2_quantile(n, var_pct)
   let var_bound = fmul(fsqrt(chi2), fsqrt(fabs(quad)))
   let threshold = fmul(total_value, max_var_frac)
-  {ok: float.le(var_bound, threshold), var_bound: var_bound, threshold: threshold, quad: quad, chi2: chi2}
+  { ok: fle(var_bound, threshold), var_bound: var_bound,
+    threshold: threshold, quad: quad, chi2: chi2 }
 }
 
-fn liq_one(price, shares, adv, beta, days, half_spread, k_impact, alpha_impact) {
-  let q = fabs(shares)
-  let cap = fmul(fmul(beta, adv), days)
-  let qcap = if float.lt(q, cap) then q else cap
-  let spread = fmul(fmul(price, half_spread), qcap)
-  let alpha1 = fadd(alpha_impact, flt(1))
-  let impact = fmul(fmul(price, fdiv(k_impact, alpha1)), fpow(qcap, alpha1))
+// ── liquidity check ───────────────────────────────────────────────────────
+fn liq_one(price, shares, adv, beta, days, hs, ki, ai) {
+  let q      = fabs(shares)
+  let cap    = fmul(fmul(beta, adv), days)
+  let qcap   = if flt2(q, cap) then q else cap
+  let spread = fmul(fmul(price, hs), qcap)
+  let a1     = fadd(ai, 1.0)
+  let impact = fmul(fmul(price, fdiv(ki, a1)), fpow(qcap, a1))
   fadd(spread, impact)
 }
 
-fn liq_check_2(p0, s0, p1, s1, adv, beta, days, hs, ki, ai, total_value, max_frac) {
-  let c0 = liq_one(p0, s0, adv, beta, days, hs, ki, ai)
-  let c1 = liq_one(p1, s1, adv, beta, days, hs, ki, ai)
-  let total_cost = fadd(c0, c1)
+fn liq_check(positions, adv, beta, days, hs, ki, ai, total_value, max_frac) {
+  let costs = list.map(positions,
+    fn(p) { liq_one(p.price, p.shares, adv, beta, days, hs, ki, ai) })
+  let total_cost = list.fold(costs, 0.0, fn(acc, c) { fadd(acc, c) })
   let frac = fdiv(total_cost, total_value)
-  {ok: float.le(frac, max_frac), total_cost: total_cost, cost_fraction: frac}
+  { ok: fle(frac, max_frac), total_cost: total_cost, cost_fraction: frac }
 }
 
-fn lev_check(gross, equity, max_lev, quad, chi2) {
-  let loss_wc = fmul(fsqrt(chi2), fsqrt(fabs(quad)))
+// ── leverage check ────────────────────────────────────────────────────────
+fn lev_check(positions, equity, max_lev, quad, chi2) {
+  let gross    = list.fold(positions, 0.0,
+                   fn(acc, p) { fadd(acc, fabs(fmul(p.price, p.shares))) })
+  let loss_wc  = fmul(fsqrt(chi2), fsqrt(fabs(quad)))
   let headroom = fsub(equity, fdiv(gross, max_lev))
-  let ok = if float.gt(headroom, flt(0)) then float.le(loss_wc, headroom) else false
-  {ok: ok, loss_wc: loss_wc, headroom: headroom, gross: gross, current_lev: fdiv(gross, equity)}
+  let ok       = if fgt(headroom, 0.0) then fle(loss_wc, headroom) else false
+  { ok: ok, loss_wc: loss_wc, headroom: headroom,
+    gross: gross, current_lev: fdiv(gross, equity) }
 }
 
-// Portfolio: AAPL x10 @ 170.5, MSFT x5 @ 350.0, rho=0.6
-let p0 = float.from_text("170.5")
-let p1 = float.from_text("350.0")
-let s0 = flt(10)
-let s1 = flt(5)
-let w0 = fmul(s0, p0)
-let w1 = fmul(s1, p1)
-let total_value = fadd(w0, w1)
-let equity = fdiv(total_value, flt(2))
-let gross = fadd(fabs(w0), fabs(w1))
-let rho = float.from_text("0.6")
-let v0 = float.from_text("0.25")
-let v1 = float.from_text("0.30")
-let adv = float.from_text("1000000")
-let beta = float.from_text("0.1")
-let days = flt(5)
-let hs = float.from_text("0.0005")
-let ki = float.from_text("0.1")
-let ai = float.from_text("0.6")
+// ── portfolio digest ──────────────────────────────────────────────────────
+fn portfolio_digest(total_value, equity, n) {
+  let j = json.encode({ total_value: ftxt(total_value), equity: ftxt(equity), n: n })
+  hash.sha256_text(j)
+}
 
-let risk = risk_check_2(w0, w1, v0, v1, rho, total_value,
-                        float.from_text("0.02"), float.from_text("0.95"))
-let liq = liq_check_2(p0, s0, p1, s1, adv, beta, days, hs, ki, ai, total_value,
-                      float.from_text("0.01"))
-let lev = lev_check(gross, equity, flt(3), risk.quad, risk.chi2)
+// ── Portfolio: AAPL x10 @ 170.5, MSFT x5 @ 350.0, GOOG x2 @ 140.0 ───────
+let positions = [
+  { price: 170.5, shares: 10.0, vol: 0.25 },
+  { price: 350.0, shares:  5.0, vol: 0.30 },
+  { price: 140.0, shares:  2.0, vol: 0.20 }
+]
+
+// 3×3 correlation matrix
+let corr = [
+  [1.0, 0.6, 0.4],
+  [0.6, 1.0, 0.5],
+  [0.4, 0.5, 1.0]
+]
+
+let total_value = list.fold(positions, 0.0,
+  fn(acc, p) { fadd(acc, fmul(p.price, p.shares)) })
+let equity = fdiv(total_value, 2.0)
+
+let adv  = 1000000.0
+let beta = 0.1
+let days = 5.0
+let hs   = 0.0005
+let ki   = 0.1
+let ai   = 0.6
+
+let risk = risk_check(positions, corr, total_value, 0.02, 0.95)
+let liq  = liq_check(positions, adv, beta, days, hs, ki, ai, total_value, 0.01)
+let lev  = lev_check(positions, equity, 3.0, risk.quad, risk.chi2)
 let overall = if risk.ok then if liq.ok then lev.ok else false else false
-let digest = portfolio_digest(total_value, equity, 2)
+let digest  = portfolio_digest(total_value, equity, list.len(positions))
 
 {
+  n_positions:   list.len(positions),
+  total_value:   ftxt(total_value),
+  equity:        ftxt(equity),
   portfolio_digest: digest,
-  total_value: ftxt(total_value),
-  equity: ftxt(equity),
-  risk: {ok: risk.ok, var_bound: ftxt(risk.var_bound), threshold: ftxt(risk.threshold),
-         quad_form: ftxt(risk.quad), chi2_radius: ftxt(risk.chi2)},
-  liquidity: {ok: liq.ok, total_cost: ftxt(liq.total_cost), cost_fraction: ftxt(liq.cost_fraction)},
-  leverage: {ok: lev.ok, loss_wc: ftxt(lev.loss_wc), headroom: ftxt(lev.headroom),
-             gross: ftxt(lev.gross), current_lev: ftxt(lev.current_lev)},
+  risk: {
+    ok:        risk.ok,
+    var_bound: ftxt(risk.var_bound),
+    threshold: ftxt(risk.threshold),
+    quad_form: ftxt(risk.quad),
+    chi2_radius: ftxt(risk.chi2)
+  },
+  liquidity: {
+    ok:           liq.ok,
+    total_cost:   ftxt(liq.total_cost),
+    cost_fraction: ftxt(liq.cost_fraction)
+  },
+  leverage: {
+    ok:          lev.ok,
+    loss_wc:     ftxt(lev.loss_wc),
+    headroom:    ftxt(lev.headroom),
+    gross:       ftxt(lev.gross),
+    current_lev: ftxt(lev.current_lev)
+  },
   overall_verdict: overall
 }

@@ -1005,7 +1005,7 @@ impl Parser {
             _ => bail!("ERROR_PARSE expected identifier; got {:?}", t),
         }
     }
-    fn parse_fn_block_body(&mut self) -> Result<Expr> {
+    fn parse_fn_block_inner(&mut self) -> Result<Expr> {
         let mut binds: Vec<(String, Expr)> = Vec::new();
         while self.eat_kw("let") {
             let name = self.expect_ident()?;
@@ -1014,11 +1014,15 @@ impl Parser {
             binds.push((name, rhs));
         }
         let mut tail = self.parse_expr()?;
-        self.expect_sym("}")?;
         for (name, rhs) in binds.into_iter().rev() {
             tail = Expr::Let(name, Box::new(rhs), Box::new(tail));
         }
         Ok(tail)
+    }
+    fn parse_fn_block_body(&mut self) -> Result<Expr> {
+        let body = self.parse_fn_block_inner()?;
+        self.expect_sym("}")?;
+        Ok(body)
     }
     fn parse_type(&mut self) -> Result<Type> {
         match self.peek() {
@@ -1555,7 +1559,7 @@ impl Parser {
                 }
             }
             self.expect_sym("{")?;
-            let body = self.parse_expr()?;
+            let body = self.parse_fn_block_inner()?;
             self.expect_sym("}")?;
             return Ok(Expr::Fn(params, Box::new(body)));
         }
