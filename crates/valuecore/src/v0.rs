@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use sha2::{Digest, Sha256};
+use crate::sha256::Sha256;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum V {

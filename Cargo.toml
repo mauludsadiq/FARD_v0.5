@@ -13,11 +13,10 @@ toml = "0.8"
 walkdir = "2"
 regex = "1"
 ed25519-dalek = "2.0"
-sha2 = "0.10"
-hmac = { version = "0.12", features = ["std"] }
 base64 = "0.22"
 uuid = { version = "1", features = ["v4"] }
 nalgebra = { version = "0.33", features = ["std"] }
+valuecore = { path = "crates/valuecore" }
 
 [dev-dependencies]
 pretty_assertions = "1"

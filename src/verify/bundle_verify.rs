@@ -1,3 +1,4 @@
+use valuecore::Sha256 as NativeSha256;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
@@ -13,8 +14,7 @@ fn is_sha256(s: &str) -> bool {
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    use sha2::Digest;
-    let mut h = sha2::Sha256::new();
+        let mut h = NativeSha256::new();
     h.update(bytes);
     let out = h.finalize();
     const HEX: &[u8; 16] = b"0123456789abcdef";

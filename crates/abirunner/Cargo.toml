@@ -6,7 +6,6 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 anyhow = "1"
-sha2 = "0.10"
 valuecore = { path = "../valuecore" }
 witnesscore = { path = "../witnesscore" }
 

@@ -7,10 +7,9 @@ use regex::Regex;
 use serde_json::{json, Value as J};
 
 fn sha256_bytes(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let mut h = Sha256::new();
+        let mut h = valuecore::Sha256::new();
     h.update(bytes);
-    format!("sha256:{:x}", h.finalize())
+    format!("sha256:{}", valuecore::hex_lower(&h.finalize()))
 }
 
 fn read_json(p: &Path) -> Result<J> {

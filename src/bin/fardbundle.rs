@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use serde_json::{json, Value};
-use sha2::{Digest as ShaDigest, Sha256};
 
 const HELP: &str = r#"fardbundle
 
@@ -789,7 +788,7 @@ fn is_safe_rel_path(p: &str) -> bool {
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    let mut h = Sha256::new();
+    let mut h = valuecore::Sha256::new();
     h.update(bytes);
     let out = h.finalize();
     to_hex(&out[..])

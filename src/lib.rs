@@ -1,10 +1,11 @@
+use valuecore::Sha256 as NativeSha256;
+use valuecore::hex_lower;
 pub mod builtin_pipe_v1;
 pub mod builtin_sig_table_v1;
 
 use anyhow::{anyhow, bail, Context, Result};
 use regex::Regex;
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -81,7 +82,7 @@ fn sha256_hex_native(b: &[u8]) -> String {
 }
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    let mut h = Sha256::new();
+    let mut h = NativeSha256::new();
     h.update(bytes);
     sha256_hex_native(&h.finalize())
 }

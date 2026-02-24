@@ -1,5 +1,4 @@
 use anyhow::{bail, Context, Result};
-use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,7 +15,7 @@ mod modgraph;
 mod parse;
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    let mut h = Sha256::new();
+    let mut h = valuecore::Sha256::new();
     h.update(bytes);
     hex_lower(&h.finalize())
 }

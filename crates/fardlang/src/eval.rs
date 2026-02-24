@@ -8,7 +8,6 @@ impl std::fmt::Display for TryPropagation {
 }
 impl std::error::Error for TryPropagation {}
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use sha2::{Sha256, Digest};
 use hkdf::Hkdf;
 use chacha20poly1305::{XChaCha20Poly1305, KeyInit, aead::{Aead, Payload}};
 use p256::ecdsa::{VerifyingKey, signature::Verifier, DerSignature};
@@ -1113,7 +1112,7 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
         "sha256" => {
             match args.get(0) {
                 Some(V::Bytes(b)) => {
-                    let hash = Sha256::digest(b);
+                    let hash = valuecore::Sha256::digest(b);
                     Ok(V::Bytes(hash.to_vec()))
                 }
                 _ => Err(anyhow!("ERROR_BADARG sha256 expects bytes")),

@@ -1,3 +1,4 @@
+use valuecore::Sha256 as NativeSha256;
 use anyhow::{anyhow, bail, Context, Result};
 const QMARK_EXPECT_RESULT: &str = "QMARK_EXPECT_RESULT";
 const QMARK_PROPAGATE_ERR: &str = "QMARK_PROPAGATE_ERR";
@@ -9,14 +10,13 @@ const RESULT_ERR_VAL_KEY: &str = "e";
 const ERROR_PAT_MISMATCH: &str = "ERROR_PAT_MISMATCH";
 const ERROR_MATCH_NO_ARM: &str = "ERROR_MATCH_NO_ARM";
 use serde_json::{Map, Value as J};
-use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 fn sha256_bytes_hex(bytes: &[u8]) -> String {
-    let mut h = Sha256::new();
+    let mut h = NativeSha256::new();
     h.update(bytes);
-    format!("{:x}", h.finalize())
+    hex_lower(&h.finalize())
 }
 fn canon_json(v: &serde_json::Value) -> Result<String> {
     fn canon_value(v: &serde_json::Value, out: &mut String) -> Result<()> {
@@ -2742,12 +2742,8 @@ fn call_builtin(
                 Val::Bytes(bs) => bs.clone(),
                 _ => bail!("ERROR_RUNTIME hmac_sha256 msg must be str or bytes"),
             };
-            use hmac::{Hmac, Mac};
-            type HmacSha256 = Hmac<sha2::Sha256>;
-            let mut mac = HmacSha256::new_from_slice(&key_bytes)?;
-            mac.update(&msg_bytes);
-            let result = mac.finalize();
-            Ok(Val::Str(hex_lower(&result.into_bytes())))
+            let result = valuecore::hmac_sha256(&key_bytes, &msg_bytes);
+            Ok(Val::Str(hex_lower(&result)))
         }
         Builtin::CodecBase64UrlEncode => {
             if args.len() != 1 { bail!("ERROR_RUNTIME base64url_encode expects 1 arg"); }
@@ -5054,9 +5050,9 @@ impl ModuleLoader {
             return self.builtin_digest("std/rec");
         }
 
-        let mut h = Sha256::new();
+        let mut h = NativeSha256::new();
         h.update(format!("builtin:{name}:v0.5").as_bytes());
-        format!("sha256:{:x}", h.finalize())
+        format!("sha256:{}", hex_lower(&h.finalize()))
     }
 
     fn stdlib_root_digest(&self) -> String {
@@ -5130,15 +5126,15 @@ fn base_env() -> Env {
     e
 }
 fn sha256_bytes(bytes: &[u8]) -> String {
-    let mut h = Sha256::new();
+    let mut h = NativeSha256::new();
     h.update(bytes);
     format!("sha256:{}", hex_lower(&h.finalize()))
 }
 fn file_digest(p: &Path) -> Result<String> {
     let b = fs::read(p)?;
-    let mut h = Sha256::new();
+    let mut h = NativeSha256::new();
     h.update(&b);
-    Ok(format!("sha256:{:x}", h.finalize()))
+    Ok(format!("sha256:{}", hex_lower(&h.finalize())))
 }
 
 fn canonical_json_bytes(v: &serde_json::Value) -> Vec<u8> {

@@ -69,7 +69,7 @@ fn json_to_v(j: &serde_json::Value) -> V {
 
 
 mod witness {
-    use sha2::{Sha256, Digest};
+    use valuecore::Sha256;
     use std::fs;
 
     pub struct Receipt {
@@ -87,7 +87,7 @@ mod witness {
     }
 
     fn sha256(data: &[u8]) -> String {
-        let mut h = Sha256::new();
+        let mut h = valuecore::Sha256::new();
         h.update(data);
         hex(&h.finalize())
     }
