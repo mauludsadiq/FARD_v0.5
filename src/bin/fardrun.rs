@@ -848,6 +848,7 @@ enum Expr {
     Lambda(Vec<Pat>, Box<Expr>),
     Call(Box<Expr>, Vec<Expr>),
     Get(Box<Expr>, String),
+    Index(Box<Expr>, Box<Expr>),  // e[i] — list/map index
     List(Vec<Expr>),
     Rec(Vec<(String, Expr)>),
     Var(String),
@@ -1461,6 +1462,12 @@ impl Parser {
                 e = Expr::Call(Box::new(e), args);
                 continue;
             }
+            if self.eat_sym("[") {
+                let idx = self.parse_expr()?;
+                self.expect_sym("]")?;
+                e = Expr::Index(Box::new(e), Box::new(idx));
+                continue;
+            }
             break;
         }
         Ok(e)
@@ -2012,6 +2019,22 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                 m.insert(k.clone(), eval(v, env, tracer, loader)?);
             }
             Ok(Val::Rec(m))
+        }
+        Expr::Index(obj, idx) => {
+            let v = eval(obj, env, tracer, loader)?;
+            let i = eval(idx, env, tracer, loader)?;
+            match (v, i) {
+                (Val::List(xs), Val::Int(n)) => {
+                    if n < 0 || n as usize >= xs.len() {
+                        bail!("ERROR_OOB index {} out of bounds (len {})", n, xs.len());
+                    }
+                    Ok(xs[n as usize].clone())
+                }
+                (Val::Rec(m), Val::Str(k)) => {
+                    m.get(&k).cloned().ok_or_else(|| anyhow!("ERROR_KEY key {:?} not found", k))
+                }
+                _ => bail!("ERROR_BADARG index operator requires list[int] or rec[str]"),
+            }
         }
         Expr::Get(obj, k) => {
             let o = eval(obj, env, tracer, loader)?;
