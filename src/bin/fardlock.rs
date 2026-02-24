@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
 use regex::Regex;
-use serde_json::{json, Value as J};
+use valuecore::json::{JsonVal as J, escape_string, from_slice, to_string, to_string_pretty};
 
 fn sha256_bytes(bytes: &[u8]) -> String {
         let mut h = valuecore::Sha256::new();
@@ -14,13 +14,13 @@ fn sha256_bytes(bytes: &[u8]) -> String {
 
 fn read_json(p: &Path) -> Result<J> {
     let b = fs::read(p).with_context(|| format!("cannot read: {}", p.display()))?;
-    Ok(serde_json::from_slice(&b).with_context(|| format!("bad json: {}", p.display()))?)
+    from_slice(&b).with_context(|| format!("bad json: {}", p.display()))
 }
 
 fn write_json(p: &Path, v: &J) -> Result<()> {
-    let s = serde_json::to_vec_pretty(v)?;
+    let s = to_string_pretty(v);
     fs::create_dir_all(p.parent().unwrap())?;
-    fs::write(p, s)?;
+    fs::write(p, s.as_bytes())?;
     Ok(())
 }
 
@@ -35,7 +35,18 @@ fn canon_json(v: &J) -> Result<String> {
                 out.push_str(if *b { "true" } else { "false" });
                 Ok(())
             }
-            J::Number(n) => {
+            J::Float(f) => {
+                let s = format!("{}", f);
+                if s.contains('+') {
+                    bail!("M5_CANON_NUM_PLUS");
+                }
+                if s.ends_with(".0") {
+                    bail!("M5_CANON_NUM_DOT0");
+                }
+                out.push_str(&s);
+                Ok(())
+            }
+            J::Int(n) => {
                 let s = n.to_string();
                 if s.contains('+') {
                     bail!("M5_CANON_NUM_PLUS");
@@ -49,8 +60,8 @@ fn canon_json(v: &J) -> Result<String> {
                 out.push_str(&s);
                 Ok(())
             }
-            J::String(s) => {
-                out.push_str(&serde_json::to_string(s).context("M5_CANON_STRING_FAIL")?);
+            J::Str(s) => {
+                out.push_str(&escape_string(s));
                 Ok(())
             }
             J::Array(a) => {
@@ -80,7 +91,7 @@ fn canon_json(v: &J) -> Result<String> {
                     if i > 0 {
                         out.push(',');
                     }
-                    out.push_str(&serde_json::to_string(k).context("M5_CANON_KEY_ESC_FAIL")?);
+                    out.push_str(&escape_string(k));
                     out.push(':');
                     canon_value(&m[*k], out)?;
                 }
@@ -147,13 +158,15 @@ fn cmd_show_preimage(args: &[String]) -> Result<()> {
         .ok_or_else(|| anyhow!("M5_MISSING_trace_format_version"))?
         .clone();
 
-    let preimage = serde_json::json!({
-      "files": files,
-      "ok": ok,
-      "runtime_version": runtime_version,
-      "stdlib_root_digest": stdlib_root_digest,
-      "trace_format_version": trace_format_version
-    });
+    let preimage = {
+        let mut m = std::collections::BTreeMap::new();
+        m.insert("files".to_string(), files);
+        m.insert("ok".to_string(), ok);
+        m.insert("runtime_version".to_string(), runtime_version);
+        m.insert("stdlib_root_digest".to_string(), stdlib_root_digest);
+        m.insert("trace_format_version".to_string(), trace_format_version);
+        J::Object(m)
+    };
 
     let canon = canon_json(&preimage)?;
     print!("{}", canon);
@@ -260,23 +273,33 @@ fn cmd_gen(args: &[String]) -> Result<()> {
 
         modules.insert(
             format!("pkg:{name}@{ver}/{mod_id}"),
-            json!({ "digest": want }),
+{ let mut _m = std::collections::BTreeMap::new(); _m.insert("digest".to_string(), J::Str(want.to_string())); J::Object(_m) },
         );
     }
 
-    let reg_commit = json!({"schema":"fard.registry_commit.v0_1","packages":packages});
-    let reg_digest = sha256_bytes(&serde_json::to_vec(&reg_commit)?);
+    let reg_commit = {
+        let mut m = std::collections::BTreeMap::new();
+        m.insert("packages".to_string(), J::Object(packages.into_iter().map(|(k,v)| (k, J::Str(v))).collect()));
+        m.insert("schema".to_string(), J::Str("fard.registry_commit.v0_1".to_string()));
+        J::Object(m)
+    };
+    let reg_digest = sha256_bytes(&to_string(&reg_commit).into_bytes());
 
     write_json(
         &out.join("fard.lock.json"),
-        &json!({
-          "schema": "fard.lock.v0_1",
-          "package": { "name": app_pkg_name, "version": app_pkg_ver },
-          "app_entry": entry,
-          "registry_root_digest": reg_digest,
-          "packages": reg_commit.get("packages").cloned().unwrap_or(json!({})),
-          "modules": modules
-        }),
+        &{
+            let mut pkg = std::collections::BTreeMap::new();
+            pkg.insert("name".to_string(), J::Str(app_pkg_name.clone()));
+            pkg.insert("version".to_string(), J::Str(app_pkg_ver.clone()));
+            let mut m = std::collections::BTreeMap::new();
+            m.insert("app_entry".to_string(), J::Str(entry.to_string()));
+            m.insert("modules".to_string(), J::Object(modules));
+            m.insert("package".to_string(), J::Object(pkg));
+            m.insert("packages".to_string(), reg_commit.get("packages").cloned().unwrap_or(J::Object(std::collections::BTreeMap::new())));
+            m.insert("registry_root_digest".to_string(), J::Str(reg_digest.clone()));
+            m.insert("schema".to_string(), J::Str("fard.lock.v0_1".to_string()));
+            J::Object(m)
+        },
     )?;
 
     let lock_path = out.join("fard.lock.json");
