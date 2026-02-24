@@ -4931,10 +4931,6 @@ impl ModuleLoader {
                 let m: BTreeMap<String, Val> = BTreeMap::new();
                 Ok(m)
             }
-            "std/fs" => {
-                let m: BTreeMap<String, Val> = BTreeMap::new();
-                Ok(m)
-            }
             "std/hash" => {
                 let mut m = BTreeMap::new();
                 m.insert("sha256_bytes".to_string(), Val::Builtin(Builtin::HashSha256Bytes));
