@@ -532,6 +532,7 @@ enum Tok {
     Kw(String),
     Ident(String),
     Num(i64),
+    Float(f64),
     Str(String),
     Sym(String),
     Eof,
@@ -685,6 +686,22 @@ impl Lex {
             let len = self.i - start;
             if len > 1 && self.s[start] == '0' {
                 bail!("ERROR_PARSE leading zero integer literal");
+            }
+            // Check for float: digits '.' digits
+            if self.peek() == Some('.') && self.i + 1 < self.s.len() && self.s[self.i + 1].is_ascii_digit() {
+                self.i += 1; // consume '.'
+                let mut frac: f64 = 0.0;
+                let mut place: f64 = 0.1;
+                while let Some(d) = self.peek() {
+                    if d.is_ascii_digit() {
+                        frac += (d as i64 - '0' as i64) as f64 * place;
+                        place *= 0.1;
+                        self.i += 1;
+                    } else {
+                        break;
+                    }
+                }
+                return Ok(Tok::Float(n as f64 + frac));
             }
             return Ok(Tok::Num(n));
         }
@@ -853,6 +870,7 @@ enum Expr {
     Rec(Vec<(String, Expr)>),
     Var(String),
     Int(i64),
+    FloatLit(f64),
     Bool(bool),
     Str(String),
     Null,
@@ -1543,6 +1561,7 @@ impl Parser {
         }
         match self.bump() {
             Tok::Num(n) => Ok(Expr::Int(n)),
+            Tok::Float(f) => Ok(Expr::FloatLit(f)),
             Tok::Str(s) => Ok(Expr::Str(s)),
             Tok::Kw(s) if s == "true" => Ok(Expr::Bool(true)),
             Tok::Kw(s) if s == "false" => Ok(Expr::Bool(false)),
@@ -2002,6 +2021,7 @@ fn fard_pat_match_v0_5(p: &Pat, v: &Val, env: &mut Env) -> Result<bool> {
 fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader) -> Result<Val> {
     match e {
         Expr::Int(n) => Ok(Val::Int(*n)),
+        Expr::FloatLit(f) => Ok(Val::Bytes(f.to_le_bytes().to_vec())),
         Expr::Bool(b) => Ok(Val::Bool(*b)),
         Expr::Str(s) => Ok(Val::Str(s.clone())),
         Expr::Null => Ok(Val::Null),
@@ -2082,6 +2102,7 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
             let v = eval(a, env, tracer, loader)?;
             match (op.as_str(), v) {
                 ("-", Val::Int(n)) => Ok(Val::Int(-n)),
+                ("-", Val::Bytes(b)) => { let f = f64::from_le_bytes(b.as_slice().try_into().unwrap_or([0u8;8])); Ok(Val::Bytes((-f).to_le_bytes().to_vec())) }
                 ("!", Val::Bool(b)) => Ok(Val::Bool(!b)),
                 _ => bail!("bad unary op"),
             }
