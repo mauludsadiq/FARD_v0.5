@@ -1,0 +1,78 @@
+import("std/fs") as fs
+import("std/json") as json
+import("std/hash") as hash
+import("std/str") as str
+import("std/list") as list
+import("std/float") as float
+
+// ── load certificate ──────────────────────────────────────────────────────
+let raw  = fs.read_text("examples/sembit/sembit_cert.json")
+let cert = json.decode(raw)
+
+// ── recompute cert_hash ───────────────────────────────────────────────────
+// cert_hash = sha256(json.dumps(cert_without_cert_hash, sort_keys=True))
+// We must reconstruct the body in exact alphabetical field order
+let body = {
+  classes:         cert.classes,
+  confusion_edges: cert.confusion_edges,
+  h_sem_bits:      cert.h_sem_bits,
+  project:         cert.project,
+  quotient_size:   cert.quotient_size,
+  rate_distortion: cert.rate_distortion,
+  system:          cert.system,
+  universe_size:   cert.universe_size,
+  version:         cert.version
+}
+let body_json    = json.encode(body)
+let computed_hash = str.slice(hash.sha256_text(body_json), 7, 71)
+let hash_ok      = computed_hash == cert.cert_hash
+
+// ── verify structural invariants ──────────────────────────────────────────
+// 1. H_sem = log2(quotient_size) — check via 2^H_sem ≈ quotient_size
+let two_to_h     = float.pow(2.0, cert.h_sem_bits)
+let h_sem_ok     = float.le(float.abs(float.sub(two_to_h, float.from_int(cert.quotient_size))), 0.001)
+
+// 2. rate_distortion[0].N == quotient_size (delta=0 → full resolution)
+let rd0          = cert.rate_distortion[0]
+let rd_delta0_ok = rd0.N == cert.quotient_size
+
+// 3. rate_distortion is monotone non-increasing in N
+let rd1          = cert.rate_distortion[1]
+let rd_mono_ok   = rd1.N <= rd0.N
+
+// 4. confusion_edges count
+let edge_count   = list.len(cert.confusion_edges)
+let edges_ok     = edge_count == 3
+
+// 5. universe_size matches expected
+let universe_ok  = cert.universe_size == 8
+
+// ── verdict ───────────────────────────────────────────────────────────────
+let valid = if hash_ok then
+              if h_sem_ok then
+                if rd_delta0_ok then
+                  if rd_mono_ok then
+                    if edges_ok then
+                      universe_ok
+                    else false
+                  else false
+                else false
+              else false
+            else false
+
+{
+  project:       cert.project,
+  version:       cert.version,
+  quotient_size: cert.quotient_size,
+  h_sem_bits:    cert.h_sem_bits,
+  two_to_h:      two_to_h,
+  hash_ok:       hash_ok,
+  h_sem_ok:      h_sem_ok,
+  rd_delta0_ok:  rd_delta0_ok,
+  rd_mono_ok:    rd_mono_ok,
+  edges_ok:      edges_ok,
+  universe_ok:   universe_ok,
+  edge_count:    edge_count,
+  computed_hash: computed_hash,
+  verdict:       if valid then "CERT_VALID" else "CERT_INVALID"
+}

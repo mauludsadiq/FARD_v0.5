@@ -1629,6 +1629,7 @@ impl Parser {
 enum Val {
     Bytes(Vec<u8>),
     Int(i64),
+    Float(f64),
     Bool(bool),
     Str(String),
     Null,
@@ -1917,6 +1918,10 @@ impl Val {
 
                 Some(J::Object(obj))
             }
+            Val::Float(f) => {
+                Some(J::Number(serde_json::Number::from_f64(*f)
+                    .unwrap_or_else(|| serde_json::Number::from(0))))
+            }
             Val::Bytes(bs) => {
                 let mut obj = Map::new();
                 obj.insert("t".to_string(), J::String("bytes".to_string()));
@@ -1966,10 +1971,13 @@ fn val_from_json(j: &J) -> Result<Val> {
         J::Null => Ok(Val::Null),
         J::Bool(b) => Ok(Val::Bool(*b)),
         J::Number(n) => {
-            let i = n
-                .as_i64()
-                .ok_or_else(|| anyhow!("ERROR_RUNTIME json number not i64"))?;
-            Ok(Val::Int(i))
+            if let Some(i) = n.as_i64() {
+                Ok(Val::Int(i))
+            } else if let Some(f) = n.as_f64() {
+                Ok(Val::Float(f))
+            } else {
+                bail!("ERROR_RUNTIME json number out of range")
+            }
         }
         J::String(s) => Ok(Val::Str(s.clone())),
         J::Array(xs) => {
@@ -4168,6 +4176,7 @@ fn fb64_1(args: &[Val]) -> anyhow::Result<f64> {
             let arr: [u8;8] = b.as_slice().try_into().unwrap();
             Ok(f64::from_le_bytes(arr))
         }
+        Some(Val::Float(f)) => Ok(*f),
         Some(Val::Int(n)) => Ok(*n as f64),
         _ => anyhow::bail!("ERROR_BADARG expected float (8-byte Bytes)"),
     }
