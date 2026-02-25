@@ -5,6 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use valuecore::{hex_lower, parse_hex};
 use valuecore::v0::V;
 use fardlang::effects::{EffectHandler, EffectTrace};
+use valuecore::json::{JsonVal, from_slice as json_from_slice, from_str as json_from_str, to_string as json_to_string};
 use anyhow::{anyhow, Result};
 
 struct StdEffectHandler {
@@ -23,7 +24,7 @@ impl EffectHandler for StdEffectHandler {
                 let path = match args.first() { Some(V::Text(s)) => s.clone(), _ => return Err(anyhow!("read_file expects text path")) };
                 let bytes = fs::read(&path).map_err(|e| anyhow!("read_file {}: {}", path, e))?;
                 let s = String::from_utf8(bytes).map_err(|e| anyhow!("read_file utf8: {}", e))?;
-                let v: serde_json::Value = serde_json::from_str(&s).unwrap_or(serde_json::Value::String(s));
+                let v = json_from_str(&s).unwrap_or(JsonVal::Str(s));
                 json_to_v(&v)
             }
             "write_file" => {
@@ -56,14 +57,15 @@ impl EffectHandler for StdEffectHandler {
     fn trace(&self) -> &[EffectTrace] { &self.traces }
 }
 
-fn json_to_v(j: &serde_json::Value) -> V {
+fn json_to_v(j: &JsonVal) -> V {
     match j {
-        serde_json::Value::Null => V::Unit,
-        serde_json::Value::Bool(b) => V::Bool(*b),
-        serde_json::Value::Number(n) => if let Some(i) = n.as_i64() { V::Int(i) } else { V::Text(n.to_string()) },
-        serde_json::Value::String(s) => V::Text(s.clone()),
-        serde_json::Value::Array(a) => V::List(a.iter().map(json_to_v).collect()),
-        serde_json::Value::Object(o) => V::Map(o.iter().map(|(k,v)| (k.clone(), json_to_v(v))).collect()),
+        JsonVal::Null => V::Unit,
+        JsonVal::Bool(b) => V::Bool(*b),
+        JsonVal::Int(n) => V::Int(*n),
+        JsonVal::Float(f) => V::Text(f.to_string()),
+        JsonVal::Str(s) => V::Text(s.clone()),
+        JsonVal::Array(a) => V::List(a.iter().map(json_to_v).collect()),
+        JsonVal::Object(o) => V::Map(o.iter().map(|(k,v)| (k.clone(), json_to_v(v))).collect()),
     }
 }
 
@@ -164,7 +166,7 @@ mod witness {
     }
 }
 
-fn fard_json_to_v(j: &serde_json::Value) -> valuecore::v0::V {
+fn fard_json_to_v(j: &JsonVal) -> valuecore::v0::V {
     use valuecore::v0::V;
     // FARD canonical wire format: {"t": "int", "v": 42}
     if let (Some(t), Some(v)) = (j.get("t").and_then(|x| x.as_str()), j.get("v")) {
@@ -313,20 +315,20 @@ fn main() {
 
 fn run(max_depth: usize) {
 
-fn json_to_v_json(v: &V) -> serde_json::Value {
+fn json_to_v_json(v: &V) -> JsonVal {
     match v {
-        V::Unit        => serde_json::Value::Null,
-        V::Bool(b)     => serde_json::json!(b),
-        V::Int(i)      => serde_json::json!(i),
-        V::Text(s)     => serde_json::json!(s),
-        V::Bytes(b)    => serde_json::json!(hex_lower(b)),
-        V::Ok(x)       => serde_json::json!({"ok": json_to_v_json(x)}),
-        V::Err(e)      => serde_json::json!({"error": e}),
-        V::List(items) => serde_json::Value::Array(items.iter().map(json_to_v_json).collect()),
+        V::Unit        => JsonVal::Null,
+        V::Bool(b)     => JsonVal::Bool(*b),
+        V::Int(i)      => JsonVal::Int(*i),
+        V::Text(s)     => JsonVal::Str(s.clone()),
+        V::Bytes(b)    => JsonVal::Str(hex_lower(b)),
+        V::Ok(x)       => { let mut m = std::collections::BTreeMap::new(); m.insert("ok".to_string(), json_to_v_json(x)); JsonVal::Object(m) },
+        V::Err(e)      => { let mut m = std::collections::BTreeMap::new(); m.insert("error".to_string(), JsonVal::Str(e.clone())); JsonVal::Object(m) },
+        V::List(items) => JsonVal::Array(items.iter().map(json_to_v_json).collect()),
         V::Map(pairs)  => {
-            let mut m = serde_json::Map::new();
+            let mut m = std::collections::BTreeMap::new();
             for (k, val) in pairs { m.insert(k.clone(), json_to_v_json(val)); }
-            serde_json::Value::Object(m)
+            JsonVal::Object(m)
         }
     }
 }
@@ -352,9 +354,9 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
         }
         let src = fs::read(src_path).unwrap_or_else(|e| { eprintln!("error reading {}: {}", src_path, e); process::exit(1); });
         let receipt_bytes = fs::read(receipt_path).unwrap_or_else(|e| { eprintln!("error reading {}: {}", receipt_path, e); process::exit(1); });
-        let receipt_json: serde_json::Value = serde_json::from_slice(&receipt_bytes).unwrap_or_else(|e| { eprintln!("malformed receipt: {}", e); process::exit(1); });
+        let receipt_json = json_from_slice(&receipt_bytes).unwrap_or_else(|e| { eprintln!("malformed receipt: {}", e); process::exit(1); });
         let claimed_run_id = receipt_json.get("run_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let output_val = receipt_json.get("output").cloned().unwrap_or(serde_json::Value::Null);
+        let output_val = receipt_json.get("output").cloned().unwrap_or(JsonVal::Null);
         let output_bytes = output_val.to_string().into_bytes();
         let trace_str = receipt_json.get("trace").and_then(|v| v.as_str()).unwrap_or("");
         let computed = witness::compute(&src, &inputs, &output_bytes, trace_str, &[], 6000);
@@ -449,7 +451,7 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
             eprintln!("error: fact not found: {} (expected at {})", fi.run_id, store_path);
             process::exit(1);
         });
-        let fact_json: serde_json::Value = serde_json::from_slice(&fact_bytes).unwrap_or_else(|e| {
+        let fact_json = json_from_slice(&fact_bytes).unwrap_or_else(|e| {
             eprintln!("error: malformed fact receipt {}: {}", fi.run_id, e);
             process::exit(1);
         });
@@ -460,7 +462,7 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
             process::exit(1);
         }
         // load output value - stored as raw JSON object, not a string
-        let output_val = fact_json.get("output").cloned().unwrap_or(serde_json::Value::Null);
+        let output_val = fact_json.get("output").cloned().unwrap_or(JsonVal::Null);
         let v = fard_json_to_v(&output_val);
         env.bindings.push((fi.name.clone(), fardlang::eval::EvalVal::V(v)));
     }
@@ -499,7 +501,7 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
             eprintln!("error: artifact not found: {} (expected at {})", art.run_id, store_path);
             process::exit(1);
         });
-        let fact_json: serde_json::Value = serde_json::from_slice(&fact_bytes).unwrap_or_else(|e| {
+        let fact_json = json_from_slice(&fact_bytes).unwrap_or_else(|e| {
             eprintln!("error: malformed artifact receipt {}: {}", art.run_id, e);
             process::exit(1);
         });
@@ -508,7 +510,7 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
             eprintln!("error: artifact run_id mismatch: expected {} got {}", art.run_id, stored_id);
             process::exit(1);
         }
-        let output_val = fact_json.get("output").cloned().unwrap_or(serde_json::Value::Null);
+        let output_val = fact_json.get("output").cloned().unwrap_or(JsonVal::Null);
         let v = fard_json_to_v(&output_val);
         env.bindings.push((art.name.clone(), fardlang::eval::EvalVal::V(v)));
         derived_from.push(art.run_id.clone());
@@ -549,14 +551,16 @@ fn json_to_v_json(v: &V) -> serde_json::Value {
     // build trace ndjson
     let mut trace_ndjson = String::new();
     for t in handler.trace() {
-        let args_json: Vec<serde_json::Value> = t.args.iter().map(|v| json_to_v_json(v)).collect();
-        let entry = serde_json::json!({
-            "effect": t.name,
-            "args": args_json,
-            "result": json_to_v_json(&t.result),
-            "timestamp_ms": t.timestamp_ms,
-        });
-        trace_ndjson.push_str(&entry.to_string());
+        let args_json: Vec<JsonVal> = t.args.iter().map(|v| json_to_v_json(v)).collect();
+        let entry = {
+            let mut m = std::collections::BTreeMap::new();
+            m.insert("args".to_string(), JsonVal::Array(args_json));
+            m.insert("effect".to_string(), JsonVal::Str(t.name.clone()));
+            m.insert("result".to_string(), json_to_v_json(&t.result));
+            m.insert("timestamp_ms".to_string(), JsonVal::Int(t.timestamp_ms as i64));
+            JsonVal::Object(m)
+        };
+        trace_ndjson.push_str(&json_to_string(&entry));
         trace_ndjson.push('\n');
     }
 

@@ -8,5 +8,4 @@ fardlang = { path = "../fardlang" }
 valuecore = { path = "../valuecore" }
 ureq = "2"
 rand = "0.8"
-serde_json = "1"
 anyhow = "1"

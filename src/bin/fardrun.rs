@@ -9,7 +9,8 @@ const RESULT_OK_VAL_KEY: &str = "v";
 const RESULT_ERR_VAL_KEY: &str = "e";
 const ERROR_PAT_MISMATCH: &str = "ERROR_PAT_MISMATCH";
 const ERROR_MATCH_NO_ARM: &str = "ERROR_MATCH_NO_ARM";
-use serde_json::{Map, Value as J};
+use valuecore::json::{JsonVal as J, escape_string, from_slice as json_from_slice, from_str as json_from_str, to_string as json_to_string};
+type Map = std::collections::BTreeMap<String, J>;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -18,18 +19,18 @@ fn sha256_bytes_hex(bytes: &[u8]) -> String {
     h.update(bytes);
     hex_lower(&h.finalize())
 }
-fn canon_json(v: &serde_json::Value) -> Result<String> {
-    fn canon_value(v: &serde_json::Value, out: &mut String) -> Result<()> {
+fn canon_json(v: &J) -> Result<String> {
+    fn canon_value(v: &J, out: &mut String) -> Result<()> {
         match v {
-            serde_json::Value::Null => {
+            J::Null => {
                 out.push_str("null");
                 Ok(())
             }
-            serde_json::Value::Bool(b) => {
+            J::Bool(b) => {
                 out.push_str(if *b { "true" } else { "false" });
                 Ok(())
             }
-            serde_json::Value::Number(n) => {
+            J::Int(n) => {
                 let s = n.to_string();
                 if s.contains('+') {
                     bail!("M5_CANON_NUM_PLUS");
@@ -43,11 +44,18 @@ fn canon_json(v: &serde_json::Value) -> Result<String> {
                 out.push_str(&s);
                 Ok(())
             }
-            serde_json::Value::String(s) => {
-                out.push_str(&serde_json::to_string(s).context("M5_CANON_STRING_FAIL")?);
+            J::Float(f) => {
+                let s = format!("{}", f);
+                if s.contains('+') { bail!("M5_CANON_NUM_PLUS"); }
+                if s.ends_with(".0") { bail!("M5_CANON_NUM_DOT0"); }
+                out.push_str(&s);
                 Ok(())
             }
-            serde_json::Value::Array(a) => {
+            J::Str(s) => {
+                out.push_str(&escape_string(s));
+                Ok(())
+            }
+            J::Array(a) => {
                 out.push('[');
                 for (i, x) in a.iter().enumerate() {
                     if i > 0 {
@@ -58,7 +66,7 @@ fn canon_json(v: &serde_json::Value) -> Result<String> {
                 out.push(']');
                 Ok(())
             }
-            serde_json::Value::Object(m) => {
+            J::Object(m) => {
                 out.push('{');
 
                 // Canonical key order:
@@ -71,7 +79,7 @@ fn canon_json(v: &serde_json::Value) -> Result<String> {
                         out.push(',');
                     }
                     first = false;
-                    out.push_str(&serde_json::to_string(k).context("M5_CANON_KEY_ESC_FAIL")?);
+                    out.push_str(&escape_string(k));
                     out.push(':');
                     canon_value(&m[k], out)?;
                 }
@@ -86,7 +94,7 @@ fn canon_json(v: &serde_json::Value) -> Result<String> {
                         out.push(',');
                     }
                     first = false;
-                    out.push_str(&serde_json::to_string(k).context("M5_CANON_KEY_ESC_FAIL")?);
+                    out.push_str(&escape_string(k));
                     out.push(':');
                     canon_value(&m[k], out)?;
                 }
@@ -131,23 +139,27 @@ fn write_m5_digests(
     files.insert("trace.ndjson".to_string(), trace_h.clone());
     files.insert("module_graph.json".to_string(), modg_h.clone());
     files.insert(leaf_name.to_string(), leaf_h.clone());
-    let preimage = serde_json::json!({
-      "files": files,
-      "ok": ok,
-      "runtime_version": runtime_version,
-      "stdlib_root_digest": stdlib_root_digest,
-      "trace_format_version": trace_format_version
-    });
+    let preimage = {
+        let mut m = Map::new();
+        m.insert("files".to_string(), J::Object(files.iter().map(|(k,v)| (k.clone(), J::Str(v.clone()))).collect()));
+        m.insert("ok".to_string(), J::Bool(ok));
+        m.insert("runtime_version".to_string(), J::Str(runtime_version.to_string()));
+        m.insert("stdlib_root_digest".to_string(), J::Str(stdlib_root_digest.to_string()));
+        m.insert("trace_format_version".to_string(), J::Str(trace_format_version.to_string()));
+        J::Object(m)
+    };
     let canon = canon_json(&preimage)?;
     let preimage_sha256 = format!("sha256:{}", sha256_bytes_hex(canon.as_bytes()));
-    let dig = serde_json::json!({
-      "runtime_version": runtime_version,
-      "trace_format_version": trace_format_version,
-      "stdlib_root_digest": stdlib_root_digest,
-      "ok": ok,
-      "files": files,
-      "preimage_sha256": preimage_sha256
-    });
+    let dig = {
+        let mut m = Map::new();
+        m.insert("files".to_string(), J::Object(files.into_iter().map(|(k,v)| (k, J::Str(v))).collect()));
+        m.insert("ok".to_string(), J::Bool(ok));
+        m.insert("preimage_sha256".to_string(), J::Str(preimage_sha256.to_string()));
+        m.insert("runtime_version".to_string(), J::Str(runtime_version.to_string()));
+        m.insert("stdlib_root_digest".to_string(), J::Str(stdlib_root_digest.to_string()));
+        m.insert("trace_format_version".to_string(), J::Str(trace_format_version.to_string()));
+        J::Object(m)
+    };
 
     let out = canonical_json_bytes(&dig);
     std::fs::write(out_dir.join("digests.json"), out).with_context(|| "write digests.json")?;
@@ -229,8 +241,8 @@ fn main() -> Result<()> {
                 }
             }
 
-            em.insert("code".to_string(), J::String(code.clone()));
-            em.insert("message".to_string(), J::String(msg.clone()));
+            em.insert("code".to_string(), J::Str(code.clone()));
+            em.insert("message".to_string(), J::Str(msg.clone()));
             if let Some(se) = e.downcast_ref::<SpannedRuntimeError>() {
                 let mut bs = se.span.byte_start;
                 let mut be = se.span.byte_end;
@@ -249,11 +261,11 @@ fn main() -> Result<()> {
                     ln = src[..ls].bytes().filter(|b| *b == b"\n"[0]).count() + 1;
                 }
                 let mut sm = Map::new();
-                sm.insert("file".to_string(), J::String(se.span.file.clone()));
-                sm.insert("byte_start".to_string(), J::Number((bs as u64).into()));
-                sm.insert("byte_end".to_string(), J::Number((be as u64).into()));
-                sm.insert("line".to_string(), J::Number((ln as u64).into()));
-                sm.insert("col".to_string(), J::Number((cl as u64).into()));
+                sm.insert("file".to_string(), J::Str(se.span.file.clone()));
+                sm.insert("byte_start".to_string(), J::Int(bs as i64));
+                sm.insert("byte_end".to_string(), J::Int(be as i64));
+                sm.insert("line".to_string(), J::Int(ln as i64));
+                sm.insert("col".to_string(), J::Int(cl as i64));
                 em.insert("span".to_string(), J::Object(sm));
             } else if let Some(pe) = e.downcast_ref::<ParseError>() {
                 // Stored spans are absolute offsets; G39 expects line-relative byte offsets.
@@ -274,16 +286,16 @@ fn main() -> Result<()> {
                     ln = src[..ls].bytes().filter(|b| *b == b"\n"[0]).count() + 1;
                 }
                 let mut sm = Map::new();
-                sm.insert("file".to_string(), J::String(pe.span.file.clone()));
-                sm.insert("byte_start".to_string(), J::Number((bs as u64).into()));
-                sm.insert("byte_end".to_string(), J::Number((be as u64).into()));
-                sm.insert("line".to_string(), J::Number((ln as u64).into()));
-                sm.insert("col".to_string(), J::Number((cl as u64).into()));
+                sm.insert("file".to_string(), J::Str(pe.span.file.clone()));
+                sm.insert("byte_start".to_string(), J::Int(bs as i64));
+                sm.insert("byte_end".to_string(), J::Int(be as i64));
+                sm.insert("line".to_string(), J::Int(ln as i64));
+                sm.insert("col".to_string(), J::Int(cl as i64));
                 em.insert("span".to_string(), J::Object(sm));
             }
             fs::write(
                 out_dir.join("error.json"),
-                serde_json::to_vec(&J::Object(em))?,
+                json_to_string(&J::Object(em)).into_bytes(),
             )?;
 
             {
@@ -350,9 +362,9 @@ struct Tracer {
 }
 impl Tracer {
     fn module_graph_event(&mut self, cid: &str) -> Result<()> {
-        let mut m = serde_json::Map::new();
-        m.insert("t".to_string(), J::String("module_graph".to_string()));
-        m.insert("cid".to_string(), J::String(cid.to_string()));
+        let mut m = Map::new();
+        m.insert("t".to_string(), J::Str("module_graph".to_string()));
+        m.insert("cid".to_string(), J::Str(cid.to_string()));
         self.emit_event(J::Object(m))
     }
 
@@ -377,24 +389,24 @@ impl Tracer {
     }
     fn emit(&mut self, v: &J) -> Result<()> {
         let mut m = Map::new();
-        m.insert("t".to_string(), J::String("emit".to_string()));
+        m.insert("t".to_string(), J::Str("emit".to_string()));
         m.insert("v".to_string(), v.clone());
-        let line = serde_json::to_string(&J::Object(m))?;
+        let line = json_to_string(&J::Object(m));
         self.write_ndjson(&line)?;
         Ok(())
     }
 
     fn emit_event(&mut self, ev: J) -> Result<()> {
-        let line = serde_json::to_string(&ev)?;
+        let line = json_to_string(&ev);
         self.write_ndjson(&line)?;
         Ok(())
     }
     fn grow_node(&mut self, v: &Val) -> Result<()> {
         let j = v.to_json().context("grow_node must be jsonable")?;
         let mut m = Map::new();
-        m.insert("t".to_string(), J::String("grow_node".to_string()));
+        m.insert("t".to_string(), J::Str("grow_node".to_string()));
         m.insert("v".to_string(), j);
-        let line = serde_json::to_string(&J::Object(m))?;
+        let line = json_to_string(&J::Object(m));
         self.write_ndjson(&line)?;
         Ok(())
     }
@@ -402,11 +414,11 @@ impl Tracer {
         // legacy import_artifact: treat path as the stable name
         self.artifact_cids.insert(path.to_string(), cid.to_string());
 
-        let mut m = serde_json::Map::new();
-        m.insert("t".to_string(), J::String("artifact_in".to_string()));
-        m.insert("name".to_string(), J::String(path.to_string()));
-        m.insert("path".to_string(), J::String(path.to_string()));
-        m.insert("cid".to_string(), J::String(cid.to_string()));
+        let mut m = Map::new();
+        m.insert("t".to_string(), J::Str("artifact_in".to_string()));
+        m.insert("name".to_string(), J::Str(path.to_string()));
+        m.insert("path".to_string(), J::Str(path.to_string()));
+        m.insert("cid".to_string(), J::Str(cid.to_string()));
         self.emit_event(J::Object(m))
     }
     fn artifact_out(&mut self, name: &str, cid: &str, bytes: &[u8]) -> Result<()> {
@@ -419,10 +431,10 @@ impl Tracer {
         }
         std::fs::write(&out_path, bytes)?;
 
-        let mut m = serde_json::Map::new();
-        m.insert("t".to_string(), J::String("artifact_out".to_string()));
-        m.insert("name".to_string(), J::String(name.to_string()));
-        m.insert("cid".to_string(), J::String(cid.to_string()));
+        let mut m = Map::new();
+        m.insert("t".to_string(), J::Str("artifact_out".to_string()));
+        m.insert("name".to_string(), J::Str(name.to_string()));
+        m.insert("cid".to_string(), J::Str(cid.to_string()));
         m.insert("parents".to_string(), J::Array(vec![]));
         self.emit_event(J::Object(m))
     }
@@ -430,11 +442,11 @@ impl Tracer {
     fn artifact_in_named(&mut self, name: &str, path: &str, cid: &str) -> Result<()> {
         self.artifact_cids.insert(name.to_string(), cid.to_string());
 
-        let mut m = serde_json::Map::new();
-        m.insert("t".to_string(), J::String("artifact_in".to_string()));
-        m.insert("name".to_string(), J::String(name.to_string()));
-        m.insert("path".to_string(), J::String(path.to_string()));
-        m.insert("cid".to_string(), J::String(cid.to_string()));
+        let mut m = Map::new();
+        m.insert("t".to_string(), J::Str("artifact_in".to_string()));
+        m.insert("name".to_string(), J::Str(name.to_string()));
+        m.insert("path".to_string(), J::Str(path.to_string()));
+        m.insert("cid".to_string(), J::Str(cid.to_string()));
         self.emit_event(J::Object(m))
     }
 
@@ -466,34 +478,34 @@ impl Tracer {
 
         let mut plist: Vec<J> = Vec::new();
         for (pname, pcid) in parents {
-            let mut pm = serde_json::Map::new();
-            pm.insert("name".to_string(), J::String(pname.clone()));
-            pm.insert("cid".to_string(), J::String(pcid.clone()));
+            let mut pm = Map::new();
+            pm.insert("name".to_string(), J::Str(pname.clone()));
+            pm.insert("cid".to_string(), J::Str(pcid.clone()));
             plist.push(J::Object(pm));
         }
 
-        let mut m = serde_json::Map::new();
-        m.insert("cid".to_string(), J::String(cid.to_string()));
-        m.insert("name".to_string(), J::String(name.to_string()));
+        let mut m = Map::new();
+        m.insert("cid".to_string(), J::Str(cid.to_string()));
+        m.insert("name".to_string(), J::Str(name.to_string()));
         m.insert("parents".to_string(), J::Array(plist));
-        m.insert("t".to_string(), J::String("artifact_out".to_string()));
+        m.insert("t".to_string(), J::Str("artifact_out".to_string()));
         self.emit_event(J::Object(m))
     }
     fn module_resolve(&mut self, name: &str, kind: &str, cid: &str) -> Result<()> {
         let mut m = Map::new();
-        m.insert("t".to_string(), J::String("module_resolve".to_string()));
-        m.insert("name".to_string(), J::String(name.to_string()));
-        m.insert("kind".to_string(), J::String(kind.to_string()));
-        m.insert("cid".to_string(), J::String(cid.to_string()));
-        let line = serde_json::to_string(&J::Object(m))?;
+        m.insert("t".to_string(), J::Str("module_resolve".to_string()));
+        m.insert("name".to_string(), J::Str(name.to_string()));
+        m.insert("kind".to_string(), J::Str(kind.to_string()));
+        m.insert("cid".to_string(), J::Str(cid.to_string()));
+        let line = json_to_string(&J::Object(m));
         self.write_ndjson(&line)?;
         Ok(())
     }
 
     fn error_event_with_e(&mut self, code: &str, message: &str, e: &J) -> Result<()> {
         let mut m = Map::new();
-        m.insert("t".to_string(), J::String("error".to_string()));
-        m.insert("code".to_string(), J::String(code.to_string()));
+        m.insert("t".to_string(), J::Str("error".to_string()));
+        m.insert("code".to_string(), J::Str(code.to_string()));
         let mut s = message.to_string();
         if let Some(rest) = s.strip_prefix("ERROR_RUNTIME ") {
             s = rest.to_string();
@@ -501,17 +513,17 @@ impl Tracer {
         if let Some(rest) = s.strip_prefix(&format!("{} ", code)) {
             s = rest.to_string();
         }
-        m.insert("message".to_string(), J::String(format!("{} {}", code, s)));
+        m.insert("message".to_string(), J::Str(format!("{} {}", code, s)));
         m.insert("e".to_string(), e.clone());
-        let line = serde_json::to_string(&J::Object(m))?;
+        let line = json_to_string(&J::Object(m));
         self.write_ndjson(&line)?;
         Ok(())
     }
 
     fn error_event(&mut self, code: &str, message: &str) -> Result<()> {
         let mut m = Map::new();
-        m.insert("t".to_string(), J::String("error".to_string()));
-        m.insert("code".to_string(), J::String(code.to_string()));
+        m.insert("t".to_string(), J::Str("error".to_string()));
+        m.insert("code".to_string(), J::Str(code.to_string()));
         let mut s = message.to_string();
         if let Some(rest) = s.strip_prefix("ERROR_RUNTIME ") {
             s = rest.to_string();
@@ -519,8 +531,8 @@ impl Tracer {
         if let Some(rest) = s.strip_prefix(&format!("{} ", code)) {
             s = rest.to_string();
         }
-        m.insert("message".to_string(), J::String(format!("{} {}", code, s)));
-        let line = serde_json::to_string(&J::Object(m))?;
+        m.insert("message".to_string(), J::Str(format!("{} {}", code, s)));
+        let line = json_to_string(&J::Object(m));
         self.write_ndjson(&line)?;
         Ok(())
     }
@@ -1869,23 +1881,23 @@ impl Val {
     #[allow(dead_code)]
     fn to_vc_json(&self) -> Option<J> {
         match self {
-            Val::Int(n) => Some(serde_json::json!({"t":"int","v":*n})),
-            Val::Bool(b) => Some(serde_json::json!({"t":"bool","v":*b})),
-            Val::Str(s) => Some(serde_json::json!({"t":"str","v":s})),
-            Val::Null => Some(serde_json::json!({"t":"null","v":null})),
+            Val::Int(n) => { let mut m = Map::new(); m.insert("t".to_string(), J::Str("int".to_string())); m.insert("v".to_string(), J::Int(*n)); Some(J::Object(m)) },
+            Val::Bool(b) => { let mut m = Map::new(); m.insert("t".to_string(), J::Str("bool".to_string())); m.insert("v".to_string(), J::Bool(*b)); Some(J::Object(m)) },
+            Val::Str(s) => { let mut m = Map::new(); m.insert("t".to_string(), J::Str("str".to_string())); m.insert("v".to_string(), J::Str(s.clone())); Some(J::Object(m)) },
+            Val::Null => { let mut m = Map::new(); m.insert("t".to_string(), J::Str("null".to_string())); m.insert("v".to_string(), J::Null); Some(J::Object(m)) },
             Val::List(xs) => {
                 let mut out: Vec<J> = Vec::with_capacity(xs.len());
                 for x in xs {
                     out.push(x.to_vc_json()?);
                 }
-                Some(serde_json::json!({"t":"list","v":out}))
+                { let mut m = Map::new(); m.insert("t".to_string(), J::Str("list".to_string())); m.insert("v".to_string(), J::Array(out)); Some(J::Object(m)) }
             }
             Val::Rec(m) => {
                 let mut obj = Map::new();
                 for (k, v) in m.iter() {
                     obj.insert(k.clone(), v.to_vc_json()?);
                 }
-                Some(serde_json::json!({"t":"rec","v":J::Object(obj)}))
+                { let mut m = Map::new(); m.insert("t".to_string(), J::Str("rec".to_string())); m.insert("v".to_string(), J::Object(obj)); Some(J::Object(m)) }
             }
             _ => None,
         }
@@ -1893,9 +1905,9 @@ impl Val {
 
     fn to_json(&self) -> Option<J> {
         match self {
-            Val::Int(n) => Some(J::Number((*n).into())),
+            Val::Int(n) => Some(J::Int(*n)),
             Val::Bool(b) => Some(J::Bool(*b)),
-            Val::Str(s) => Some(J::String(s.clone())),
+            Val::Str(s) => Some(J::Str(s.clone())),
             Val::Null => Some(J::Null),
             Val::List(xs) => Some(J::Array(
                 xs.iter().map(|x| x.to_json()).collect::<Option<Vec<_>>>()?,
@@ -1919,13 +1931,12 @@ impl Val {
                 Some(J::Object(obj))
             }
             Val::Float(f) => {
-                Some(J::Number(serde_json::Number::from_f64(*f)
-                    .unwrap_or_else(|| serde_json::Number::from(0))))
+                Some(J::Float(*f))
             }
             Val::Bytes(bs) => {
                 let mut obj = Map::new();
-                obj.insert("t".to_string(), J::String("bytes".to_string()));
-                obj.insert("v".to_string(), J::String(format!("hex:{}", hex_lower(bs))));
+                obj.insert("t".to_string(), J::Str("bytes".to_string()));
+                obj.insert("v".to_string(), J::Str(format!("hex:{}", hex_lower(bs))));
                 Some(J::Object(obj))
             }
             Val::Func(_) | Val::Builtin(_) => None,
@@ -1993,16 +2004,16 @@ fn val_from_json(j: &J) -> Result<Val> {
     match j {
         J::Null => Ok(Val::Null),
         J::Bool(b) => Ok(Val::Bool(*b)),
-        J::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Ok(Val::Int(i))
-            } else if let Some(f) = n.as_f64() {
+        J::Int(n) => Ok(Val::Int(*n)),
+        J::Float(f) => {
+            let f = *f;
+            if true {
                 Ok(Val::Float(f))
             } else {
                 bail!("ERROR_RUNTIME json number out of range")
             }
         }
-        J::String(s) => Ok(Val::Str(s.clone())),
+        J::Str(s) => Ok(Val::Str(s.clone())),
         J::Array(xs) => {
             let mut out = Vec::new();
             for x in xs {
@@ -2012,7 +2023,7 @@ fn val_from_json(j: &J) -> Result<Val> {
         }
         J::Object(m) => {
             if m.len() == 2 {
-                if let (Some(J::String(t)), Some(J::String(v))) = (m.get("t"), m.get("v")) {
+                if let (Some(J::Str(t)), Some(J::Str(v))) = (m.get("t"), m.get("v")) {
                     if t == "bytes" {
                         return Ok(Val::Bytes(parse_hex_bytes(v)?));
                     }
@@ -2670,7 +2681,7 @@ fn call_builtin(
                 .ok_or_else(|| anyhow!("ERROR_RUNTIME json encode non-jsonable"))?;
             // Use ASCII-safe encoding: escape non-ASCII as \uXXXX to match
             // Python json.dumps default (ensure_ascii=True)
-            let raw = serde_json::to_string(&j)?;
+            let raw = json_to_string(&j);
             let mut escaped = String::with_capacity(raw.len());
             for c in raw.chars() {
                 if c.is_ascii() {
@@ -2701,8 +2712,8 @@ fn call_builtin(
                 bail!("ERROR_RUNTIME arity");
             }
             let j: J = match &args[0] {
-                Val::Str(ss) => serde_json::from_str(ss)?,
-                Val::Bytes(bs) => serde_json::from_slice(bs)?,
+                Val::Str(ss) => json_from_str(ss)?,
+                Val::Bytes(bs) => json_from_slice(bs)?,
                 _ => bail!("ERROR_RUNTIME type"),
             };
             val_from_json(&j)
@@ -2711,7 +2722,7 @@ fn call_builtin(
         Builtin::JsonCanonicalize => {
             if args.len() != 1 { bail!("ERROR_RUNTIME arity"); }
             let j = args[0].to_json().ok_or_else(|| anyhow::anyhow!("ERROR_RUNTIME cannot canonicalize"))?;
-            let canonical = serde_json::to_string(&j)?;
+            let canonical = json_to_string(&j);
             Ok(Val::Str(canonical))
         }
         Builtin::CryptoEd25519Verify => {
@@ -3750,7 +3761,7 @@ fn call_builtin(
                                 )));
                             }
                         };
-                        match serde_json::to_vec(&j) {
+                        match Ok::<Vec<u8>, anyhow::Error>(json_to_string(&j).into_bytes()) {
                             Ok(b) => b,
                             Err(e) => {
                                 return Ok(mk_result_err(Val::Str(format!(
@@ -3770,7 +3781,7 @@ fn call_builtin(
                             )));
                         }
                     };
-                    match serde_json::to_vec(&j) {
+                    match Ok::<Vec<u8>, anyhow::Error>(json_to_string(&j).into_bytes()) {
                         Ok(b) => b,
                         Err(e) => {
                             return Ok(mk_result_err(Val::Str(format!(
@@ -4260,7 +4271,7 @@ impl Lockfile {
                 }
             }
         };
-        let v: J = serde_json::from_slice(&bytes)?;
+        let v = json_from_slice(&bytes)?;
         let mut modules: HashMap<String, String> = HashMap::new();
         // Accept either:
         //  (A) object map:
@@ -4383,11 +4394,11 @@ impl ModuleGraph {
         let mut ns: Vec<J> = Vec::new();
         for n in &self.nodes {
             let mut m = Map::new();
-            m.insert("id".to_string(), J::Number((n.id as u64).into()));
-            m.insert("spec".to_string(), J::String(n.spec.clone()));
+            m.insert("id".to_string(), J::Int(n.id as i64));
+            m.insert("spec".to_string(), J::Str(n.spec.clone()));
             m.insert(
                 "kind".to_string(),
-                J::String(
+                J::Str(
                     match n.kind {
                         ModKind::Std => "std",
                         ModKind::Pkg => "pkg",
@@ -4397,19 +4408,19 @@ impl ModuleGraph {
                 ),
             );
             if let Some(p) = &n.path {
-                m.insert("path".to_string(), J::String(p.clone()));
+                m.insert("path".to_string(), J::Str(p.clone()));
             }
             if let Some(d) = &n.digest {
-                m.insert("digest".to_string(), J::String(d.clone()));
+                m.insert("digest".to_string(), J::Str(d.clone()));
             }
             ns.push(J::Object(m));
         }
         let mut es: Vec<J> = Vec::new();
         for e in &self.edges {
             let mut m = Map::new();
-            m.insert("from".to_string(), J::Number((e.from as u64).into()));
-            m.insert("to".to_string(), J::Number((e.to as u64).into()));
-            m.insert("kind".to_string(), J::String(e.kind.clone()));
+            m.insert("from".to_string(), J::Int(e.from as i64));
+            m.insert("to".to_string(), J::Int(e.to as i64));
+            m.insert("kind".to_string(), J::Str(e.kind.clone()));
             es.push(J::Object(m));
         }
         root.insert("nodes".to_string(), J::Array(ns));
@@ -4603,7 +4614,7 @@ impl ModuleLoader {
                 let base = reg.join("pkgs").join(pkg).join(ver);
                 let pkg_json_path = base.join("package.json");
                 let rel: String = if let Ok(pkg_json_bytes) = fs::read(&pkg_json_path) {
-                    let pkg_json: J = serde_json::from_slice(&pkg_json_bytes)
+                    let pkg_json: J = json_from_slice(&pkg_json_bytes).map_err(|e| anyhow::anyhow!("{}", e))
                         .with_context(|| format!("bad json: {}", pkg_json_path.display()))?;
                     let entrypoints = pkg_json
                         .get("entrypoints")
@@ -5137,52 +5148,6 @@ fn file_digest(p: &Path) -> Result<String> {
     Ok(format!("sha256:{}", hex_lower(&h.finalize())))
 }
 
-fn canonical_json_bytes(v: &serde_json::Value) -> Vec<u8> {
-    fn emit(out: &mut String, v: &serde_json::Value) {
-        match v {
-            serde_json::Value::Null => out.push_str("null"),
-            serde_json::Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
-            serde_json::Value::Number(n) => out.push_str(&n.to_string()),
-            serde_json::Value::String(s) => {
-                out.push_str(&serde_json::to_string(s).expect("JSON_STRING_ENC_FAIL"))
-            }
-            serde_json::Value::Array(xs) => {
-                out.push_str("[");
-                for (i, x) in xs.iter().enumerate() {
-                    if i != 0 {
-                        out.push_str(",");
-                    }
-                    emit(out, x);
-                }
-                out.push_str("]");
-            }
-            serde_json::Value::Object(m) => {
-                out.push_str("{");
-                let mut keys: Vec<&String> = m.keys().collect();
-
-                keys.sort_by(|a, b| {
-                    if a.as_str() == "t" && b.as_str() != "t" {
-                        return std::cmp::Ordering::Less;
-                    }
-                    if a.as_str() != "t" && b.as_str() == "t" {
-                        return std::cmp::Ordering::Greater;
-                    }
-                    a.cmp(b)
-                });
-                for (i, k) in keys.iter().enumerate() {
-                    if i != 0 {
-                        out.push_str(",");
-                    }
-                    out.push_str(&serde_json::to_string(k).expect("JSON_KEY_ENC_FAIL"));
-                    out.push_str(":");
-                    emit(out, m.get(*k).expect("JSON_KEY_MISSING"));
-                }
-                out.push_str("}");
-            }
-        }
-    }
-
-    let mut s = String::new();
-    emit(&mut s, v);
-    s.into_bytes()
+fn canonical_json_bytes(v: &J) -> Vec<u8> {
+    json_to_string(v).into_bytes()
 }
