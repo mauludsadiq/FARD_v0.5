@@ -10,6 +10,7 @@ impl std::error::Error for TryPropagation {}
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use sha2::Sha256;
 use hkdf::Hkdf;
+use valuecore::json::{JsonVal, from_str as json_from_str, to_string as json_to_string};
 use chacha20poly1305::{XChaCha20Poly1305, KeyInit, aead::{Aead, Payload}};
 use p256::ecdsa::{VerifyingKey, signature::Verifier, DerSignature};
 
@@ -1091,7 +1092,7 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
         "json_parse" => {
             match args.get(0) {
                 Some(V::Text(s)) => {
-                    match serde_json::from_str::<serde_json::Value>(s) {
+                    match json_from_str(s) {
                         Ok(jv) => json_to_v(&jv),
                         Err(e) => Ok(V::Err(format!("ERROR_BADARG json_parse: {}", e))),
                     }
@@ -1102,7 +1103,7 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
         "json_emit" => {
             match args.get(0) {
                 Some(v) => {
-                    match v_to_json(v).and_then(|jv| serde_json::to_string(&jv).map_err(|e| anyhow!("json_emit: {}", e))) {
+                    match v_to_json(v).map(|jv| json_to_string(&jv)) {
                         Ok(s) => Ok(V::Text(s)),
                         Err(e) => Ok(V::Err(format!("ERROR_EVAL json_emit: {}", e))),
                     }
@@ -1223,23 +1224,18 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
     }
 }
 
-fn json_to_v(j: &serde_json::Value) -> Result<V> {
+fn json_to_v(j: &JsonVal) -> Result<V> {
     match j {
-        serde_json::Value::Null => Ok(V::Unit),
-        serde_json::Value::Bool(b) => Ok(V::Bool(*b)),
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Ok(V::Int(i))
-            } else {
-                Ok(V::Err("ERROR_BADARG json_parse: non-integer number".into()))
-            }
-        }
-        serde_json::Value::String(s) => Ok(V::Text(s.clone())),
-        serde_json::Value::Array(xs) => {
+        JsonVal::Null => Ok(V::Unit),
+        JsonVal::Bool(b) => Ok(V::Bool(*b)),
+        JsonVal::Float(f) => Ok(V::Bytes(f.to_le_bytes().to_vec())),
+        JsonVal::Int(n) => Ok(V::Int(*n)),
+        JsonVal::Str(s) => Ok(V::Text(s.clone())),
+        JsonVal::Array(xs) => {
             let vs: Result<Vec<V>> = xs.iter().map(json_to_v).collect();
             Ok(V::List(vs?))
         }
-        serde_json::Value::Object(m) => {
+        JsonVal::Object(m) => {
             let kvs: Result<Vec<(String, V)>> = m.iter()
                 .map(|(k, v)| json_to_v(v).map(|vv| (k.clone(), vv)))
                 .collect();
@@ -1248,25 +1244,25 @@ fn json_to_v(j: &serde_json::Value) -> Result<V> {
     }
 }
 
-fn v_to_json(v: &V) -> Result<serde_json::Value> {
+fn v_to_json(v: &V) -> Result<JsonVal> {
     match v {
-        V::Unit => Ok(serde_json::Value::Null),
-        V::Bool(b) => Ok(serde_json::Value::Bool(*b)),
-        V::Int(i) => Ok(serde_json::Value::Number((*i).into())),
-        V::Text(s) => Ok(serde_json::Value::String(s.clone())),
-        V::Bytes(b) => Ok(serde_json::Value::String(URL_SAFE_NO_PAD.encode(b))),
+        V::Unit => Ok(JsonVal::Null),
+        V::Bool(b) => Ok(JsonVal::Bool(*b)),
+        V::Int(i) => Ok(JsonVal::Int(*i)),
+        V::Text(s) => Ok(JsonVal::Str(s.clone())),
+        V::Bytes(b) => Ok(JsonVal::Str(URL_SAFE_NO_PAD.encode(b))),
         V::List(xs) => {
-            let vs: Result<Vec<serde_json::Value>> = xs.iter().map(v_to_json).collect();
-            Ok(serde_json::Value::Array(vs?))
+            let vs: Result<Vec<JsonVal>> = xs.iter().map(v_to_json).collect();
+            Ok(JsonVal::Array(vs?))
         }
         V::Map(kvs) => {
-            let mut m = serde_json::Map::new();
+            let mut m = std::collections::BTreeMap::new();
             for (k, v) in kvs {
                 m.insert(k.clone(), v_to_json(v)?);
             }
-            Ok(serde_json::Value::Object(m))
+            Ok(JsonVal::Object(m))
         }
-        V::Err(e) => Ok(serde_json::Value::String(format!("error:{}", e))),
+        V::Err(e) => Ok(JsonVal::Str(format!("error:{}", e))),
         V::Ok(v) => v_to_json(v),
     }
 }

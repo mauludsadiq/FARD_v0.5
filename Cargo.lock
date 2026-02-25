@@ -499,7 +499,6 @@ dependencies = [
  "nalgebra",
  "p256",
  "rsa",
- "serde_json",
  "sha2",
  "signature",
  "valuecore",
