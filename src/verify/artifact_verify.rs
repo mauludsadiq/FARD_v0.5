@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use valuecore::json::{JsonVal, from_slice, from_str as json_from_str, escape_string};
 use std::fs;
 
 fn is_sha256(s: &str) -> bool {
@@ -19,18 +20,25 @@ fn cid_hex(s: &str) -> Result<&str, String> {
     Ok(&s[7..])
 }
 
-fn canon_json(v: &serde_json::Value) -> Result<String, String> {
-    fn canon_value(v: &serde_json::Value, out: &mut String) -> Result<(), String> {
+fn canon_json(v: &JsonVal) -> Result<String, String> {
+    fn canon_value(v: &JsonVal, out: &mut String) -> Result<(), String> {
         match v {
-            serde_json::Value::Null => {
+            JsonVal::Null => {
                 out.push_str("null");
                 Ok(())
             }
-            serde_json::Value::Bool(b) => {
+            JsonVal::Bool(b) => {
                 out.push_str(if *b { "true" } else { "false" });
                 Ok(())
             }
-            serde_json::Value::Number(n) => {
+            JsonVal::Float(f) => {
+                let s = format!("{}", f);
+                if s.contains('+') { return Err("CANON_NUM_PLUS".into()); }
+                if s.ends_with(".0") { return Err("CANON_NUM_DOT0".into()); }
+                out.push_str(&s);
+                Ok(())
+            }
+            JsonVal::Int(n) => {
                 let s = n.to_string();
                 if s.contains('+') {
                     return Err("M3_CANON_NUM_PLUS".into());
@@ -44,11 +52,11 @@ fn canon_json(v: &serde_json::Value) -> Result<String, String> {
                 out.push_str(&s);
                 Ok(())
             }
-            serde_json::Value::String(s) => {
-                out.push_str(&serde_json::to_string(s).map_err(|_| "M3_CANON_STRING_FAIL")?);
+            JsonVal::Str(s) => {
+                out.push_str(&escape_string(s));
                 Ok(())
             }
-            serde_json::Value::Array(a) => {
+            JsonVal::Array(a) => {
                 out.push('[');
                 for (i, x) in a.iter().enumerate() {
                     if i > 0 {
@@ -59,7 +67,7 @@ fn canon_json(v: &serde_json::Value) -> Result<String, String> {
                 out.push(']');
                 Ok(())
             }
-            serde_json::Value::Object(m) => {
+            JsonVal::Object(m) => {
                 let mut keys: Vec<&String> = m.keys().collect();
                 keys.sort_by(|a, b| {
                     if a.as_str() == "t" && b.as_str() != "t" {
@@ -75,7 +83,7 @@ fn canon_json(v: &serde_json::Value) -> Result<String, String> {
                     if i > 0 {
                         out.push(',');
                     }
-                    out.push_str(&serde_json::to_string(k).map_err(|_| "M3_CANON_KEY_ESC_FAIL")?);
+                    out.push_str(&escape_string(k));
                     out.push(':');
                     canon_value(&m[*k], out)?;
                 }
@@ -90,7 +98,7 @@ fn canon_json(v: &serde_json::Value) -> Result<String, String> {
 }
 
 fn expect_only_keys(
-    obj: &serde_json::Map<String, serde_json::Value>,
+    obj: &std::collections::BTreeMap<String, JsonVal>,
     allowed: &[&str],
 ) -> Result<(), String> {
     let allow: BTreeSet<&str> = allowed.iter().copied().collect();
@@ -103,7 +111,7 @@ fn expect_only_keys(
 }
 
 fn expect_str<'a>(
-    obj: &'a serde_json::Map<String, serde_json::Value>,
+    obj: &'a std::collections::BTreeMap<String, JsonVal>,
     k: &str,
 ) -> Result<&'a str, String> {
     obj.get(k)
@@ -114,8 +122,8 @@ fn expect_str<'a>(
 pub fn verify_artifact_outdir(outdir: &str) -> Result<(), String> {
     let digests_p = format!("{}/digests.json", outdir);
     let digests_bytes = fs::read(&digests_p).map_err(|_| "M3_MISSING_digests.json".to_string())?;
-    let digests_v: serde_json::Value =
-        serde_json::from_slice(&digests_bytes).map_err(|_| "M3_DIGESTS_PARSE_FAIL".to_string())?;
+    let digests_v: JsonVal =
+        from_slice(&digests_bytes).map_err(|_| "M3_DIGESTS_PARSE_FAIL".to_string())?;
     let files_obj = digests_v
         .get("files")
         .and_then(|v| v.as_object())
@@ -142,8 +150,8 @@ pub fn verify_artifact_outdir(outdir: &str) -> Result<(), String> {
         return Err("M3_GRAPH_EXTRA_FINAL_NL".into());
     }
     let trimmed = graph_s.strip_suffix("\n").unwrap();
-    let graph_v: serde_json::Value =
-        serde_json::from_slice(&graph_bytes).map_err(|_| "M3_GRAPH_PARSE_FAIL".to_string())?;
+    let graph_v: JsonVal =
+        from_slice(&graph_bytes).map_err(|_| "M3_GRAPH_PARSE_FAIL".to_string())?;
     let canon = canon_json(&graph_v)?;
     if canon != trimmed {
         return Err("M3_GRAPH_CANON_MISMATCH".into());

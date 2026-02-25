@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use valuecore::json::{JsonVal, from_slice, from_str as json_from_str, escape_string};
 use std::fs;
 
 fn is_sha256(s: &str) -> bool {
@@ -12,20 +13,27 @@ fn is_sha256(s: &str) -> bool {
     h.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'))
 }
 
-fn canon_line(v: &serde_json::Value) -> Result<String, String> {
-    fn canon_value(v: &serde_json::Value, out: &mut String) -> Result<(), String> {
+fn canon_line(v: &JsonVal) -> Result<String, String> {
+    fn canon_value(v: &JsonVal, out: &mut String) -> Result<(), String> {
         match v {
-            serde_json::Value::Null => {
+            JsonVal::Null => {
                 out.push_str("null");
                 Ok(())
             }
-            serde_json::Value::Bool(b) => {
+            JsonVal::Bool(b) => {
                 out.push_str(if *b { "true" } else { "false" });
                 Ok(())
             }
-            serde_json::Value::Number(n) => {
+            JsonVal::Float(f) => {
+                let s = format!("{}", f);
+                if s.contains('+') { return Err("CANON_NUM_PLUS".into()); }
+                if s.ends_with(".0") { return Err("CANON_NUM_DOT0".into()); }
+                out.push_str(&s);
+                Ok(())
+            }
+            JsonVal::Int(n) => {
                 let s = n.to_string();
-                if s.contains("+") {
+                if s.contains('+') {
                     return Err("CANON_NUM_PLUS".into());
                 }
                 if s.starts_with('0') && s.len() > 1 && !s.starts_with("0.") {
@@ -37,11 +45,11 @@ fn canon_line(v: &serde_json::Value) -> Result<String, String> {
                 out.push_str(&s);
                 Ok(())
             }
-            serde_json::Value::String(s) => {
-                out.push_str(&serde_json::to_string(s).map_err(|_| "CANON_STRING_FAIL")?);
+            JsonVal::Str(s) => {
+                out.push_str(&escape_string(s));
                 Ok(())
             }
-            serde_json::Value::Array(a) => {
+            JsonVal::Array(a) => {
                 out.push('[');
                 for (i, x) in a.iter().enumerate() {
                     if i > 0 {
@@ -52,7 +60,7 @@ fn canon_line(v: &serde_json::Value) -> Result<String, String> {
                 out.push(']');
                 Ok(())
             }
-            serde_json::Value::Object(m) => {
+            JsonVal::Object(m) => {
                 let mut keys: Vec<&String> = m.keys().collect();
                 keys.sort_by(|a, b| {
                     if a.as_str() == "t" && b.as_str() != "t" {
@@ -68,7 +76,7 @@ fn canon_line(v: &serde_json::Value) -> Result<String, String> {
                     if i > 0 {
                         out.push(',');
                     }
-                    out.push_str(&serde_json::to_string(k).map_err(|_| "CANON_KEY_ESC_FAIL")?);
+                    out.push_str(&escape_string(k));
                     out.push(':');
                     canon_value(&m[*k], out)?;
                 }
@@ -84,7 +92,7 @@ fn canon_line(v: &serde_json::Value) -> Result<String, String> {
 }
 
 fn expect_only_keys(
-    obj: &serde_json::Map<String, serde_json::Value>,
+    obj: &std::collections::BTreeMap<String, JsonVal>,
     allowed: &[&str],
 ) -> Result<(), String> {
     let allow: BTreeSet<&str> = allowed.iter().copied().collect();
@@ -97,7 +105,7 @@ fn expect_only_keys(
 }
 
 fn expect_str<'a>(
-    obj: &'a serde_json::Map<String, serde_json::Value>,
+    obj: &'a std::collections::BTreeMap<String, JsonVal>,
     k: &str,
 ) -> Result<&'a str, String> {
     obj.get(k)
@@ -105,7 +113,7 @@ fn expect_str<'a>(
         .ok_or_else(|| format!("TRACE_EXPECT_STRING {}", k))
 }
 
-fn expect_t(obj: &serde_json::Map<String, serde_json::Value>) -> Result<&str, String> {
+fn expect_t(obj: &std::collections::BTreeMap<String, JsonVal>) -> Result<&str, String> {
     expect_str(obj, "t")
 }
 
@@ -113,8 +121,8 @@ pub fn verify_trace_outdir(outdir: &str) -> Result<(), String> {
     let digests_p = format!("{}/digests.json", outdir);
     let trace_p = format!("{}/trace.ndjson", outdir);
     let digests_bytes = fs::read(&digests_p).map_err(|_| "M2_MISSING_digests.json".to_string())?;
-    let digests_v: serde_json::Value =
-        serde_json::from_slice(&digests_bytes).map_err(|_| "M2_DIGESTS_PARSE_FAIL".to_string())?;
+    let digests_v: JsonVal =
+        from_slice(&digests_bytes).map_err(|_| "M2_DIGESTS_PARSE_FAIL".to_string())?;
     let ok = digests_v
         .get("ok")
         .and_then(|v| v.as_bool())
@@ -150,8 +158,8 @@ pub fn verify_trace_outdir(outdir: &str) -> Result<(), String> {
             return Err("M2_TRAILING_SPACE_OR_CR".into());
         }
 
-        let v: serde_json::Value =
-            serde_json::from_str(raw_line).map_err(|_| "M2_TRACE_LINE_PARSE_FAIL".to_string())?;
+        let v: JsonVal =
+            json_from_str(raw_line).map_err(|_| "M2_TRACE_LINE_PARSE_FAIL".to_string())?;
         let obj = v
             .as_object()
             .ok_or_else(|| "M2_TRACE_LINE_NOT_OBJECT".to_string())?;

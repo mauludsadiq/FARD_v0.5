@@ -1,4 +1,5 @@
 use valuecore::Sha256 as NativeSha256;
+use valuecore::json::{JsonVal, from_slice, from_str as json_from_str, escape_string};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
@@ -26,18 +27,25 @@ fn sha256_hex(bytes: &[u8]) -> String {
     s
 }
 
-fn canon_json(v: &serde_json::Value) -> Result<String, String> {
-    fn canon_value(v: &serde_json::Value, out: &mut String) -> Result<(), String> {
+fn canon_json(v: &JsonVal) -> Result<String, String> {
+    fn canon_value(v: &JsonVal, out: &mut String) -> Result<(), String> {
         match v {
-            serde_json::Value::Null => {
+            JsonVal::Null => {
                 out.push_str("null");
                 Ok(())
             }
-            serde_json::Value::Bool(b) => {
+            JsonVal::Bool(b) => {
                 out.push_str(if *b { "true" } else { "false" });
                 Ok(())
             }
-            serde_json::Value::Number(n) => {
+            JsonVal::Float(f) => {
+                let s = format!("{}", f);
+                if s.contains('+') { return Err("CANON_NUM_PLUS".into()); }
+                if s.ends_with(".0") { return Err("CANON_NUM_DOT0".into()); }
+                out.push_str(&s);
+                Ok(())
+            }
+            JsonVal::Int(n) => {
                 let s = n.to_string();
                 if s.contains('+') {
                     return Err("M5_CANON_NUM_PLUS".into());
@@ -51,11 +59,11 @@ fn canon_json(v: &serde_json::Value) -> Result<String, String> {
                 out.push_str(&s);
                 Ok(())
             }
-            serde_json::Value::String(s) => {
-                out.push_str(&serde_json::to_string(s).map_err(|_| "M5_CANON_STRING_FAIL")?);
+            JsonVal::Str(s) => {
+                out.push_str(&escape_string(s));
                 Ok(())
             }
-            serde_json::Value::Array(a) => {
+            JsonVal::Array(a) => {
                 out.push('[');
                 for (i, x) in a.iter().enumerate() {
                     if i > 0 {
@@ -66,7 +74,7 @@ fn canon_json(v: &serde_json::Value) -> Result<String, String> {
                 out.push(']');
                 Ok(())
             }
-            serde_json::Value::Object(m) => {
+            JsonVal::Object(m) => {
                 let mut keys: Vec<&String> = m.keys().collect();
                 keys.sort_by(|a, b| {
                     if a.as_str() == "t" && b.as_str() != "t" {
@@ -82,7 +90,7 @@ fn canon_json(v: &serde_json::Value) -> Result<String, String> {
                     if i > 0 {
                         out.push(',');
                     }
-                    out.push_str(&serde_json::to_string(k).map_err(|_| "M5_CANON_KEY_ESC_FAIL")?);
+                    out.push_str(&escape_string(k));
                     out.push(':');
                     canon_value(&m[*k], out)?;
                 }
@@ -97,7 +105,7 @@ fn canon_json(v: &serde_json::Value) -> Result<String, String> {
 }
 
 fn expect_only_keys(
-    obj: &serde_json::Map<String, serde_json::Value>,
+    obj: &std::collections::BTreeMap<String, JsonVal>,
     allowed: &[&str],
 ) -> Result<(), String> {
     let allow: BTreeSet<&str> = allowed.iter().copied().collect();
@@ -110,7 +118,7 @@ fn expect_only_keys(
 }
 
 fn expect_str<'a>(
-    obj: &'a serde_json::Map<String, serde_json::Value>,
+    obj: &'a std::collections::BTreeMap<String, JsonVal>,
     k: &str,
 ) -> Result<&'a str, String> {
     obj.get(k)
@@ -118,16 +126,16 @@ fn expect_str<'a>(
         .ok_or_else(|| format!("M5_EXPECT_STRING {}", k))
 }
 
-fn expect_bool(obj: &serde_json::Map<String, serde_json::Value>, k: &str) -> Result<bool, String> {
+fn expect_bool(obj: &std::collections::BTreeMap<String, JsonVal>, k: &str) -> Result<bool, String> {
     obj.get(k)
         .and_then(|v| v.as_bool())
         .ok_or_else(|| format!("M5_EXPECT_BOOL {}", k))
 }
 
 fn expect_obj<'a>(
-    obj: &'a serde_json::Map<String, serde_json::Value>,
+    obj: &'a std::collections::BTreeMap<String, JsonVal>,
     k: &str,
-) -> Result<&'a serde_json::Map<String, serde_json::Value>, String> {
+) -> Result<&'a std::collections::BTreeMap<String, JsonVal>, String> {
     obj.get(k)
         .and_then(|v| v.as_object())
         .ok_or_else(|| format!("M5_EXPECT_OBJECT {}", k))
@@ -136,8 +144,8 @@ fn expect_obj<'a>(
 pub fn verify_bundle_outdir(outdir: &str) -> Result<(), String> {
     let dig_p = format!("{}/digests.json", outdir);
     let dig_bytes = fs::read(&dig_p).map_err(|_| "M5_MISSING_digests.json".to_string())?;
-    let dig_v: serde_json::Value =
-        serde_json::from_slice(&dig_bytes).map_err(|_| "M5_DIGESTS_PARSE_FAIL".to_string())?;
+    let dig_v: JsonVal =
+        from_slice(&dig_bytes).map_err(|_| "M5_DIGESTS_PARSE_FAIL".to_string())?;
     let dobj = dig_v
         .as_object()
         .ok_or_else(|| "M5_DIGESTS_NOT_OBJECT".to_string())?;
@@ -258,13 +266,15 @@ pub fn verify_bundle_outdir(outdir: &str) -> Result<(), String> {
         pre_files.insert(k.to_string(), cid.to_string());
     }
 
-    let preimage = serde_json::json!({
-      "files": pre_files,
-      "ok": ok,
-      "runtime_version": runtime_version,
-      "stdlib_root_digest": stdlib_root_digest,
-      "trace_format_version": trace_format_version
-    });
+    let preimage = {
+        let mut m = std::collections::BTreeMap::new();
+        m.insert("files".to_string(), JsonVal::Object(pre_files.into_iter().map(|(k,v)| (k, JsonVal::Str(v))).collect()));
+        m.insert("ok".to_string(), JsonVal::Bool(ok));
+        m.insert("runtime_version".to_string(), JsonVal::Str(runtime_version.to_string()));
+        m.insert("stdlib_root_digest".to_string(), JsonVal::Str(stdlib_root_digest.to_string()));
+        m.insert("trace_format_version".to_string(), JsonVal::Str(trace_format_version.to_string()));
+        JsonVal::Object(m)
+    };
 
     let canon = canon_json(&preimage)?;
     let pre_hex = sha256_hex(canon.as_bytes());
