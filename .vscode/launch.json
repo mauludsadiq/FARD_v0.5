@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "FARD: Extension Development Host",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/tools/vscode-fard"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/tools/vscode-fard/**/*.js"
+      ],
+      "preLaunchTask": "fard: build fardrun"
+    }
+  ]
+}
