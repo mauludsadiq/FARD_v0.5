@@ -8,9 +8,12 @@
     { "include": "#keywords" },
     { "include": "#constants" },
     { "include": "#numbers" },
-    { "include": "#effects" },
+    { "include": "#artifacts" },
     { "include": "#types" },
-    { "include": "#functions" },
+    { "include": "#fn_defs" },
+    { "include": "#match_patterns" },
+    { "include": "#record_keys" },
+    { "include": "#function_calls" },
     { "include": "#operators" }
   ],
   "repository": {
@@ -69,11 +72,15 @@
         }
       ]
     },
-    "effects": {
+    "artifacts": {
       "patterns": [
         {
-          "name": "entity.name.function.effect.fard",
-          "match": "(?<=\\beffect\\s)([A-Za-z_][A-Za-z0-9_\\.]*)"
+          "name": "support.type.artifact.fard",
+          "match": "\\bRun\\b(?=\\s*\\()"
+        },
+        {
+          "name": "entity.name.label.artifact.fard",
+          "match": "(?<=\\bartifact\\s)([A-Za-z_][A-Za-z0-9_]*)"
         }
       ]
     },
@@ -85,12 +92,32 @@
         }
       ]
     },
-    "functions": {
+    "fn_defs": {
       "patterns": [
         {
           "name": "entity.name.function.fard",
           "match": "(?<=\\bfn\\s)([A-Za-z_][A-Za-z0-9_\\.]*)"
-        },
+        }
+      ]
+    },
+    "match_patterns": {
+      "patterns": [
+        {
+          "name": "support.function.result-pattern.fard",
+          "match": "\\b(ok|err)(?=\\s*\\()"
+        }
+      ]
+    },
+    "record_keys": {
+      "patterns": [
+        {
+          "name": "variable.other.member.fard",
+          "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\b(?=\\s*:)"
+        }
+      ]
+    },
+    "function_calls": {
+      "patterns": [
         {
           "name": "support.function.call.fard",
           "match": "\\b([A-Za-z_][A-Za-z0-9_\\.]*)\\s*(?=\\()"
@@ -101,7 +128,7 @@
       "patterns": [
         {
           "name": "keyword.operator.fard",
-          "match": "\\|>|&&|\\|\\||==|!=|<=|>=|<|>|\\+|\\-|\\*|/|%"
+          "match": "\\|>|&&|\\|\\||==|!=|<=|>=|<|>|\\+|\\-|\\*|/|%|:"
         }
       ]
     }

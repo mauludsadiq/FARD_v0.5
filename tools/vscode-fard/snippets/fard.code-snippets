@@ -1,0 +1,38 @@
+{
+  "FARD function": {
+    "scope": "fard",
+    "prefix": "fn",
+    "body": [
+      "fn ${1:name}(${2:x}: ${3:Value}) : ${4:Value}",
+      "  ${5:x}"
+    ],
+    "description": "FARD function skeleton"
+  },
+  "FARD match": {
+    "scope": "fard",
+    "prefix": "match",
+    "body": [
+      "match ${1:value} {",
+      "  ${2:ok(x)} => ${3:x},",
+      "  ${4:_} => ${5:unit}",
+      "}"
+    ],
+    "description": "FARD match skeleton"
+  },
+  "FARD effect": {
+    "scope": "fard",
+    "prefix": "effect",
+    "body": [
+      "effect ${1:name}(${2}): ${3:Value}"
+    ],
+    "description": "FARD effect declaration"
+  },
+  "FARD artifact Run": {
+    "scope": "fard",
+    "prefix": "artifact",
+    "body": [
+      "artifact ${1:prev}: Run(\"${2:sha256:...}\")"
+    ],
+    "description": "FARD artifact Run declaration"
+  }
+}
