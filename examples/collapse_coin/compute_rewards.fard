@@ -1,5 +1,4 @@
-import("std/int") as int
-import("std/rec") as rec
+import("std/int") as ints
 import("std/result") as result
 
 // Rewards are computed in basis points (1/10000)
@@ -8,26 +7,23 @@ import("std/result") as result
 
 let BASIS = 10000
 
-let compute_rewards = fn(amount, alpha_bp, beta_bp, gamma_bp) {
-  let total_bp = int.add(alpha_bp, int.add(beta_bp, gamma_bp)) in
-  if total_bp == BASIS
-  then
-    let alpha_reward = int.div(int.mul(amount, alpha_bp), BASIS) in
-    let beta_reward  = int.div(int.mul(amount, beta_bp),  BASIS) in
-    let gamma_reward = int.div(int.mul(amount, gamma_bp), BASIS) in
-    let r = rec.empty() in
-    let r = rec.set(r, "alpha", alpha_reward) in
-    let r = rec.set(r, "beta",  beta_reward) in
-    let r = rec.set(r, "gamma", gamma_reward) in
-    let r = rec.set(r, "total_distributed", int.add(alpha_reward, int.add(beta_reward, gamma_reward))) in
-    result.ok(r)
-  else
-    result.err("basis_points_must_sum_to_10000")
+fn do_compute(amount, alpha_bp, beta_bp, gamma_bp) {
+  let alpha_reward = ints.div(ints.mul(amount, alpha_bp), BASIS)
+  let beta_reward  = ints.div(ints.mul(amount, beta_bp),  BASIS)
+  let gamma_reward = ints.div(ints.mul(amount, gamma_bp), BASIS)
+  let total_dist   = ints.add(alpha_reward, ints.add(beta_reward, gamma_reward))
+  result.ok({ alpha: alpha_reward, beta: beta_reward, gamma: gamma_reward, total_distributed: total_dist })
 }
 
-// Test: amount=1000 minor units, split 60/30/10
-let amount    = 1000 in
-let alpha_bp  = 6000 in
-let beta_bp   = 3000 in
-let gamma_bp  = 1000 in
+fn compute_rewards(amount, alpha_bp, beta_bp, gamma_bp) {
+  let total_bp = ints.add(alpha_bp, ints.add(beta_bp, gamma_bp))
+  if total_bp == BASIS
+  then do_compute(amount, alpha_bp, beta_bp, gamma_bp)
+  else result.err("basis_points_must_sum_to_10000")
+}
+
+let amount   = 1000
+let alpha_bp = 6000
+let beta_bp  = 3000
+let gamma_bp = 1000
 compute_rewards(amount, alpha_bp, beta_bp, gamma_bp)

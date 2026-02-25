@@ -9,8 +9,8 @@ let xs = [5,1,7,2]
 
 let a =
   xs
-  | id
-  | pair(9)
+  |> id
+  |> pair(9)
 
 let b =
   match 7 {

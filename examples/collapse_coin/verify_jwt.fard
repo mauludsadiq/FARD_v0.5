@@ -6,31 +6,31 @@ import("std/json") as json
 import("std/result") as result
 
 let split_jwt = fn(token) {
-  let parts = str.split(token, ".") in
+  let parts = str.split(token, ".")
   if list.len(parts) == 3
   then result.ok(parts)
   else result.err("invalid_jwt_format")
 }
 
 let verify_hs256 = fn(secret_hex, header_b64, payload_b64, sig_b64) {
-  let msg = str.concat(header_b64, str.concat(".", payload_b64)) in
-  let expected_hex = crypto.hmac_sha256(secret_hex, msg) in
-  let actual_hex = codec.hex_encode(codec.base64url_decode(sig_b64)) in
+  let msg = str.concat(header_b64, str.concat(".", payload_b64))
+  let expected_hex = crypto.hmac_sha256(secret_hex, msg)
+  let actual_hex = codec.hex_encode(codec.base64url_decode(sig_b64))
   if expected_hex == actual_hex
   then result.ok(true)
   else result.err("signature_invalid")
 }
 
 let decode_payload = fn(payload_b64) {
-  let raw = codec.base64url_decode(payload_b64) in
+  let raw = codec.base64url_decode(payload_b64)
   result.ok(json.decode(raw))
 }
 
 let verify_jwt = fn(token, secret_hex) {
   result.andThen(split_jwt(token), fn(parts) {
-    let header_b64  = list.get(parts, 0) in
-    let payload_b64 = list.get(parts, 1) in
-    let sig_b64     = list.get(parts, 2) in
+    let header_b64  = list.get(parts, 0)
+    let payload_b64 = list.get(parts, 1)
+    let sig_b64     = list.get(parts, 2)
     result.andThen(
       verify_hs256(secret_hex, header_b64, payload_b64, sig_b64),
       fn(_) { decode_payload(payload_b64) }
@@ -38,6 +38,6 @@ let verify_jwt = fn(token, secret_hex) {
   })
 }
 
-let token = "eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJzdWIiOiAidGVzdHBrIiwgImV4cCI6IDE3NzE4ODIzNTF9.WnItzFStNW6Bhu6CLSD_ChKK9q3KVGoYvwNB_6PZiwI" in
-let secret_hex = "6465767365637265742d6368616e67652d6d65" in
+let token = "eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJzdWIiOiAidGVzdHBrIiwgImV4cCI6IDE3NzE4ODIzNTF9.WnItzFStNW6Bhu6CLSD_ChKK9q3KVGoYvwNB_6PZiwI"
+let secret_hex = "6465767365637265742d6368616e67652d6d65"
 verify_jwt(token, secret_hex)

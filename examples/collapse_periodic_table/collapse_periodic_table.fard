@@ -38,11 +38,12 @@ fn make_L() {
   let nw23 = float.neg(w23)
   let nw24 = float.neg(w24)
   let nw34 = float.neg(w34)
-  [[d0, nw01, nw02, nw03, nw04],
-   [nw01, d1, nw12, nw13, nw14],
-   [nw02, nw12, d2, nw23, nw24],
-   [nw03, nw13, nw23, d3, nw34],
-   [nw04, nw14, nw24, nw34, d4]]
+  let result = [[d0, nw01, nw02, nw03, nw04],
+               [nw01, d1, nw12, nw13, nw14],
+               [nw02, nw12, d2, nw23, nw24],
+               [nw03, nw13, nw23, d3, nw34],
+               [nw04, nw14, nw24, nw34, d4]]
+  result
 }
 
 fn dirichlet(L, x) {
