@@ -1,0 +1,101 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "fard: build fardrun",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["build", "--bin", "fardrun"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$rustc"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      }
+    },
+    {
+      "label": "fard: run color_quant",
+      "type": "shell",
+      "command": "${workspaceFolder}/fardrun",
+      "args": [
+        "run",
+        "--program",
+        "${workspaceFolder}/examples/color_quant.fard",
+        "--out",
+        "${workspaceFolder}/_out/color_quant"
+      ],
+      "dependsOn": "fard: build fardrun",
+      "problemMatcher": [],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      }
+    },
+    {
+      "label": "fard: run mathematical_proof_system",
+      "type": "shell",
+      "command": "${workspaceFolder}/fardrun",
+      "args": [
+        "run",
+        "--program",
+        "${workspaceFolder}/examples/mathematical_proof_system/main.fard",
+        "--out",
+        "${workspaceFolder}/_out/mathematical_proof_system"
+      ],
+      "dependsOn": "fard: build fardrun",
+      "problemMatcher": [],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      }
+    },
+    {
+      "label": "fard: run collapse_chess_z",
+      "type": "shell",
+      "command": "${workspaceFolder}/fardrun",
+      "args": [
+        "run",
+        "--program",
+        "${workspaceFolder}/examples/collapse_chess_z/main.fard",
+        "--out",
+        "${workspaceFolder}/_out/collapse_chess_z"
+      ],
+      "dependsOn": "fard: build fardrun",
+      "problemMatcher": [],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      }
+    },
+    {
+      "label": "fard: gate mathematical_proof_system",
+      "type": "shell",
+      "command": "${workspaceFolder}/tests/gate_mathematical_proof_system.sh",
+      "dependsOn": "fard: build fardrun",
+      "group": "test",
+      "problemMatcher": [],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      }
+    },
+    {
+      "label": "fard: gate collapse_chess_z",
+      "type": "shell",
+      "command": "${workspaceFolder}/tests/gate_collapse_chess_z.sh",
+      "dependsOn": "fard: build fardrun",
+      "group": "test",
+      "problemMatcher": [],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      }
+    },
+    {
+      "label": "fard: run all gates",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "fard: gate mathematical_proof_system",
+        "fard: gate collapse_chess_z"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}

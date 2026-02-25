@@ -1,0 +1,30 @@
+{
+  "name": "fard-language",
+  "displayName": "FARD Language",
+  "description": "Starter VS Code language support for FARD",
+  "version": "0.0.1",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "fard",
+        "aliases": ["FARD", "fard"],
+        "extensions": [".fard"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "fard",
+        "scopeName": "source.fard",
+        "path": "./syntaxes/fard.tmLanguage.json"
+      }
+    ]
+  }
+}

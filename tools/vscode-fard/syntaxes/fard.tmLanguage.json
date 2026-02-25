@@ -1,0 +1,109 @@
+{
+  "scopeName": "source.fard",
+  "name": "FARD",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#bytes" },
+    { "include": "#keywords" },
+    { "include": "#constants" },
+    { "include": "#numbers" },
+    { "include": "#effects" },
+    { "include": "#types" },
+    { "include": "#functions" },
+    { "include": "#operators" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.fard",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.fard",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.fard",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "bytes": {
+      "patterns": [
+        {
+          "name": "constant.other.bytes.fard",
+          "match": "\\bb\"[0-9A-Fa-f]*\""
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.fard",
+          "match": "\\b(module|import|as|pub|fn|let|if|else|match|effect|uses|artifact)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.fard",
+          "match": "\\b(true|false|unit)\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.integer.fard",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+    "effects": {
+      "patterns": [
+        {
+          "name": "entity.name.function.effect.fard",
+          "match": "(?<=\\beffect\\s)([A-Za-z_][A-Za-z0-9_\\.]*)"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.fard",
+          "match": "\\b(Unit|Bool|Int|Bytes|Text|Value|List|Map)\\b"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.fard",
+          "match": "(?<=\\bfn\\s)([A-Za-z_][A-Za-z0-9_\\.]*)"
+        },
+        {
+          "name": "support.function.call.fard",
+          "match": "\\b([A-Za-z_][A-Za-z0-9_\\.]*)\\s*(?=\\()"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.fard",
+          "match": "\\|>|&&|\\|\\||==|!=|<=|>=|<|>|\\+|\\-|\\*|/|%"
+        }
+      ]
+    }
+  }
+}
