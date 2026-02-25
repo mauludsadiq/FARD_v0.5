@@ -72,11 +72,9 @@ impl Cli {
         let run = match cli.cmd {
             Some(Command::Run(r)) => r,
             None => {
-                let cli2 = Cli::parse_from(argv);
-                match cli2.cmd {
-                    Some(Command::Run(r)) => r,
-                    _ => unreachable!(),
-                }
+                eprintln!("usage: fardrun run --program <file.fard> --out <dir>");
+                eprintln!("       fardrun --version");
+                std::process::exit(0);
             }
         };
 

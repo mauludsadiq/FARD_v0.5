@@ -1,5 +1,4 @@
 use valuecore::Sha256 as NativeSha256;
-use valuecore::hex_lower;
 pub mod builtin_pipe_v1;
 pub mod builtin_sig_table_v1;
 

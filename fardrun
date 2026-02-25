@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+DEBUG_BIN="$SCRIPT_DIR/target/debug/fardrun"
+RELEASE_BIN="$SCRIPT_DIR/target/release/fardrun"
+
+if [[ -x "$DEBUG_BIN" && ( ! -x "$RELEASE_BIN" || "$DEBUG_BIN" -nt "$RELEASE_BIN" ) ]]; then
+  exec "$DEBUG_BIN" "$@"
+elif [[ -x "$RELEASE_BIN" ]]; then
+  exec "$RELEASE_BIN" "$@"
+else
+  echo "fardrun wrapper: no built binary found" >&2
+  echo "expected one of:" >&2
+  echo "  $DEBUG_BIN" >&2
+  echo "  $RELEASE_BIN" >&2
+  exit 1
+fi

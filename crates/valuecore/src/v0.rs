@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 use crate::json::{self, JsonVal};
 use crate::sha256::Sha256;
 
