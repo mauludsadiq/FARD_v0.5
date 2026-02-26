@@ -2770,7 +2770,7 @@ fn call_builtin(
         }
         Builtin::RandUuidV4 => {
             if args.len() != 0 { bail!("ERROR_RUNTIME rand.uuid_v4 expects 0 args"); }
-            Ok(Val::Str(uuid::Uuid::new_v4().to_string()))
+            Ok(Val::Str(valuecore::uuid::new_v4()))
         }
         Builtin::ListLen => {
             match args.first() {

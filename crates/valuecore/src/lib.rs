@@ -22,3 +22,4 @@ pub use vdig::{cid, vdig};
 pub mod v0;
 
 pub mod base64url;
+pub mod uuid;
