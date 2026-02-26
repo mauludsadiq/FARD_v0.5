@@ -5,57 +5,115 @@ pub mod builtin_sig_table_v1;
 use anyhow::{anyhow, bail, Context, Result};
 use valuecore::json::{JsonVal, from_slice, from_str as json_from_str};
 use regex::Regex;
-use serde::Deserialize;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct Config {
     pub runner: RunnerCfg,
     pub artifacts: ArtifactsCfg,
-    #[serde(default)]
     pub gates: GatesCfg,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct RunnerCfg {
-    /// Command to invoke. If this is a list, the first element is the executable.
     pub cmd: Vec<String>,
-    /// Base args to pass before per-run args.
-    #[serde(default)]
     pub args: Vec<String>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct ArtifactsCfg {
     pub trace_relpath: String,
     pub result_relpath: String,
     pub lock_relpath: String,
 }
 
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct GatesCfg {
-    #[serde(default = "default_true")]
     pub require_trace_file: bool,
-    #[serde(default = "default_true")]
     pub require_result_file: bool,
-    #[serde(default = "default_true")]
     pub cg1_color_geometry_missing_std_color: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 pub fn load_config(path: &Path) -> Result<Config> {
     let s = fs::read_to_string(path).with_context(|| format!("read config {path:?}"))?;
-    let cfg: Config = toml::from_str(&s).with_context(|| format!("parse TOML {path:?}"))?;
-    if cfg.runner.cmd.is_empty() {
-        bail!("runner.cmd must be non-empty");
+    parse_config(&s).with_context(|| format!("parse config {path:?}"))
+}
+
+fn parse_config(s: &str) -> Result<Config> {
+    let mut section = "";
+    let mut runner_cmd: Vec<String> = vec![];
+    let mut runner_args: Vec<String> = vec![];
+    let mut trace_relpath = String::new();
+    let mut result_relpath = String::new();
+    let mut lock_relpath = String::new();
+    let mut require_trace_file = true;
+    let mut require_result_file = true;
+    let mut cg1 = true;
+
+    for line in s.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') { continue; }
+        if line.starts_with('[') && line.ends_with(']') {
+            section = &line[1..line.len()-1];
+            continue;
+        }
+        let (key, val) = match line.split_once('=') {
+            Some((k, v)) => (k.trim(), v.trim()),
+            None => continue,
+        };
+        match (section, key) {
+            ("runner", "cmd")  => runner_cmd  = parse_toml_str_array(val)?,
+            ("runner", "args") => runner_args = parse_toml_str_array(val)?,
+            ("artifacts", "trace_relpath")  => trace_relpath  = parse_toml_str(val)?,
+            ("artifacts", "result_relpath") => result_relpath = parse_toml_str(val)?,
+            ("artifacts", "lock_relpath")   => lock_relpath   = parse_toml_str(val)?,
+            ("gates", "require_trace_file")  => require_trace_file  = parse_toml_bool(val)?,
+            ("gates", "require_result_file") => require_result_file = parse_toml_bool(val)?,
+            ("gates", "cg1_color_geometry_missing_std_color") => cg1 = parse_toml_bool(val)?,
+            _ => {}
+        }
     }
-    Ok(cfg)
+    if runner_cmd.is_empty() { bail!("runner.cmd must be non-empty"); }
+    Ok(Config {
+        runner: RunnerCfg { cmd: runner_cmd, args: runner_args },
+        artifacts: ArtifactsCfg { trace_relpath, result_relpath, lock_relpath },
+        gates: GatesCfg { require_trace_file, require_result_file, cg1_color_geometry_missing_std_color: cg1 },
+    })
+}
+
+fn parse_toml_str(s: &str) -> Result<String> {
+    let s = s.trim();
+    if s.starts_with('"') && s.ends_with('"') {
+        Ok(s[1..s.len()-1].to_string())
+    } else {
+        bail!("expected quoted string, got: {}", s)
+    }
+}
+
+fn parse_toml_bool(s: &str) -> Result<bool> {
+    match s.trim() {
+        "true"  => Ok(true),
+        "false" => Ok(false),
+        other   => bail!("expected bool, got: {}", other),
+    }
+}
+
+fn parse_toml_str_array(s: &str) -> Result<Vec<String>> {
+    let s = s.trim();
+    if !s.starts_with('[') || !s.ends_with(']') {
+        bail!("expected array, got: {}", s);
+    }
+    let inner = &s[1..s.len()-1];
+    let mut out = vec![];
+    for part in inner.split(',') {
+        let part = part.trim();
+        if part.is_empty() { continue; }
+        out.push(parse_toml_str(part)?);
+    }
+    Ok(out)
 }
 
 #[derive(Debug, Clone)]
