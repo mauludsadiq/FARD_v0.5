@@ -7,7 +7,7 @@ impl std::fmt::Display for TryPropagation {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "TryPropagation") }
 }
 impl std::error::Error for TryPropagation {}
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use valuecore::base64url;
 use sha2::Sha256;
 use hkdf::Hkdf;
 use valuecore::json::{JsonVal, from_str as json_from_str, to_string as json_to_string};
@@ -1074,14 +1074,14 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
         }
         "base64url_encode" => {
             match args.get(0) {
-                Some(V::Bytes(b)) => Ok(V::Text(URL_SAFE_NO_PAD.encode(b))),
+                Some(V::Bytes(b)) => Ok(V::Text(base64url::encode(b))),
                 _ => Err(anyhow!("ERROR_BADARG base64url_encode expects bytes")),
             }
         }
         "base64url_decode" => {
             match args.get(0) {
                 Some(V::Text(s)) => {
-                    match URL_SAFE_NO_PAD.decode(s.as_bytes()) {
+                    match base64url::decode(s.as_bytes()) {
                         Ok(b) => Ok(V::Bytes(b)),
                         Err(e) => Ok(V::Err(format!("ERROR_BADARG base64url_decode: {}", e))),
                     }
@@ -1250,7 +1250,7 @@ fn v_to_json(v: &V) -> Result<JsonVal> {
         V::Bool(b) => Ok(JsonVal::Bool(*b)),
         V::Int(i) => Ok(JsonVal::Int(*i)),
         V::Text(s) => Ok(JsonVal::Str(s.clone())),
-        V::Bytes(b) => Ok(JsonVal::Str(URL_SAFE_NO_PAD.encode(b))),
+        V::Bytes(b) => Ok(JsonVal::Str(valuecore::base64url::encode(b))),
         V::List(xs) => {
             let vs: Result<Vec<JsonVal>> = xs.iter().map(v_to_json).collect();
             Ok(JsonVal::Array(vs?))

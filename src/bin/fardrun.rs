@@ -2759,14 +2759,13 @@ fn call_builtin(
         Builtin::CodecBase64UrlEncode => {
             if args.len() != 1 { bail!("ERROR_RUNTIME base64url_encode expects 1 arg"); }
             let input = match &args[0] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
-            use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-            Ok(Val::Str(URL_SAFE_NO_PAD.encode(input.as_bytes())))
+            Ok(Val::Str(valuecore::base64url::encode(input.as_bytes())))
         }
         Builtin::CodecBase64UrlDecode => {
             if args.len() != 1 { bail!("ERROR_RUNTIME base64url_decode expects 1 arg"); }
             let input = match &args[0] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
-            use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-            let bytes = URL_SAFE_NO_PAD.decode(input.as_bytes())?;
+            let bytes = valuecore::base64url::decode(input.as_bytes())
+                .map_err(|e| anyhow::anyhow!(e))?;
             Ok(Val::Bytes(bytes))
         }
         Builtin::RandUuidV4 => {
