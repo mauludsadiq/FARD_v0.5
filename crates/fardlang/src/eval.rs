@@ -12,7 +12,6 @@ use sha2::Sha256;
 use hkdf::Hkdf;
 use valuecore::json::{JsonVal, from_str as json_from_str, to_string as json_to_string};
 use chacha20poly1305::{XChaCha20Poly1305, KeyInit, aead::{Aead, Payload}};
-use p256::ecdsa::{VerifyingKey, signature::Verifier, DerSignature};
 
 #[derive(Debug, Clone)]
 pub enum EvalVal {
@@ -128,7 +127,7 @@ pub fn std_aliases() -> BTreeMap<String, BTreeMap<String, String>> {
         ("text", &["len","contains","starts_with","split","trim","slice","replace","join"]),
         ("bytes", &["len","concat","slice","eq","from_text"]),
         ("map",   &["new","set","get","has","keys","delete"]),
-        ("crypto",&["sha256","hkdf_sha256","xchacha20poly1305_seal","xchacha20poly1305_open","rsa_verify_pkcs1_sha256","ecdsa_p256_verify"]),
+        ("crypto",&["sha256","hkdf_sha256","xchacha20poly1305_seal","xchacha20poly1305_open"]),
         ("encode",&["base64url_encode","base64url_decode","json_parse","json_emit"]),
         ("float",&["from_int","to_int","from_text","to_text","add","sub","mul","div","exp","ln","sqrt","pow","abs","neg","lt","gt","le","ge","eq","nan","inf","is_nan","is_finite","floor","ceil","round"]),
         ("linalg",&["dot","norm","zeros","eye","matvec","matmul","transpose","eigh","vec_add","vec_sub","vec_scale","mat_add","mat_scale"]),
@@ -684,8 +683,6 @@ fn is_builtin(f: &str) -> bool {
             | "hkdf_sha256"
             | "xchacha20poly1305_seal"
             | "xchacha20poly1305_open"
-            | "rsa_verify_pkcs1_sha256"
-            | "ecdsa_p256_verify"
             | "ok"
             | "err"
             | "float_from_int"
@@ -1169,41 +1166,8 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                 _ => Err(anyhow!("ERROR_BADARG xchacha20poly1305_open expects (bytes, bytes, bytes, bytes)")),
             }
         }
-        "rsa_verify_pkcs1_sha256" => {
-            use rsa::{RsaPublicKey, pkcs1v15::{VerifyingKey as RsaVerifyingKey, Signature as RsaSig}, signature::Verifier as RsaVerifier};
-            use rsa::BigUint;
-            match (args.get(0), args.get(1), args.get(2), args.get(3)) {
-                (Some(V::Bytes(msg)), Some(V::Bytes(sig)), Some(V::Bytes(n)), Some(V::Bytes(e))) => {
-                    let pub_key = RsaPublicKey::new(
-                        BigUint::from_bytes_be(n),
-                        BigUint::from_bytes_be(e),
-                    ).map_err(|e| anyhow!("ERROR_BADARG rsa_verify_pkcs1_sha256: invalid key: {}", e))?;
-                    let vk: RsaVerifyingKey<Sha256> = RsaVerifyingKey::new(pub_key);
-                    let signature = RsaSig::try_from(sig.as_slice())
-                        .map_err(|e| anyhow!("ERROR_BADARG rsa_verify_pkcs1_sha256: invalid sig: {}", e))?;
-                    Ok(V::Bool(vk.verify(msg, &signature).is_ok()))
-                }
-                _ => Err(anyhow!("ERROR_BADARG rsa_verify_pkcs1_sha256 expects (bytes, bytes, bytes, bytes)")),
-            }
-        }
-        "ecdsa_p256_verify" => {
-            match (args.get(0), args.get(1), args.get(2), args.get(3)) {
-                (Some(V::Bytes(msg)), Some(V::Bytes(sig)), Some(V::Bytes(x)), Some(V::Bytes(y))) => {
-                    use p256::EncodedPoint;
-                    let point = EncodedPoint::from_affine_coordinates(
-                        x.as_slice().into(),
-                        y.as_slice().into(),
-                        false,
-                    );
-                    let vk = VerifyingKey::from_encoded_point(&point)
-                        .map_err(|e| anyhow!("ERROR_BADARG ecdsa_p256_verify: invalid key: {}", e))?;
-                    let signature = DerSignature::try_from(sig.as_slice())
-                        .map_err(|e| anyhow!("ERROR_BADARG ecdsa_p256_verify: invalid sig: {}", e))?;
-                    Ok(V::Bool(vk.verify(msg, &signature).is_ok()))
-                }
-                _ => Err(anyhow!("ERROR_BADARG ecdsa_p256_verify expects (bytes, bytes, bytes, bytes)")),
-            }
-        }
+
+
         "ok" => {
             match args.get(0) {
                 Some(v) => Ok(valuecore::v0::normalize(&V::Map(vec![
