@@ -1380,7 +1380,9 @@ impl Parser {
     }
     fn parse_or(&mut self) -> Result<Expr> {
         let mut e = self.parse_and()?;
-        while self.eat_sym("||") {
+        loop {
+            let is_or = self.eat_sym("||") || matches!(self.peek(), Tok::OrOr) && { self.i += 1; true };
+            if !is_or { break; }
             let r = self.parse_and()?;
             e = Expr::Bin("||".to_string(), Box::new(e), Box::new(r));
         }
