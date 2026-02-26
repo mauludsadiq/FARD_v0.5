@@ -12,7 +12,6 @@ toml = "0.8"
 walkdir = "2"
 regex = "1"
 ed25519-dalek = "2.0"
-nalgebra = { version = "0.33", features = ["std"] }
 valuecore = { path = "crates/valuecore" }
 
 [dev-dependencies]

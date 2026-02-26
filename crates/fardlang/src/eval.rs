@@ -1559,22 +1559,14 @@ fn eval_linalg_builtin(f: &str, args: &[V]) -> Result<V> {
             Ok(mat_to_v(&m.iter().map(|r| r.iter().map(|x| x*s).collect()).collect::<Vec<_>>()))
         }
         "linalg_eigh" => {
-            // Symmetric eigendecomposition using nalgebra
             let m = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
             let n = m.len();
             if n == 0 { return Ok(V::Map(vec![
                 ("vals".into(), V::List(vec![])),
                 ("vecs".into(), V::List(vec![])),
             ])); }
-            use nalgebra::{DMatrix, SymmetricEigen};
-            let mut flat = Vec::with_capacity(n*n);
-            for row in &m { for &x in row { flat.push(x); } }
-            let na_mat = DMatrix::from_row_slice(n, n, &flat);
-            let eig = SymmetricEigen::new(na_mat);
-            let eigenvalues: Vec<f64> = eig.eigenvalues.iter().cloned().collect();
-            let eigenvecs: Vec<Vec<f64>> = (0..n).map(|j|
-                (0..n).map(|i| eig.eigenvectors[(i,j)]).collect()
-            ).collect();
+            let flat: Vec<f64> = m.iter().flat_map(|r| r.iter().cloned()).collect();
+            let (eigenvalues, eigenvecs) = valuecore::linalg::eigh(&flat, n);
             Ok(V::Map(vec![
                 ("vals".into(), vec_to_v(&eigenvalues)),
                 ("vecs".into(), mat_to_v(&eigenvecs)),
