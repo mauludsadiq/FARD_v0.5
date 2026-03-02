@@ -29,3 +29,7 @@ pub mod int;
 pub mod hkdf;
 pub use hkdf::hkdf_sha256;
 pub use uuid::random_bytes;
+pub mod val;
+pub use val::{Val, canon_cmp, canon_eq};
+pub mod val_conv;
+pub use val_conv::{val_to_value, value_to_val};
