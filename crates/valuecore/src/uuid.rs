@@ -91,3 +91,12 @@ mod tests {
         }
     }
 }
+
+/// Read `n` random bytes from /dev/urandom.
+pub fn random_bytes(n: usize) -> Vec<u8> {
+    let mut buf = vec![0u8; n];
+    std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| f.read_exact(&mut buf))
+        .expect("failed to read /dev/urandom");
+    buf
+}

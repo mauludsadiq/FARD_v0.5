@@ -28,3 +28,4 @@ pub mod linalg;
 pub mod int;
 pub mod hkdf;
 pub use hkdf::hkdf_sha256;
+pub use uuid::random_bytes;

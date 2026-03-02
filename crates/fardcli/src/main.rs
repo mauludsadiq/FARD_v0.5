@@ -39,10 +39,8 @@ impl EffectHandler for StdEffectHandler {
             }
             "random_bytes" => {
                 let n = match args.first() { Some(V::Int(n)) => *n as usize, _ => return Err(anyhow!("random_bytes expects int")) };
-                use rand::RngCore;
-                let mut buf = vec![0u8; n];
-                rand::thread_rng().fill_bytes(&mut buf);
-                V::Bytes(buf)
+
+                let buf = valuecore::random_bytes(n);                V::Bytes(buf)
             }
             "http_get" => {
                 let url = match args.first() { Some(V::Text(s)) => s.clone(), _ => return Err(anyhow!("http_get expects text url")) };
