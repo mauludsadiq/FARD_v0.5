@@ -32,4 +32,4 @@ pub use uuid::random_bytes;
 pub mod val;
 pub use val::{Val, canon_cmp, canon_eq};
 pub mod val_conv;
-pub use val_conv::{val_to_value, value_to_val};
+pub use val_conv::{val_to_value, value_to_val, val_to_v0};

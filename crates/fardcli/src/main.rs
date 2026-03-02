@@ -30,7 +30,7 @@ impl EffectHandler for StdEffectHandler {
             "write_file" => {
                 let path = match args.first() { Some(V::Text(s)) => s.clone(), _ => return Err(anyhow!("write_file expects text path")) };
                 let data = args.get(1).cloned().unwrap_or(V::Unit);
-                let bytes = valuecore::v0::encode_json(&val_to_v0(&data));
+                let bytes = valuecore::v0::encode_json(&valuecore::val_to_v0(&data));
                 fs::write(&path, &bytes).map_err(|e| anyhow!("write_file {}: {}", path, e))?;
                 V::Bool(true)
             }
@@ -313,20 +313,6 @@ fn main() {
 }
 
 
-fn val_to_v0(v: &V) -> valuecore::v0::V {
-    use valuecore::v0::V as V0;
-    match v {
-        V::Unit => V0::Unit,
-        V::Bool(b) => V0::Bool(*b),
-        V::Int(i) => V0::Int(*i),
-        V::Float(f) => V0::Bytes(f.to_le_bytes().to_vec()),
-        V::Text(s) => V0::Text(s.clone()),
-        V::Bytes(b) => V0::Bytes(b.clone()),
-        V::List(xs) => V0::List(xs.iter().map(val_to_v0).collect()),
-        V::Record(kvs) => V0::Map(kvs.iter().map(|(k, v)| (k.clone(), val_to_v0(v))).collect()),
-        V::Err { code, .. } => V0::Err(code.clone()),
-    }
-}
 
 fn run(max_depth: usize) {
 
@@ -580,7 +566,7 @@ fn json_to_v_json(v: &V) -> JsonVal {
     }
 
     let v = result.unwrap();
-    let output_bytes = valuecore::v0::encode_json(&val_to_v0(&v));
+    let output_bytes = valuecore::v0::encode_json(&valuecore::val_to_v0(&v));
 
     let receipt = witness::compute(&src, &inputs, &output_bytes, &trace_ndjson, &derived_from, max_depth);
     witness::write(&receipt, &trace_ndjson, &output_bytes);

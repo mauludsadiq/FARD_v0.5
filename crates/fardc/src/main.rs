@@ -132,7 +132,7 @@ fn main() -> Result<()> {
             fardlang::eval::apply_imports(&mut env, &m_lang.imports);
             let v = eval_block(&main_decl.body, &mut env);
             match v {
-                Ok(val) => valuecore::v0::encode_json(&val_to_v0(&val)),
+                Ok(val) => valuecore::v0::encode_json(&valuecore::val_to_v0(&val)),
                 Err(e) => {
                     let msg = format!("{}", e);
                     if msg.contains("ERROR_EVAL unbound") || msg.contains("ERROR_BADARG") {
@@ -187,17 +187,3 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn val_to_v0(v: &Val) -> valuecore::v0::V {
-    use valuecore::v0::V;
-    match v {
-        Val::Unit => V::Unit,
-        Val::Bool(b) => V::Bool(*b),
-        Val::Int(i) => V::Int(*i),
-        Val::Float(f) => V::Bytes(f.to_le_bytes().to_vec()),
-        Val::Text(s) => V::Text(s.clone()),
-        Val::Bytes(b) => V::Bytes(b.clone()),
-        Val::List(xs) => V::List(xs.iter().map(val_to_v0).collect()),
-        Val::Record(kvs) => V::Map(kvs.iter().map(|(k, v)| (k.clone(), val_to_v0(v))).collect()),
-        Val::Err { code, data: _ } => V::Err(code.clone()),
-    }
-}

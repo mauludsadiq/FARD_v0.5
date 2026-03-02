@@ -129,3 +129,20 @@ mod tests {
         assert!(e.to_string().contains("ERROR_OVERFLOW"), "{}", e);
     }
 }
+
+/// Convert Val to v0::V for wire serialization in the v0 receipt format.
+/// This is the sole crossing point from runtime Val to the v0 wire boundary.
+pub fn val_to_v0(v: &Val) -> crate::v0::V {
+    use crate::v0::V;
+    match v {
+        Val::Unit    => V::Unit,
+        Val::Bool(b) => V::Bool(*b),
+        Val::Int(i)  => V::Int(*i),
+        Val::Float(f) => V::Bytes(f.to_le_bytes().to_vec()),
+        Val::Text(s) => V::Text(s.clone()),
+        Val::Bytes(b) => V::Bytes(b.clone()),
+        Val::List(xs) => V::List(xs.iter().map(val_to_v0).collect()),
+        Val::Record(kvs) => V::Map(kvs.iter().map(|(k, v)| (k.clone(), val_to_v0(v))).collect()),
+        Val::Err { code, .. } => V::Err(code.clone()),
+    }
+}
