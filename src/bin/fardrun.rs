@@ -1642,16 +1642,35 @@ impl Parser {
 }
 #[derive(Clone, Debug)]
 enum Val {
-    Bytes(Vec<u8>),
+    Unit,
+    Bool(bool),
     Int(i64),
     Float(f64),
-    Bool(bool),
-    Str(String),
-    Null,
+    Text(String),
+    Bytes(Vec<u8>),
     List(Vec<Val>),
-    Rec(BTreeMap<String, Val>),
+    Record(BTreeMap<String, Val>),
+    Err { code: String, data: Box<Val> },
     Func(Func),
     Builtin(Builtin),
+}
+
+impl Val {
+    fn err(code: &str) -> Val {
+        Val::Err { code: code.to_string(), data: Box::new(Val::Unit) }
+    }
+    fn err_data(code: &str, data: Val) -> Val {
+        Val::Err { code: code.to_string(), data: Box::new(data) }
+    }
+    fn is_err(&self) -> bool { matches!(self, Val::Err { .. }) }
+    fn type_name(&self) -> &'static str {
+        match self {
+            Val::Unit => "unit", Val::Bool(_) => "bool", Val::Int(_) => "int",
+            Val::Float(_) => "float", Val::Text(_) => "text", Val::Bytes(_) => "bytes",
+            Val::List(_) => "list", Val::Record(_) => "record",
+            Val::Err { .. } => "err", Val::Func(_) => "func", Val::Builtin(_) => "builtin",
+        }
+    }
 }
 #[derive(Debug)]
 struct QMarkUnwind {
@@ -1886,8 +1905,8 @@ impl Val {
         match self {
             Val::Int(n) => { let mut m = Map::new(); m.insert("t".to_string(), J::Str("int".to_string())); m.insert("v".to_string(), J::Int(*n)); Some(J::Object(m)) },
             Val::Bool(b) => { let mut m = Map::new(); m.insert("t".to_string(), J::Str("bool".to_string())); m.insert("v".to_string(), J::Bool(*b)); Some(J::Object(m)) },
-            Val::Str(s) => { let mut m = Map::new(); m.insert("t".to_string(), J::Str("str".to_string())); m.insert("v".to_string(), J::Str(s.clone())); Some(J::Object(m)) },
-            Val::Null => { let mut m = Map::new(); m.insert("t".to_string(), J::Str("null".to_string())); m.insert("v".to_string(), J::Null); Some(J::Object(m)) },
+            Val::Text(s) => { let mut m = Map::new(); m.insert("t".to_string(), J::Str("str".to_string())); m.insert("v".to_string(), J::Str(s.clone())); Some(J::Object(m)) },
+            Val::Unit => { let mut m = Map::new(); m.insert("t".to_string(), J::Str("null".to_string())); m.insert("v".to_string(), J::Null); Some(J::Object(m)) },
             Val::List(xs) => {
                 let mut out: Vec<J> = Vec::with_capacity(xs.len());
                 for x in xs {
@@ -1895,7 +1914,7 @@ impl Val {
                 }
                 { let mut m = Map::new(); m.insert("t".to_string(), J::Str("list".to_string())); m.insert("v".to_string(), J::Array(out)); Some(J::Object(m)) }
             }
-            Val::Rec(m) => {
+            Val::Record(m) => {
                 let mut obj = Map::new();
                 for (k, v) in m.iter() {
                     obj.insert(k.clone(), v.to_vc_json()?);
@@ -1910,12 +1929,12 @@ impl Val {
         match self {
             Val::Int(n) => Some(J::Int(*n)),
             Val::Bool(b) => Some(J::Bool(*b)),
-            Val::Str(s) => Some(J::Str(s.clone())),
-            Val::Null => Some(J::Null),
+            Val::Text(s) => Some(J::Str(s.clone())),
+            Val::Unit => Some(J::Null),
             Val::List(xs) => Some(J::Array(
                 xs.iter().map(|x| x.to_json()).collect::<Option<Vec<_>>>()?,
             )),
-            Val::Rec(m) => {
+            Val::Record(m) => {
                 let mut obj = Map::new();
 
                 // Canonical object field order for records:
@@ -1942,6 +1961,7 @@ impl Val {
                 obj.insert("v".to_string(), J::Str(format!("hex:{}", hex_lower(bs))));
                 Some(J::Object(obj))
             }
+            Val::Err { code, .. } => Some(J::Str(format!("error:{}", code))),
             Val::Func(_) | Val::Builtin(_) => None,
         }
     }
@@ -2005,7 +2025,7 @@ fn parse_hex_bytes(s: &str) -> Result<Vec<u8>> {
 
 fn val_from_json(j: &J) -> Result<Val> {
     match j {
-        J::Null => Ok(Val::Null),
+        J::Null => Ok(Val::Unit),
         J::Bool(b) => Ok(Val::Bool(*b)),
         J::Int(n) => Ok(Val::Int(*n)),
         J::Float(f) => {
@@ -2016,7 +2036,7 @@ fn val_from_json(j: &J) -> Result<Val> {
                 bail!("ERROR_RUNTIME json number out of range")
             }
         }
-        J::Str(s) => Ok(Val::Str(s.clone())),
+        J::Str(s) => Ok(Val::Text(s.clone())),
         J::Array(xs) => {
             let mut out = Vec::new();
             for x in xs {
@@ -2036,7 +2056,7 @@ fn val_from_json(j: &J) -> Result<Val> {
             for (k, v) in m.iter() {
                 out.insert(k.clone(), val_from_json(v)?);
             }
-            Ok(Val::Rec(out))
+            Ok(Val::Record(out))
         }
     }
 }
@@ -2048,9 +2068,9 @@ fn fard_pat_match_v0_5(p: &Pat, v: &Val, env: &mut Env) -> Result<bool> {
             Ok(true)
         }
         Pat::LitInt(i) => Ok(matches!(v, Val::Int(j) if j == i)),
-        Pat::LitStr(s) => Ok(matches!(v, Val::Str(t) if t == s)),
+        Pat::LitStr(s) => Ok(matches!(v, Val::Text(t) if t == s)),
         Pat::LitBool(b) => Ok(matches!(v, Val::Bool(c) if c == b)),
-        Pat::LitNull => Ok(matches!(v, Val::Null)),
+        Pat::LitNull => Ok(matches!(v, Val::Unit)),
         Pat::List { items, rest } => match v {
             Val::List(xs) => {
                 if xs.len() < items.len() {
@@ -2070,7 +2090,7 @@ fn fard_pat_match_v0_5(p: &Pat, v: &Val, env: &mut Env) -> Result<bool> {
             _ => Ok(false),
         },
         Pat::Obj { items, rest } => match v {
-            Val::Rec(m) => {
+            Val::Record(m) => {
                 for (k, subp) in items.iter() {
                     let vv = match m.get(k) {
                         Some(vv) => vv,
@@ -2088,7 +2108,7 @@ fn fard_pat_match_v0_5(p: &Pat, v: &Val, env: &mut Env) -> Result<bool> {
                         }
                         rm.insert(k.clone(), vv.clone());
                     }
-                    env.set(rn.clone(), Val::Rec(rm));
+                    env.set(rn.clone(), Val::Record(rm));
                 }
                 Ok(true)
             }
@@ -2101,8 +2121,8 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
         Expr::Int(n) => Ok(Val::Int(*n)),
         Expr::FloatLit(f) => Ok(Val::Bytes(f.to_le_bytes().to_vec())),
         Expr::Bool(b) => Ok(Val::Bool(*b)),
-        Expr::Str(s) => Ok(Val::Str(s.clone())),
-        Expr::Null => Ok(Val::Null),
+        Expr::Str(s) => Ok(Val::Text(s.clone())),
+        Expr::Null => Ok(Val::Unit),
         Expr::Var(n) => env.get(n).ok_or_else(|| anyhow!("unbound var: {n}")),
         Expr::List(xs) => {
             let mut out = Vec::new();
@@ -2116,7 +2136,7 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
             for (k, v) in kvs {
                 m.insert(k.clone(), eval(v, env, tracer, loader)?);
             }
-            Ok(Val::Rec(m))
+            Ok(Val::Record(m))
         }
         Expr::Index(obj, idx) => {
             let v = eval(obj, env, tracer, loader)?;
@@ -2128,7 +2148,7 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                     }
                     Ok(xs[n as usize].clone())
                 }
-                (Val::Rec(m), Val::Str(k)) => {
+                (Val::Record(m), Val::Text(k)) => {
                     m.get(&k).cloned().ok_or_else(|| anyhow!("ERROR_KEY key {:?} not found", k))
                 }
                 _ => bail!("ERROR_BADARG index operator requires list[int] or rec[str]"),
@@ -2137,7 +2157,7 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
         Expr::Get(obj, k) => {
             let o = eval(obj, env, tracer, loader)?;
             match o {
-                Val::Rec(m) => m
+                Val::Record(m) => m
                     .get(k)
                     .cloned()
                     .ok_or_else(|| anyhow!("EXPORT_MISSING missing field {k}")),
@@ -2281,9 +2301,9 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
 #[allow(dead_code)]
 fn is_result_val(v: &Val) -> bool {
     match v {
-        Val::Rec(m) => match m.get(RESULT_TAG_KEY) {
-            Some(Val::Str(t)) if t == RESULT_OK_TAG => true,
-            Some(Val::Str(t)) if t == RESULT_ERR_TAG => true,
+        Val::Record(m) => match m.get(RESULT_TAG_KEY) {
+            Some(Val::Text(t)) if t == RESULT_OK_TAG => true,
+            Some(Val::Text(t)) if t == RESULT_ERR_TAG => true,
             _ => false,
         },
         _ => false,
@@ -2291,18 +2311,18 @@ fn is_result_val(v: &Val) -> bool {
 }
 fn result_is_ok(v: &Val) -> Result<bool> {
     match v {
-        Val::Rec(m) => {
+        Val::Record(m) => {
             if m.len() != 2 {
                 bail!("{} expected result", QMARK_EXPECT_RESULT);
             }
             match m.get(RESULT_TAG_KEY) {
-                Some(Val::Str(t)) if t == RESULT_OK_TAG => {
+                Some(Val::Text(t)) if t == RESULT_OK_TAG => {
                     if !m.contains_key(RESULT_OK_VAL_KEY) {
                         bail!("QMARK_EXPECT_RESULT ok missing v");
                     }
                     Ok(true)
                 }
-                Some(Val::Str(t)) if t == RESULT_ERR_TAG => {
+                Some(Val::Text(t)) if t == RESULT_ERR_TAG => {
                     if !m.contains_key(RESULT_ERR_VAL_KEY) {
                         bail!("QMARK_EXPECT_RESULT err missing e");
                     }
@@ -2317,12 +2337,12 @@ fn result_is_ok(v: &Val) -> Result<bool> {
 
 fn result_unwrap_ok(v: &Val) -> Result<Val> {
     match v {
-        Val::Rec(m) => match m.get(RESULT_TAG_KEY) {
-            Some(Val::Str(t)) if t == RESULT_OK_TAG => m
+        Val::Record(m) => match m.get(RESULT_TAG_KEY) {
+            Some(Val::Text(t)) if t == RESULT_OK_TAG => m
                 .get(RESULT_OK_VAL_KEY)
                 .cloned()
                 .ok_or_else(|| anyhow!("QMARK_EXPECT_RESULT ok missing v")),
-            Some(Val::Str(t)) if t == RESULT_ERR_TAG => {
+            Some(Val::Text(t)) if t == RESULT_ERR_TAG => {
                 bail!("QMARK_EXPECT_RESULT tried unwrap ok on err")
             }
             Some(_) => bail!("{} expected result tag", QMARK_EXPECT_RESULT),
@@ -2333,12 +2353,12 @@ fn result_unwrap_ok(v: &Val) -> Result<Val> {
 }
 fn result_unwrap_err(v: &Val) -> Result<Val> {
     match v {
-        Val::Rec(m) => match m.get(RESULT_TAG_KEY) {
-            Some(Val::Str(t)) if t == RESULT_ERR_TAG => match m.get(RESULT_ERR_VAL_KEY) {
+        Val::Record(m) => match m.get(RESULT_TAG_KEY) {
+            Some(Val::Text(t)) if t == RESULT_ERR_TAG => match m.get(RESULT_ERR_VAL_KEY) {
                 Some(x) => Ok(x.clone()),
                 None => bail!("QMARK_EXPECT_RESULT err missing e"),
             },
-            Some(Val::Str(t)) if t == RESULT_OK_TAG => {
+            Some(Val::Text(t)) if t == RESULT_OK_TAG => {
                 bail!("QMARK_EXPECT_RESULT tried unwrap err on ok")
             }
             Some(_) => bail!("{} expected result tag", QMARK_EXPECT_RESULT),
@@ -2351,31 +2371,31 @@ fn mk_result_ok(v: Val) -> Val {
     let mut m = BTreeMap::new();
     m.insert(
         RESULT_TAG_KEY.to_string(),
-        Val::Str(RESULT_OK_TAG.to_string()),
+        Val::Text(RESULT_OK_TAG.to_string()),
     );
     m.insert(RESULT_OK_VAL_KEY.to_string(), v);
-    Val::Rec(m)
+    Val::Record(m)
 }
 
 fn mk_result_err(e: Val) -> Val {
     let mut m = BTreeMap::new();
     m.insert(
         RESULT_TAG_KEY.to_string(),
-        Val::Str(RESULT_ERR_TAG.to_string()),
+        Val::Text(RESULT_ERR_TAG.to_string()),
     );
     m.insert(RESULT_ERR_VAL_KEY.to_string(), e);
-    Val::Rec(m)
+    Val::Record(m)
 }
 fn val_eq(a: &Val, b: &Val) -> bool {
     match (a, b) {
         (Val::Int(x), Val::Int(y)) => x == y,
         (Val::Bool(x), Val::Bool(y)) => x == y,
-        (Val::Str(x), Val::Str(y)) => x == y,
-        (Val::Null, Val::Null) => true,
+        (Val::Text(x), Val::Text(y)) => x == y,
+        (Val::Unit, Val::Unit) => true,
         (Val::List(xs), Val::List(ys)) => {
             xs.len() == ys.len() && xs.iter().zip(ys).all(|(x, y)| val_eq(x, y))
         }
-        (Val::Rec(xm), Val::Rec(ym)) => {
+        (Val::Record(xm), Val::Record(ym)) => {
             xm.len() == ym.len()
                 && xm
                     .iter()
@@ -2626,7 +2646,7 @@ fn call_builtin(
                 bail!("ERROR_RUNTIME arity");
             }
             match &args[0] {
-                Val::Str(s) => Ok(Val::Int(s.len() as i64)),
+                Val::Text(s) => Ok(Val::Int(s.len() as i64)),
                 _ => bail!("ERROR_RUNTIME type"),
             }
         }
@@ -2635,45 +2655,45 @@ fn call_builtin(
                 bail!("ERROR_RUNTIME arity");
             }
             let a = match &args[0] {
-                Val::Str(s) => s,
+                Val::Text(s) => s,
                 _ => bail!("ERROR_RUNTIME type"),
             };
             let b = match &args[1] {
-                Val::Str(s) => s,
+                Val::Text(s) => s,
                 _ => bail!("ERROR_RUNTIME type"),
             };
-            Ok(Val::Str(format!("{}{}", a, b)))
+            Ok(Val::Text(format!("{}{}", a, b)))
         }
         Builtin::MapGet => {
             if args.len() != 2 {
                 bail!("ERROR_RUNTIME arity");
             }
             let m = match &args[0] {
-                Val::Rec(mm) => mm,
+                Val::Record(mm) => mm,
                 _ => bail!("ERROR_RUNTIME type"),
             };
             let k = match &args[1] {
-                Val::Str(s) => s,
+                Val::Text(s) => s,
                 _ => bail!("ERROR_RUNTIME type"),
             };
-            Ok(m.get(k).cloned().unwrap_or(Val::Null))
+            Ok(m.get(k).cloned().unwrap_or(Val::Unit))
         }
         Builtin::MapSet => {
             if args.len() != 3 {
                 bail!("ERROR_RUNTIME arity");
             }
             let m = match &args[0] {
-                Val::Rec(mm) => mm,
+                Val::Record(mm) => mm,
                 _ => bail!("ERROR_RUNTIME type"),
             };
             let k = match &args[1] {
-                Val::Str(s) => s,
+                Val::Text(s) => s,
                 _ => bail!("ERROR_RUNTIME type"),
             };
             let v = args[2].clone();
             let mut out = m.clone();
             out.insert(k.clone(), v);
-            Ok(Val::Rec(out))
+            Ok(Val::Record(out))
         }
         Builtin::JsonEncode => {
             if args.len() != 1 {
@@ -2708,14 +2728,14 @@ fn call_builtin(
                     }
                 }
             }
-            Ok(Val::Str(escaped))
+            Ok(Val::Text(escaped))
         }
         Builtin::JsonDecode => {
             if args.len() != 1 {
                 bail!("ERROR_RUNTIME arity");
             }
             let j: J = match &args[0] {
-                Val::Str(ss) => json_from_str(ss)?,
+                Val::Text(ss) => json_from_str(ss)?,
                 Val::Bytes(bs) => json_from_slice(bs)?,
                 _ => bail!("ERROR_RUNTIME type"),
             };
@@ -2726,13 +2746,13 @@ fn call_builtin(
             if args.len() != 1 { bail!("ERROR_RUNTIME arity"); }
             let j = args[0].to_json().ok_or_else(|| anyhow::anyhow!("ERROR_RUNTIME cannot canonicalize"))?;
             let canonical = json_to_string(&j);
-            Ok(Val::Str(canonical))
+            Ok(Val::Text(canonical))
         }
         Builtin::CryptoEd25519Verify => {
             if args.len() != 3 { bail!("ERROR_RUNTIME ed25519_verify expects 3 args"); }
-            let pk_hex  = match &args[0] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
-            let msg_hex = match &args[1] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
-            let sig_hex = match &args[2] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
+            let pk_hex  = match &args[0] { Val::Text(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
+            let msg_hex = match &args[1] { Val::Text(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
+            let sig_hex = match &args[2] { Val::Text(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
             let pk_bytes  = hex_decode(&pk_hex)?;
             let msg_bytes = hex_decode(&msg_hex)?;
             let sig_bytes = hex_decode(&sig_hex)?;
@@ -2747,38 +2767,38 @@ fn call_builtin(
         Builtin::CryptoHmacSha256 => {
             if args.len() != 2 { bail!("ERROR_RUNTIME hmac_sha256 expects 2 args"); }
             let key_bytes = match &args[0] {
-                Val::Str(ss) => hex_decode(ss)?,
+                Val::Text(ss) => hex_decode(ss)?,
                 Val::Bytes(bs) => bs.clone(),
                 _ => bail!("ERROR_RUNTIME hmac_sha256 key must be hex str or bytes"),
             };
             let msg_bytes = match &args[1] {
-                Val::Str(ss) => ss.as_bytes().to_vec(),
+                Val::Text(ss) => ss.as_bytes().to_vec(),
                 Val::Bytes(bs) => bs.clone(),
                 _ => bail!("ERROR_RUNTIME hmac_sha256 msg must be str or bytes"),
             };
             let result = valuecore::hmac_sha256(&key_bytes, &msg_bytes);
-            Ok(Val::Str(hex_lower(&result)))
+            Ok(Val::Text(hex_lower(&result)))
         }
         Builtin::CodecBase64UrlEncode => {
             if args.len() != 1 { bail!("ERROR_RUNTIME base64url_encode expects 1 arg"); }
-            let input = match &args[0] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
-            Ok(Val::Str(valuecore::base64url::encode(input.as_bytes())))
+            let input = match &args[0] { Val::Text(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
+            Ok(Val::Text(valuecore::base64url::encode(input.as_bytes())))
         }
         Builtin::CodecBase64UrlDecode => {
             if args.len() != 1 { bail!("ERROR_RUNTIME base64url_decode expects 1 arg"); }
-            let input = match &args[0] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
+            let input = match &args[0] { Val::Text(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
             let bytes = valuecore::base64url::decode(input.as_bytes())
                 .map_err(|e| anyhow::anyhow!(e))?;
             Ok(Val::Bytes(bytes))
         }
         Builtin::RandUuidV4 => {
             if args.len() != 0 { bail!("ERROR_RUNTIME rand.uuid_v4 expects 0 args"); }
-            Ok(Val::Str(valuecore::uuid::new_v4()))
+            Ok(Val::Text(valuecore::uuid::new_v4()))
         }
         Builtin::ListLen => {
             match args.first() {
                 Some(Val::List(xs)) => Ok(Val::Int(xs.len() as i64)),
-                Some(Val::Str(s)) => Ok(Val::Int(s.chars().count() as i64)),
+                Some(Val::Text(s)) => Ok(Val::Int(s.chars().count() as i64)),
                 _ => bail!("ERROR_BADARG list.len expects list or str"),
             }
         }
@@ -2876,7 +2896,7 @@ fn call_builtin(
             let mut keyed: Vec<(i64, usize, Val)> = Vec::new();
             for (idx, it) in xs.into_iter().enumerate() {
                 let k = match &it {
-                    Val::Rec(m) => match m.get("k") {
+                    Val::Record(m) => match m.get("k") {
                         Some(Val::Int(n)) => *n,
                         _ => bail!("ERROR_BADARG sort_by_int_key expects rec.k int"),
                     },
@@ -2892,19 +2912,19 @@ fn call_builtin(
             if args.len() != 0 {
                 bail!("ERROR_BADARG rec.empty expects 0 args");
             }
-            Ok(Val::Rec(BTreeMap::new()))
+            Ok(Val::Record(BTreeMap::new()))
         }
         Builtin::RecKeys => {
             if args.len() != 1 {
                 bail!("ERROR_BADARG rec.keys expects 1 arg");
             }
             let m = match &args[0] {
-                Val::Rec(mm) => mm,
+                Val::Record(mm) => mm,
                 _ => bail!("ERROR_BADARG rec.keys arg0 must be record"),
             };
             let mut out: Vec<Val> = Vec::new();
             for k in m.keys() {
-                out.push(Val::Str(k.clone()));
+                out.push(Val::Text(k.clone()));
             }
             Ok(Val::List(out))
         }
@@ -2913,7 +2933,7 @@ fn call_builtin(
                 bail!("ERROR_BADARG rec.values expects 1 arg");
             }
             let m = match &args[0] {
-                Val::Rec(mm) => mm,
+                Val::Record(mm) => mm,
                 _ => bail!("ERROR_BADARG rec.values arg0 must be record"),
             };
             let mut out: Vec<Val> = Vec::new();
@@ -2927,11 +2947,11 @@ fn call_builtin(
                 bail!("ERROR_BADARG rec.has expects 2 args");
             }
             let m = match &args[0] {
-                Val::Rec(mm) => mm,
+                Val::Record(mm) => mm,
                 _ => bail!("ERROR_BADARG rec.has arg0 must be record"),
             };
             let k = match &args[1] {
-                Val::Str(s) => s,
+                Val::Text(s) => s,
                 _ => bail!("ERROR_BADARG rec.has arg1 must be string"),
             };
             Ok(Val::Bool(m.contains_key(k)))
@@ -2941,25 +2961,25 @@ fn call_builtin(
                 bail!("ERROR_BADARG rec.get expects 2 args");
             }
             let m = match &args[0] {
-                Val::Rec(mm) => mm,
+                Val::Record(mm) => mm,
                 _ => bail!("ERROR_BADARG rec.get arg0 must be record"),
             };
             let k = match &args[1] {
-                Val::Str(s) => s,
+                Val::Text(s) => s,
                 _ => bail!("ERROR_BADARG rec.get arg1 must be string"),
             };
-            Ok(m.get(k).cloned().unwrap_or(Val::Null))
+            Ok(m.get(k).cloned().unwrap_or(Val::Unit))
         }
         Builtin::RecGetOr => {
             if args.len() != 3 {
                 bail!("ERROR_BADARG rec.getOr expects 3 args");
             }
             let m = match &args[0] {
-                Val::Rec(mm) => mm,
+                Val::Record(mm) => mm,
                 _ => bail!("ERROR_BADARG rec.getOr arg0 must be record"),
             };
             let k = match &args[1] {
-                Val::Str(s) => s,
+                Val::Text(s) => s,
                 _ => bail!("ERROR_BADARG rec.getOr arg1 must be string"),
             };
             let d = args[2].clone();
@@ -2970,11 +2990,11 @@ fn call_builtin(
                 bail!("ERROR_BADARG rec.getOrErr expects 3 args");
             }
             let m = match &args[0] {
-                Val::Rec(mm) => mm,
+                Val::Record(mm) => mm,
                 _ => bail!("ERROR_BADARG rec.getOrErr arg0 must be record"),
             };
             let k = match &args[1] {
-                Val::Str(s) => s,
+                Val::Text(s) => s,
                 _ => bail!("ERROR_BADARG rec.getOrErr arg1 must be string"),
             };
             let msg = args[2].clone();
@@ -2988,58 +3008,58 @@ fn call_builtin(
                 bail!("ERROR_BADARG rec.set expects 3 args");
             }
             let m = match &args[0] {
-                Val::Rec(mm) => mm,
+                Val::Record(mm) => mm,
                 _ => bail!("ERROR_BADARG rec.set arg0 must be record"),
             };
             let k = match &args[1] {
-                Val::Str(s) => s,
+                Val::Text(s) => s,
                 _ => bail!("ERROR_BADARG rec.set arg1 must be string"),
             };
             let v = args[2].clone();
             let mut out = m.clone();
             out.insert(k.clone(), v);
-            Ok(Val::Rec(out))
+            Ok(Val::Record(out))
         }
         Builtin::RecRemove => {
             if args.len() != 2 {
                 bail!("ERROR_BADARG rec.remove expects 2 args");
             }
             let m = match &args[0] {
-                Val::Rec(mm) => mm,
+                Val::Record(mm) => mm,
                 _ => bail!("ERROR_BADARG rec.remove arg0 must be record"),
             };
             let k = match &args[1] {
-                Val::Str(s) => s,
+                Val::Text(s) => s,
                 _ => bail!("ERROR_BADARG rec.remove arg1 must be string"),
             };
             let mut out = m.clone();
             out.remove(k);
-            Ok(Val::Rec(out))
+            Ok(Val::Record(out))
         }
         Builtin::RecMerge => {
             if args.len() != 2 {
                 bail!("ERROR_BADARG rec.merge expects 2 args");
             }
             let a = match &args[0] {
-                Val::Rec(mm) => mm,
+                Val::Record(mm) => mm,
                 _ => bail!("ERROR_BADARG rec.merge arg0 must be record"),
             };
             let b = match &args[1] {
-                Val::Rec(mm) => mm,
+                Val::Record(mm) => mm,
                 _ => bail!("ERROR_BADARG rec.merge arg1 must be record"),
             };
             let mut out = a.clone();
             for (k, v) in b.iter() {
                 out.insert(k.clone(), v.clone());
             }
-            Ok(Val::Rec(out))
+            Ok(Val::Record(out))
         }
         Builtin::RecSelect => {
             if args.len() != 2 {
                 bail!("ERROR_BADARG rec.select expects 2 args");
             }
             let m = match &args[0] {
-                Val::Rec(mm) => mm,
+                Val::Record(mm) => mm,
                 _ => bail!("ERROR_BADARG rec.select arg0 must be record"),
             };
             let ks = match &args[1] {
@@ -3049,55 +3069,55 @@ fn call_builtin(
             let mut out: BTreeMap<String, Val> = BTreeMap::new();
             for x in ks.iter() {
                 let k = match x {
-                    Val::Str(s) => s,
+                    Val::Text(s) => s,
                     _ => bail!("ERROR_BADARG rec.select keys must be strings"),
                 };
                 if let Some(v) = m.get(k) {
                     out.insert(k.clone(), v.clone());
                 }
             }
-            Ok(Val::Rec(out))
+            Ok(Val::Record(out))
         }
         Builtin::RecRename => {
             if args.len() != 3 {
                 bail!("ERROR_BADARG rec.rename expects 3 args");
             }
             let m = match &args[0] {
-                Val::Rec(mm) => mm,
+                Val::Record(mm) => mm,
                 _ => bail!("ERROR_BADARG rec.rename arg0 must be record"),
             };
             let a = match &args[1] {
-                Val::Str(s) => s,
+                Val::Text(s) => s,
                 _ => bail!("ERROR_BADARG rec.rename arg1 must be string"),
             };
             let b = match &args[2] {
-                Val::Str(s) => s,
+                Val::Text(s) => s,
                 _ => bail!("ERROR_BADARG rec.rename arg2 must be string"),
             };
             let mut out = m.clone();
             if let Some(v) = out.remove(a) {
                 out.insert(b.clone(), v);
             }
-            Ok(Val::Rec(out))
+            Ok(Val::Record(out))
         }
         Builtin::RecUpdate => {
             if args.len() != 3 {
                 bail!("ERROR_BADARG rec.update expects 3 args");
             }
             let m = match &args[0] {
-                Val::Rec(mm) => mm,
+                Val::Record(mm) => mm,
                 _ => bail!("ERROR_BADARG rec.update arg0 must be record"),
             };
             let k = match &args[1] {
-                Val::Str(s) => s,
+                Val::Text(s) => s,
                 _ => bail!("ERROR_BADARG rec.update arg1 must be string"),
             };
             let f = args[2].clone();
-            let old = m.get(k).cloned().unwrap_or(Val::Null);
+            let old = m.get(k).cloned().unwrap_or(Val::Unit);
             let newv = call(f, vec![old], tracer, loader)?;
             let mut out = m.clone();
             out.insert(k.clone(), newv);
-            Ok(Val::Rec(out))
+            Ok(Val::Record(out))
         }
         Builtin::GrowUnfoldTree => {
             if args.len() < 2 {
@@ -3105,7 +3125,7 @@ fn call_builtin(
             }
             let seed = args[0].clone();
             let depth = match &args[1] {
-                Val::Rec(m) => match m.get("depth") {
+                Val::Record(m) => match m.get("depth") {
                     Some(Val::Int(n)) => *n,
                     _ => 2,
                 },
@@ -3119,18 +3139,18 @@ fn call_builtin(
                     continue;
                 }
                 let n = match &node {
-                    Val::Rec(m) => match m.get("n") {
+                    Val::Record(m) => match m.get("n") {
                         Some(Val::Int(x)) => *x,
                         _ => 0,
                     },
                     _ => 0,
                 };
-                let c1 = Val::Rec({
+                let c1 = Val::Record({
                     let mut m = BTreeMap::new();
                     m.insert("n".to_string(), Val::Int(n + 1));
                     m
                 });
-                let c2 = Val::Rec({
+                let c2 = Val::Record({
                     let mut m = BTreeMap::new();
                     m.insert("n".to_string(), Val::Int(n + 2));
                     m
@@ -3138,27 +3158,27 @@ fn call_builtin(
                 q.push_back((c1, d + 1));
                 q.push_back((c2, d + 1));
             }
-            return Ok(Val::Null);
+            return Ok(Val::Unit);
         }
         Builtin::StrTrim => {
             if args.len() != 1 {
                 bail!("ERROR_BADARG str.trim expects 1 arg");
             }
             let s = match &args[0] {
-                Val::Str(s) => s.clone(),
+                Val::Text(s) => s.clone(),
                 _ => bail!("ERROR_BADARG str.trim arg0 must be string"),
             };
-            Ok(Val::Str(s.trim().to_string()))
+            Ok(Val::Text(s.trim().to_string()))
         }
         Builtin::StrToLower => {
             if args.len() != 1 {
                 bail!("ERROR_BADARG str.toLower expects 1 arg");
             }
             let s = match &args[0] {
-                Val::Str(s) => s.clone(),
+                Val::Text(s) => s.clone(),
                 _ => bail!("ERROR_BADARG str.toLower arg0 must be string"),
             };
-            Ok(Val::Str(s.to_ascii_lowercase()))
+            Ok(Val::Text(s.to_ascii_lowercase()))
         }
         Builtin::IntMul => {
             if args.len() != 2 { bail!("ERROR_BADARG int.mul expects 2 args"); }
@@ -3194,13 +3214,13 @@ fn call_builtin(
         }
         Builtin::IntToText => {
             match args.first() {
-                Some(Val::Int(n)) => Ok(Val::Str(n.to_string())),
+                Some(Val::Int(n)) => Ok(Val::Text(n.to_string())),
                 _ => bail!("ERROR_BADARG int.to_text expects int"),
             }
         }
         Builtin::IntFromText => {
             match args.first() {
-                Some(Val::Str(s)) => s.trim().parse::<i64>()
+                Some(Val::Text(s)) => s.trim().parse::<i64>()
                     .map(Val::Int)
                     .map_err(|_| anyhow!("ERROR_PARSE int.from_text: {:?}", s)),
                 _ => bail!("ERROR_BADARG int.from_text expects string"),
@@ -3257,81 +3277,81 @@ fn call_builtin(
         }
         Builtin::HashSha256Text => {
             if args.len() != 1 { bail!("ERROR_BADARG hash.sha256_text expects 1 arg"); }
-            let s = match &args[0] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_BADARG type") };
-            Ok(Val::Str(format!("sha256:{}", sha256_bytes_hex(s.as_bytes()))))
+            let s = match &args[0] { Val::Text(ss) => ss.clone(), _ => bail!("ERROR_BADARG type") };
+            Ok(Val::Text(format!("sha256:{}", sha256_bytes_hex(s.as_bytes()))))
         }
         Builtin::HashSha256Bytes => {
             if args.len() != 1 { bail!("ERROR_BADARG hash.sha256_bytes expects 1 arg"); }
             match &args[0] {
-                Val::Str(ss) => Ok(Val::Str(format!("sha256:{}", sha256_bytes_hex(ss.as_bytes())))),
-                Val::Bytes(bs) => Ok(Val::Str(format!("sha256:{}", sha256_bytes_hex(bs)))),
+                Val::Text(ss) => Ok(Val::Text(format!("sha256:{}", sha256_bytes_hex(ss.as_bytes())))),
+                Val::Bytes(bs) => Ok(Val::Text(format!("sha256:{}", sha256_bytes_hex(bs)))),
                 _ => bail!("ERROR_BADARG hash.sha256_bytes expects str or bytes"),
             }
         }
         Builtin::CodecHexEncode => {
             if args.len() != 1 { bail!("ERROR_BADARG codec.hex_encode expects 1 arg"); }
             match &args[0] {
-                Val::Bytes(bs) => Ok(Val::Str(hex_lower(bs))),
-                Val::Str(ss) => Ok(Val::Str(hex_lower(ss.as_bytes()))),
+                Val::Bytes(bs) => Ok(Val::Text(hex_lower(bs))),
+                Val::Text(ss) => Ok(Val::Text(hex_lower(ss.as_bytes()))),
                 _ => bail!("ERROR_BADARG codec.hex_encode expects str or bytes"),
             }
         }
         Builtin::CodecHexDecode => {
             if args.len() != 1 { bail!("ERROR_BADARG codec.hex_decode expects 1 arg"); }
-            let s = match &args[0] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_BADARG type") };
+            let s = match &args[0] { Val::Text(ss) => ss.clone(), _ => bail!("ERROR_BADARG type") };
             let bytes = hex_decode(s.as_str())?;
-            Ok(Val::Str(String::from_utf8(bytes)?))
+            Ok(Val::Text(String::from_utf8(bytes)?))
         }
         Builtin::StrSplit => {
             if args.len() != 2 { bail!("ERROR_BADARG str.split expects 2 args"); }
-            let s = match &args[0] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_BADARG str.split arg0 must be string") };
-            let delim = match &args[1] { Val::Str(ss) => ss.clone(), _ => bail!("ERROR_BADARG str.split arg1 must be string") };
-            let parts: Vec<Val> = s.split(delim.as_str()).map(|p| Val::Str(p.to_string())).collect();
+            let s = match &args[0] { Val::Text(ss) => ss.clone(), _ => bail!("ERROR_BADARG str.split arg0 must be string") };
+            let delim = match &args[1] { Val::Text(ss) => ss.clone(), _ => bail!("ERROR_BADARG str.split arg1 must be string") };
+            let parts: Vec<Val> = s.split(delim.as_str()).map(|p| Val::Text(p.to_string())).collect();
             Ok(Val::List(parts))
         }
         Builtin::StrUpper => {
             match args.first() {
-                Some(Val::Str(s)) => Ok(Val::Str(s.to_uppercase())),
+                Some(Val::Text(s)) => Ok(Val::Text(s.to_uppercase())),
                 _ => bail!("ERROR_BADARG str.upper expects string"),
             }
         }
         Builtin::StrContains => {
             if args.len() != 2 { bail!("ERROR_ARITY str.contains"); }
             match (&args[0], &args[1]) {
-                (Val::Str(s), Val::Str(sub)) => Ok(Val::Bool(s.contains(sub.as_str()))),
+                (Val::Text(s), Val::Text(sub)) => Ok(Val::Bool(s.contains(sub.as_str()))),
                 _ => bail!("ERROR_BADARG str.contains expects string, string"),
             }
         }
         Builtin::StrStartsWith => {
             if args.len() != 2 { bail!("ERROR_ARITY str.starts_with"); }
             match (&args[0], &args[1]) {
-                (Val::Str(s), Val::Str(pre)) => Ok(Val::Bool(s.starts_with(pre.as_str()))),
+                (Val::Text(s), Val::Text(pre)) => Ok(Val::Bool(s.starts_with(pre.as_str()))),
                 _ => bail!("ERROR_BADARG str.starts_with expects string, string"),
             }
         }
         Builtin::StrEndsWith => {
             if args.len() != 2 { bail!("ERROR_ARITY str.ends_with"); }
             match (&args[0], &args[1]) {
-                (Val::Str(s), Val::Str(suf)) => Ok(Val::Bool(s.ends_with(suf.as_str()))),
+                (Val::Text(s), Val::Text(suf)) => Ok(Val::Bool(s.ends_with(suf.as_str()))),
                 _ => bail!("ERROR_BADARG str.ends_with expects string, string"),
             }
         }
         Builtin::StrReplace => {
             if args.len() != 3 { bail!("ERROR_ARITY str.replace expects 3 args"); }
             match (&args[0], &args[1], &args[2]) {
-                (Val::Str(s), Val::Str(from), Val::Str(to)) => Ok(Val::Str(s.replace(from.as_str(), to.as_str()))),
+                (Val::Text(s), Val::Text(from), Val::Text(to)) => Ok(Val::Text(s.replace(from.as_str(), to.as_str()))),
                 _ => bail!("ERROR_BADARG str.replace expects string, string, string"),
             }
         }
         Builtin::StrSlice => {
             if args.len() != 3 { bail!("ERROR_ARITY str.slice expects 3 args"); }
             match (&args[0], &args[1], &args[2]) {
-                (Val::Str(s), Val::Int(start), Val::Int(end)) => {
+                (Val::Text(s), Val::Int(start), Val::Int(end)) => {
                     let chars: Vec<char> = s.chars().collect();
                     let len = chars.len() as i64;
                     let s2 = (*start).max(0).min(len) as usize;
                     let e2 = (*end).max(0).min(len) as usize;
-                    Ok(Val::Str(chars[s2..e2.max(s2)].iter().collect()))
+                    Ok(Val::Text(chars[s2..e2.max(s2)].iter().collect()))
                 }
                 _ => bail!("ERROR_BADARG str.slice expects string, int, int"),
             }
@@ -3340,12 +3360,12 @@ fn call_builtin(
             // str.format(template, rec) — replaces {key} with rec.key
             if args.len() != 2 { bail!("ERROR_ARITY str.format expects 2 args"); }
             match (&args[0], &args[1]) {
-                (Val::Str(tmpl), Val::Rec(m)) => {
+                (Val::Text(tmpl), Val::Record(m)) => {
                     let mut out = tmpl.clone();
                     for (k, v) in m {
                         let placeholder = format!("{{{}}}", k);
                         let val_str = match v {
-                            Val::Str(s) => s.clone(),
+                            Val::Text(s) => s.clone(),
                             Val::Int(n) => n.to_string(),
                             Val::Bool(b) => b.to_string(),
                             Val::Bytes(b) if b.len() == 8 => {
@@ -3356,14 +3376,14 @@ fn call_builtin(
                         };
                         out = out.replace(&placeholder, &val_str);
                     }
-                    Ok(Val::Str(out))
+                    Ok(Val::Text(out))
                 }
                 _ => bail!("ERROR_BADARG str.format expects string, record"),
             }
         }
         Builtin::StrFromInt => {
             match args.first() {
-                Some(Val::Int(n)) => Ok(Val::Str(n.to_string())),
+                Some(Val::Int(n)) => Ok(Val::Text(n.to_string())),
                 _ => bail!("ERROR_BADARG str.from_int expects int"),
             }
         }
@@ -3371,22 +3391,22 @@ fn call_builtin(
             match args.first() {
                 Some(Val::Bytes(b)) if b.len() == 8 => {
                     let arr: [u8;8] = b.as_slice().try_into().unwrap_or([0u8;8]);
-                    Ok(Val::Str(f64::from_le_bytes(arr).to_string()))
+                    Ok(Val::Text(f64::from_le_bytes(arr).to_string()))
                 }
-                Some(Val::Int(n)) => Ok(Val::Str((*n as f64).to_string())),
+                Some(Val::Int(n)) => Ok(Val::Text((*n as f64).to_string())),
                 _ => bail!("ERROR_BADARG str.from_float expects float"),
             }
         }
         Builtin::StrPadLeft => {
             if args.len() != 3 { bail!("ERROR_ARITY str.pad_left"); }
             match (&args[0], &args[1], &args[2]) {
-                (Val::Str(s), Val::Int(width), Val::Str(pad)) => {
+                (Val::Text(s), Val::Int(width), Val::Text(pad)) => {
                     let w = (*width).max(0) as usize;
                     let pc: char = pad.chars().next().unwrap_or(' ');
                     let chars: Vec<char> = s.chars().collect();
-                    if chars.len() >= w { return Ok(Val::Str(s.clone())); }
+                    if chars.len() >= w { return Ok(Val::Text(s.clone())); }
                     let padding: String = std::iter::repeat(pc).take(w - chars.len()).collect();
-                    Ok(Val::Str(format!("{}{}", padding, s)))
+                    Ok(Val::Text(format!("{}{}", padding, s)))
                 }
                 _ => bail!("ERROR_BADARG str.pad_left expects string, int, string"),
             }
@@ -3394,13 +3414,13 @@ fn call_builtin(
         Builtin::StrPadRight => {
             if args.len() != 3 { bail!("ERROR_ARITY str.pad_right"); }
             match (&args[0], &args[1], &args[2]) {
-                (Val::Str(s), Val::Int(width), Val::Str(pad)) => {
+                (Val::Text(s), Val::Int(width), Val::Text(pad)) => {
                     let w = (*width).max(0) as usize;
                     let pc: char = pad.chars().next().unwrap_or(' ');
                     let chars: Vec<char> = s.chars().collect();
-                    if chars.len() >= w { return Ok(Val::Str(s.clone())); }
+                    if chars.len() >= w { return Ok(Val::Text(s.clone())); }
                     let padding: String = std::iter::repeat(pc).take(w - chars.len()).collect();
-                    Ok(Val::Str(format!("{}{}", s, padding)))
+                    Ok(Val::Text(format!("{}{}", s, padding)))
                 }
                 _ => bail!("ERROR_BADARG str.pad_right expects string, int, string"),
             }
@@ -3408,14 +3428,14 @@ fn call_builtin(
         Builtin::StrRepeat => {
             if args.len() != 2 { bail!("ERROR_ARITY str.repeat"); }
             match (&args[0], &args[1]) {
-                (Val::Str(s), Val::Int(n)) => Ok(Val::Str(s.repeat((*n).max(0) as usize))),
+                (Val::Text(s), Val::Int(n)) => Ok(Val::Text(s.repeat((*n).max(0) as usize))),
                 _ => bail!("ERROR_BADARG str.repeat expects string, int"),
             }
         }
         Builtin::StrIndexOf => {
             if args.len() != 2 { bail!("ERROR_ARITY str.index_of"); }
             match (&args[0], &args[1]) {
-                (Val::Str(s), Val::Str(sub)) => {
+                (Val::Text(s), Val::Text(sub)) => {
                     Ok(Val::Int(s.find(sub.as_str()).map(|i| i as i64).unwrap_or(-1)))
                 }
                 _ => bail!("ERROR_BADARG str.index_of expects string, string"),
@@ -3423,17 +3443,17 @@ fn call_builtin(
         }
         Builtin::StrChars => {
             match args.first() {
-                Some(Val::Str(s)) => Ok(Val::List(s.chars().map(|c| Val::Str(c.to_string())).collect())),
+                Some(Val::Text(s)) => Ok(Val::List(s.chars().map(|c| Val::Text(c.to_string())).collect())),
                 _ => bail!("ERROR_BADARG str.chars expects string"),
             }
         }
         Builtin::FsReadText => {
             if args.len() != 1 { bail!("ERROR_ARITY fs.read_text"); }
             match &args[0] {
-                Val::Str(path) => {
+                Val::Text(path) => {
                     let content = std::fs::read_to_string(path.as_str())
                         .map_err(|e| anyhow!("ERROR_IO fs.read_text {}: {}", path, e))?;
-                    Ok(Val::Str(content))
+                    Ok(Val::Text(content))
                 }
                 _ => bail!("ERROR_BADARG fs.read_text expects string path"),
             }
@@ -3443,11 +3463,11 @@ fn call_builtin(
                 bail!("ERROR_BADARG str.split_lines expects 1 arg");
             }
             let s = match &args[0] {
-                Val::Str(s) => s.clone(),
+                Val::Text(s) => s.clone(),
                 _ => bail!("ERROR_BADARG str.split_lines arg0 must be string"),
             };
             // .lines() drops trailing empty line and handles \r\n
-            let parts: Vec<Val> = s.lines().map(|x| Val::Str(x.to_string())).collect();
+            let parts: Vec<Val> = s.lines().map(|x| Val::Text(x.to_string())).collect();
             Ok(Val::List(parts))
         }
         Builtin::ListMap => {
@@ -3581,14 +3601,14 @@ fn call_builtin(
                 bail!("ERROR_BADARG import_artifact expects 1 arg");
             }
             let p = match &args[0] {
-                Val::Str(s) => s.clone(),
+                Val::Text(s) => s.clone(),
                 _ => bail!("ERROR_BADARG import_artifact arg must be string"),
             };
             let disk = tracer.out_dir.join("artifacts").join(&p);
             let bytes = match fs::read(&disk) {
                 Ok(b) => b,
                 Err(e) => {
-                    return Ok(mk_result_err(Val::Str(format!(
+                    return Ok(mk_result_err(Val::Text(format!(
                         "ERROR_IO cannot read artifact: {p} ({e})"
                     ))));
                 }
@@ -3598,15 +3618,15 @@ fn call_builtin(
             let text = match String::from_utf8(bytes) {
                 Ok(s) => s,
                 Err(e) => {
-                    return Ok(mk_result_err(Val::Str(format!(
+                    return Ok(mk_result_err(Val::Text(format!(
                         "ERROR_UTF8 invalid utf8 in artifact: {p} ({e})"
                     ))));
                 }
             };
             let mut rec = std::collections::BTreeMap::new();
-            rec.insert("text".to_string(), Val::Str(text));
-            rec.insert("cid".to_string(), Val::Str(cid));
-            Ok(mk_result_ok(Val::Rec(rec)))
+            rec.insert("text".to_string(), Val::Text(text));
+            rec.insert("cid".to_string(), Val::Text(cid));
+            Ok(mk_result_ok(Val::Record(rec)))
         }
 
         Builtin::ImportArtifactNamed => {
@@ -3614,18 +3634,18 @@ fn call_builtin(
                 bail!("ERROR_BADARG import_artifact_named expects 2 args");
             }
             let name = match &args[0] {
-                Val::Str(s) => s.clone(),
+                Val::Text(s) => s.clone(),
                 _ => bail!("ERROR_BADARG import_artifact_named name must be string"),
             };
             let p = match &args[1] {
-                Val::Str(s) => s.clone(),
+                Val::Text(s) => s.clone(),
                 _ => bail!("ERROR_BADARG import_artifact_named path must be string"),
             };
 
             let bytes = match fs::read(&p) {
                 Ok(b) => b,
                 Err(e) => {
-                    return Ok(mk_result_err(Val::Str(format!(
+                    return Ok(mk_result_err(Val::Text(format!(
                         "ERROR_IO cannot read artifact: {p} ({e})"
                     ))));
                 }
@@ -3636,23 +3656,23 @@ fn call_builtin(
             let text = match String::from_utf8(bytes) {
                 Ok(s) => s,
                 Err(e) => {
-                    return Ok(mk_result_err(Val::Str(format!(
+                    return Ok(mk_result_err(Val::Text(format!(
                         "ERROR_UTF8 invalid utf8 in artifact: {p} ({e})"
                     ))));
                 }
             };
 
             let mut rec = std::collections::BTreeMap::new();
-            rec.insert("text".to_string(), Val::Str(text));
-            rec.insert("cid".to_string(), Val::Str(cid));
-            Ok(mk_result_ok(Val::Rec(rec)))
+            rec.insert("text".to_string(), Val::Text(text));
+            rec.insert("cid".to_string(), Val::Text(cid));
+            Ok(mk_result_ok(Val::Record(rec)))
         }
         Builtin::EmitArtifact => {
             if args.len() != 2 {
                 bail!("ERROR_BADARG emit_artifact expects 2 args");
             }
             let name = match &args[0] {
-                Val::Str(s) => s.clone(),
+                Val::Text(s) => s.clone(),
                 _ => bail!("ERROR_BADARG emit_artifact name must be string"),
             };
             // Accept:
@@ -3665,13 +3685,13 @@ fn call_builtin(
                         let n = match v {
                             Val::Int(i) => *i,
                             _ => {
-                                return Ok(mk_result_err(Val::Str(
+                                return Ok(mk_result_err(Val::Text(
                                     "ERROR_BADARG emit_artifact bytes must be ints".to_string(),
                                 )));
                             }
                         };
                         if n < 0 || n > 255 {
-                            return Ok(mk_result_err(Val::Str(
+                            return Ok(mk_result_err(Val::Text(
                                 "ERROR_BADARG emit_artifact byte out of range".to_string(),
                             )));
                         }
@@ -3679,17 +3699,17 @@ fn call_builtin(
                     }
                     out
                 }
-                Val::Rec(m) => match m.get("text") {
-                    Some(Val::Str(s)) => s.as_bytes().to_vec(),
+                Val::Record(m) => match m.get("text") {
+                    Some(Val::Text(s)) => s.as_bytes().to_vec(),
                     _ => {
-                        return Ok(mk_result_err(Val::Str(
+                        return Ok(mk_result_err(Val::Text(
                             "ERROR_BADARG emit_artifact expects bytes:list[int] or {text:string}"
                                 .to_string(),
                         )));
                     }
                 },
                 _ => {
-                    return Ok(mk_result_err(Val::Str(
+                    return Ok(mk_result_err(Val::Text(
                         "ERROR_BADARG emit_artifact expects bytes:list[int] or {text:string}"
                             .to_string(),
                     )));
@@ -3698,14 +3718,14 @@ fn call_builtin(
             let cid = sha256_bytes(&bytes);
             // tracer.artifact_out writes to out_dir/artifacts/<name> and traces it
             if let Err(e) = tracer.artifact_out(&name, &cid, &bytes) {
-                return Ok(mk_result_err(Val::Str(format!(
+                return Ok(mk_result_err(Val::Text(format!(
                     "ERROR_IO cannot write artifact: {name} ({e})"
                 ))));
             }
             let mut rec = std::collections::BTreeMap::new();
-            rec.insert("name".to_string(), Val::Str(name));
-            rec.insert("cid".to_string(), Val::Str(cid));
-            Ok(mk_result_ok(Val::Rec(rec)))
+            rec.insert("name".to_string(), Val::Text(name));
+            rec.insert("cid".to_string(), Val::Text(cid));
+            Ok(mk_result_ok(Val::Record(rec)))
         }
         Builtin::EmitArtifactDerived => {
             if args.len() != 4 {
@@ -3713,12 +3733,12 @@ fn call_builtin(
             }
 
             let name = match &args[0] {
-                Val::Str(s) => s.clone(),
+                Val::Text(s) => s.clone(),
                 _ => bail!("ERROR_BADARG emit_artifact_derived name must be string"),
             };
 
             let filename = match &args[1] {
-                Val::Str(s) => s.clone(),
+                Val::Text(s) => s.clone(),
                 _ => bail!("ERROR_BADARG emit_artifact_derived filename must be string"),
             };
 
@@ -3733,14 +3753,14 @@ fn call_builtin(
                         let n = match v {
                             Val::Int(i) => *i,
                             _ => {
-                                return Ok(mk_result_err(Val::Str(
+                                return Ok(mk_result_err(Val::Text(
                                     "ERROR_BADARG emit_artifact_derived bytes must be ints"
                                         .to_string(),
                                 )));
                             }
                         };
                         if n < 0 || n > 255 {
-                            return Ok(mk_result_err(Val::Str(
+                            return Ok(mk_result_err(Val::Text(
                                 "ERROR_BADARG emit_artifact_derived byte out of range".to_string(),
                             )));
                         }
@@ -3748,14 +3768,14 @@ fn call_builtin(
                     }
                     out
                 }
-                Val::Rec(m) => {
-                    if let Some(Val::Str(s)) = m.get("text") {
+                Val::Record(m) => {
+                    if let Some(Val::Text(s)) = m.get("text") {
                         s.as_bytes().to_vec()
                     } else {
                         let j = match args[2].to_json() {
                             Some(j) => j,
                             None => {
-                                return Ok(mk_result_err(Val::Str(
+                                return Ok(mk_result_err(Val::Text(
                                     "ERROR_BADARG emit_artifact_derived value must be jsonable"
                                         .to_string(),
                                 )));
@@ -3764,7 +3784,7 @@ fn call_builtin(
                         match Ok::<Vec<u8>, anyhow::Error>(json_to_string(&j).into_bytes()) {
                             Ok(b) => b,
                             Err(e) => {
-                                return Ok(mk_result_err(Val::Str(format!(
+                                return Ok(mk_result_err(Val::Text(format!(
                                     "ERROR_JSON emit_artifact_derived cannot encode json: {e}"
                                 ))));
                             }
@@ -3775,7 +3795,7 @@ fn call_builtin(
                     let j = match args[2].to_json() {
                         Some(j) => j,
                         None => {
-                            return Ok(mk_result_err(Val::Str(
+                            return Ok(mk_result_err(Val::Text(
                                 "ERROR_BADARG emit_artifact_derived value must be jsonable"
                                     .to_string(),
                             )));
@@ -3784,7 +3804,7 @@ fn call_builtin(
                     match Ok::<Vec<u8>, anyhow::Error>(json_to_string(&j).into_bytes()) {
                         Ok(b) => b,
                         Err(e) => {
-                            return Ok(mk_result_err(Val::Str(format!(
+                            return Ok(mk_result_err(Val::Text(format!(
                                 "ERROR_JSON emit_artifact_derived cannot encode json: {e}"
                             ))));
                         }
@@ -3797,9 +3817,9 @@ fn call_builtin(
                     let mut out: Vec<String> = Vec::new();
                     for x in xs {
                         match x {
-                            Val::Str(s) => out.push(s.clone()),
+                            Val::Text(s) => out.push(s.clone()),
                             _ => {
-                                return Ok(mk_result_err(Val::Str(
+                                return Ok(mk_result_err(Val::Text(
                 "ERROR_BADARG emit_artifact_derived parents must be list[string]".to_string(),
               )));
                             }
@@ -3808,7 +3828,7 @@ fn call_builtin(
                     out
                 }
                 _ => {
-                    return Ok(mk_result_err(Val::Str(
+                    return Ok(mk_result_err(Val::Text(
                         "ERROR_BADARG emit_artifact_derived parents must be list[string]"
                             .to_string(),
                     )));
@@ -3816,7 +3836,7 @@ fn call_builtin(
             };
 
             if parent_names.is_empty() {
-                return Ok(mk_result_err(Val::Str(
+                return Ok(mk_result_err(Val::Text(
                     "ERROR_BADARG emit_artifact_derived parents must be non-empty".to_string(),
                 )));
             }
@@ -3837,9 +3857,9 @@ fn call_builtin(
                 .artifact_out_derived(&name, &filename, &cid, &bytes, &parents)
                 .map_err(|e| anyhow!("ERROR_IO cannot write artifact: {filename} ({e})"))?;
             let mut rec = std::collections::BTreeMap::new();
-            rec.insert("name".to_string(), Val::Str(name));
-            rec.insert("cid".to_string(), Val::Str(cid));
-            Ok(mk_result_ok(Val::Rec(rec)))
+            rec.insert("name".to_string(), Val::Text(name));
+            rec.insert("cid".to_string(), Val::Text(cid));
+            Ok(mk_result_ok(Val::Record(rec)))
         }
 
         Builtin::Emit => {
@@ -3850,7 +3870,7 @@ fn call_builtin(
                 .to_json()
                 .ok_or_else(|| anyhow!("emit arg must be jsonable"))?;
             tracer.emit(&j)?;
-            Ok(Val::Null)
+            Ok(Val::Unit)
         }
         Builtin::Len => {
             if args.len() != 1 {
@@ -3858,7 +3878,7 @@ fn call_builtin(
             }
             match &args[0] {
                 Val::List(xs) => Ok(Val::Int(xs.len() as i64)),
-                Val::Str(s) => Ok(Val::Int(s.as_bytes().len() as i64)),
+                Val::Text(s) => Ok(Val::Int(s.as_bytes().len() as i64)),
                 _ => bail!("len expects list or string"),
             }
         }
@@ -3867,12 +3887,12 @@ fn call_builtin(
                 bail!("ERROR_BADARG int.parse expects 1 arg");
             }
             let s = match &args[0] {
-                Val::Str(s) => s.clone(),
+                Val::Text(s) => s.clone(),
                 _ => bail!("ERROR_BADARG int.parse arg0 must be string"),
             };
             match s.trim().parse::<i64>() {
                 Ok(n) => Ok(mk_result_ok(Val::Int(n))),
-                Err(e) => Ok(mk_result_err(Val::Str(format!(
+                Err(e) => Ok(mk_result_err(Val::Text(format!(
                     "ERROR_PARSE int.parse ({e})"
                 )))),
             }
@@ -3988,7 +4008,7 @@ fn call_builtin(
                 let mut rec = BTreeMap::new();
                 rec.insert("v".to_string(), Val::Int(v));
                 rec.insert("count".to_string(), Val::Int(c));
-                out_list.push(Val::Rec(rec));
+                out_list.push(Val::Record(rec));
             }
             Ok(Val::List(out_list))
         }
@@ -3999,7 +4019,7 @@ fn call_builtin(
             let mut seed = args[0].clone();
             let fuel = match &args[1] {
                 Val::Int(n) => *n,
-                Val::Rec(m) => {
+                Val::Record(m) => {
                     if let Some(Val::Int(n)) = m.get("fuel") {
                         *n
                     } else if let Some(Val::Int(n)) = m.get("steps") {
@@ -4016,14 +4036,14 @@ fn call_builtin(
             while k < fuel {
                 let r = call(step.clone(), vec![seed.clone()], tracer, loader)?;
                 match r {
-                    Val::Null => break,
-                    Val::Rec(m) => {
+                    Val::Unit => break,
+                    Val::Record(m) => {
                         let next_seed = if let Some(v) = m.get("seed").cloned() {
                             v
                         } else if let Some(v) = m.get("i").cloned() {
                             let mut mm = BTreeMap::new();
                             mm.insert("i".to_string(), v);
-                            Val::Rec(mm)
+                            Val::Record(mm)
                         } else {
                             bail!("unfold step missing seed/i");
                         };
@@ -4040,7 +4060,7 @@ fn call_builtin(
                             break;
                         }
                         let m = match &xs[0] {
-                            Val::Rec(m) => m,
+                            Val::Record(m) => m,
                             _ => bail!("unfold step list must contain record"),
                         };
                         let next_seed = if let Some(v) = m.get("seed").cloned() {
@@ -4048,7 +4068,7 @@ fn call_builtin(
                         } else if let Some(v) = m.get("i").cloned() {
                             let mut mm = BTreeMap::new();
                             mm.insert("i".to_string(), v);
-                            Val::Rec(mm)
+                            Val::Record(mm)
                         } else {
                             bail!("unfold step missing seed/i");
                         };
@@ -4078,7 +4098,7 @@ fn call_builtin(
         }
         Builtin::FloatFromText => {
             match args.first() {
-                Some(Val::Str(s)) => match s.parse::<f64>() {
+                Some(Val::Text(s)) => match s.parse::<f64>() {
                     Ok(v) => Ok(Val::Bytes(v.to_le_bytes().to_vec())),
                     Err(_) => bail!("ERROR_PARSE float.from_text: {}", s),
                 },
@@ -4087,7 +4107,7 @@ fn call_builtin(
         }
         Builtin::FloatToText => {
             let f = fb64_1(&args)?;
-            Ok(Val::Str(format!("{}", f)))
+            Ok(Val::Text(format!("{}", f)))
         }
         Builtin::FloatAdd => { let (a,b) = fb64_2(&args)?; Ok(fv(a+b)) }
         Builtin::FloatSub => { let (a,b) = fb64_2(&args)?; Ok(fv(a-b)) }
@@ -4185,12 +4205,12 @@ fn call_builtin(
         Builtin::LinalgEigh => {
             let m = vl_to_mat(&args[0])?;
             let n = m.len();
-            if n == 0 { let mut m = BTreeMap::new(); m.insert("vals".into(), Val::List(vec![])); m.insert("vecs".into(), Val::List(vec![])); return Ok(Val::Rec(m)); }
+            if n == 0 { let mut m = BTreeMap::new(); m.insert("vals".into(), Val::List(vec![])); m.insert("vecs".into(), Val::List(vec![])); return Ok(Val::Record(m)); }
             let flat: Vec<f64> = m.iter().flat_map(|r| r.iter().cloned()).collect();
             let (eigenvalues, eigenvecs) = valuecore::linalg::eigh(&flat, n);
             let vals: Vec<Val> = eigenvalues.iter().map(|&v| fv(v)).collect();
             let vecs: Vec<Val> = eigenvecs.iter().map(|row| Val::List(row.iter().map(|&v| fv(v)).collect())).collect();
-            { let mut m = BTreeMap::new(); m.insert("vals".into(), Val::List(vals)); m.insert("vecs".into(), Val::List(vecs)); Ok(Val::Rec(m)) }
+            { let mut m = BTreeMap::new(); m.insert("vals".into(), Val::List(vals)); m.insert("vecs".into(), Val::List(vecs)); Ok(Val::Record(m)) }
         }
     }
 }
@@ -4514,12 +4534,12 @@ impl ModuleLoader {
         here: &Path,
     ) -> Result<Val> {
         let mut exports: Option<Vec<String>> = None;
-        let mut last: Val = Val::Null;
+        let mut last: Val = Val::Unit;
         for it in items {
             match it {
                 Item::Import(path, alias) => {
                     let ex = self.load_module(&path, here, tracer)?;
-                    env.set(alias, Val::Rec(ex));
+                    env.set(alias, Val::Record(ex));
                 }
                 Item::Let(name, rhs, span) => {
                     let v = eval(&rhs, env, tracer, self).map_err(|e| {
@@ -4555,7 +4575,7 @@ impl ModuleLoader {
                     .ok_or_else(|| anyhow!("export missing name: {n}"))?;
                 out.insert(n, v);
             }
-            return Ok(Val::Rec(out));
+            return Ok(Val::Record(out));
         }
         Ok(last)
     }
@@ -4647,7 +4667,7 @@ impl ModuleLoader {
                 let mut env = base_env();
                 let v = slf.eval_items(items, &mut env, tracer, path.parent().unwrap_or(here))?;
                 match v {
-                    Val::Rec(m) => m,
+                    Val::Record(m) => m,
                     _ => bail!("module must export a record"),
                 }
             } else if name.starts_with("registry/") {
@@ -4671,7 +4691,7 @@ impl ModuleLoader {
                 let mut env = base_env();
                 let v = slf.eval_items(items, &mut env, tracer, path.parent().unwrap_or(here))?;
                 match v {
-                    Val::Rec(m) => m,
+                    Val::Record(m) => m,
                     _ => bail!("module must export a record"),
                 }
             } else {
@@ -4695,7 +4715,7 @@ impl ModuleLoader {
                 let mut env = base_env();
                 let v = slf.eval_items(items, &mut env, tracer, path.parent().unwrap_or(here))?;
                 match v {
-                    Val::Rec(m) => m,
+                    Val::Record(m) => m,
                     _ => bail!("module must export a record"),
                 }
             };
@@ -4930,7 +4950,7 @@ impl ModuleLoader {
                 d.insert("ms".to_string(), Val::Builtin(Builtin::Unimplemented));
                 d.insert("sec".to_string(), Val::Builtin(Builtin::Unimplemented));
                 d.insert("min".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("Duration".to_string(), Val::Rec(d));
+                m.insert("Duration".to_string(), Val::Record(d));
                 Ok(m)
             }
             "std/trace" => {
