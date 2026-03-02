@@ -44,3 +44,6 @@ _out_*/
 _out*/
 target/
 out/
+receipt.json
+receipts/
+=
