@@ -1405,69 +1405,59 @@ impl Parser {
         }
         self.parse_or()
     }
-    fn parse_or(&mut self) -> Result<Expr> {
-        let mut e = self.parse_and()?;
-        loop {
-            let is_or = self.eat_sym("||") || matches!(self.peek(), Tok::OrOr) && { self.i += 1; true };
-            if !is_or { break; }
-            let r = self.parse_and()?;
-            e = Expr::Bin("||".to_string(), Box::new(e), Box::new(r));
+    /// Precedence table for infix operators (higher = tighter binding).
+    /// All operators are left-associative.
+    ///
+    ///  1  ||
+    ///  2  &&
+    ///  3  == != < > <= >=
+    ///  4  + -
+    ///  5  * /
+    fn infix_prec(tok: &Tok) -> Option<u8> {
+        match tok {
+            Tok::OrOr                                   => Some(1),
+            Tok::Sym(s) if s == "&&"                    => Some(2),
+            Tok::Sym(s) if matches!(s.as_str(),
+                "==" | "!=" | "<" | ">" | "<=" | ">=") => Some(3),
+            Tok::Sym(s) if s == "+" || s == "-"         => Some(4),
+            Tok::Sym(s) if s == "*" || s == "/"         => Some(5),
+            _                                           => None,
         }
-        Ok(e)
     }
-    fn parse_and(&mut self) -> Result<Expr> {
-        let mut e = self.parse_eq()?;
-        while self.eat_sym("&&") {
-            let r = self.parse_eq()?;
-            e = Expr::Bin("&&".to_string(), Box::new(e), Box::new(r));
-        }
-        Ok(e)
-    }
-    fn parse_eq(&mut self) -> Result<Expr> {
-        let mut e = self.parse_add()?;
+
+    /// Precedence-climbing infix parser.
+    /// Parses all infix operators with precedence >= `min_prec`.
+    /// Call with `min_prec = 0` to parse any infix expression.
+    fn parse_infix(&mut self, min_prec: u8) -> Result<Expr> {
+        let mut lhs = self.parse_unary()?;
         loop {
-            let op = match self.peek() {
-                Tok::Sym(x) if x == "==" || x == "!=" || x == "<" || x == ">" || x == "<=" || x == ">=" => {
-                    x.clone()
-                }
+            let prec = match Self::infix_prec(self.peek()) {
+                Some(p) if p >= min_prec => p,
                 _ => break,
             };
-            self.bump();
-            let r = self.parse_add()?;
-            e = Expr::Bin(op, Box::new(e), Box::new(r));
+            // Consume the operator token and record its string form.
+            let op = match self.peek().clone() {
+                Tok::OrOr    => { self.bump(); "||".to_string() }
+                Tok::Sym(s)  => { self.bump(); s }
+                _            => unreachable!(),
+            };
+            // Left-associative: right side binds at prec + 1.
+            let rhs = self.parse_infix(prec + 1)?;
+            lhs = Expr::Bin(op, Box::new(lhs), Box::new(rhs));
         }
-        Ok(e)
+        Ok(lhs)
     }
-    fn parse_add(&mut self) -> Result<Expr> {
-        let mut e = self.parse_mul()?;
-        loop {
-            if self.eat_sym("+") {
-                let r = self.parse_mul()?;
-                e = Expr::Bin("+".to_string(), Box::new(e), Box::new(r));
-            } else if self.eat_sym("-") {
-                let r = self.parse_mul()?;
-                e = Expr::Bin("-".to_string(), Box::new(e), Box::new(r));
-            } else {
-                break;
-            }
-        }
-        Ok(e)
-    }
-    fn parse_mul(&mut self) -> Result<Expr> {
-        let mut e = self.parse_unary()?;
-        loop {
-            if self.eat_sym("*") {
-                let r = self.parse_unary()?;
-                e = Expr::Bin("*".to_string(), Box::new(e), Box::new(r));
-            } else if self.eat_sym("/") {
-                let r = self.parse_unary()?;
-                e = Expr::Bin("/".to_string(), Box::new(e), Box::new(r));
-            } else {
-                break;
-            }
-        }
-        Ok(e)
-    }
+
+    /// Shim so all existing `parse_or()` call sites compile unchanged.
+    #[inline(always)]
+    fn parse_or(&mut self) -> Result<Expr> { self.parse_infix(0) }
+
+    // parse_and, parse_eq, parse_add, parse_mul are replaced by parse_infix above.
+    // Kept as dead-code shims if ever needed for debugging:
+    #[allow(dead_code)] fn parse_and(&mut self) -> Result<Expr> { self.parse_infix(2) }
+    #[allow(dead_code)] fn parse_eq(&mut self)  -> Result<Expr> { self.parse_infix(3) }
+    #[allow(dead_code)] fn parse_add(&mut self) -> Result<Expr> { self.parse_infix(4) }
+    #[allow(dead_code)] fn parse_mul(&mut self) -> Result<Expr> { self.parse_infix(5) }
     fn parse_unary(&mut self) -> Result<Expr> {
         if self.eat_sym("-") {
             let e = self.parse_unary()?;
