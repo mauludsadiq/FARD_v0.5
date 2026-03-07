@@ -1004,6 +1004,17 @@ impl Parser {
             false
         }
     }
+    /// Returns true if there is a newline in the source between the previous
+    /// token and the current token. Used to disambiguate `expr\n[...]` (new expr)
+    /// from `expr[...]` (index) at statement boundaries.
+    fn newline_before_current(&self) -> bool {
+        if self.i == 0 { return false; }
+        let prev_end = self.spans.get(self.i - 1).map(|s| s.1).unwrap_or(0);
+        let cur_start = self.spans.get(self.i).map(|s| s.0).unwrap_or(0);
+        self.src.get(prev_end..cur_start)
+            .map(|gap| gap.contains('\n'))
+            .unwrap_or(false)
+    }
     fn expect_kw(&mut self, s: &str) -> Result<()> {
         if self.eat_kw(s) {
             Ok(())
@@ -1372,7 +1383,22 @@ impl Parser {
         if self.eat_kw("if") {
             let c = self.parse_expr()?;
             self.expect_kw("then")?;
-            let t = self.parse_expr()?;
+            let t = if matches!(self.peek(), Tok::Sym(s) if s == "{") {
+                // Disambiguate: `then { let ... }` block vs `then { k: v }` record.
+                // A block starts with `let` or is empty. A record starts with ident/kw + colon.
+                let is_block = matches!(self.peek_n(1), Tok::Kw(s) if s == "let")
+                    || matches!(self.peek_n(1), Tok::Sym(s) if s == "}");
+                if is_block {
+                    self.bump();
+                    let body = self.parse_fn_block_inner()?;
+                    self.expect_sym("}")?;
+                    body
+                } else {
+                    self.parse_expr()?
+                }
+            } else {
+                self.parse_expr()?
+            };
             self.expect_kw("else")?;
             let f = self.parse_expr()?;
             return Ok(Expr::If(Box::new(c), Box::new(t), Box::new(f)));
@@ -1500,6 +1526,28 @@ impl Parser {
                 continue;
             }
             if self.eat_sym("[") {
+                // Do not treat [ as index if:
+                // 1. The base is a bare literal (can never be indexed), or
+                // 2. There is a newline between the base expression and [
+                //    (statement-level disambiguation: `expr\n[...]` is a new expr)
+                let is_literal = matches!(e,
+                    Expr::Int(_) | Expr::FloatLit(_) | Expr::Bool(_) |
+                    Expr::Str(_) | Expr::Null | Expr::List(_) | Expr::Rec(_)
+                );
+                // self.i was incremented by eat_sym("["), so self.i-1 is the [
+                // and self.i-2 is the last token of the base expression.
+                let has_newline = {
+                    let bracket_idx = self.i - 1;
+                    let prev_end = self.spans.get(bracket_idx - 1).map(|s| s.1).unwrap_or(0);
+                    let cur_start = self.spans.get(bracket_idx).map(|s| s.0).unwrap_or(0);
+                    self.src.get(prev_end..cur_start)
+                        .map(|gap| gap.contains('\n'))
+                        .unwrap_or(false)
+                };
+                if is_literal || has_newline {
+                    self.i -= 1;
+                    break;
+                }
                 let idx = self.parse_expr()?;
                 self.expect_sym("]")?;
                 e = Expr::Index(Box::new(e), Box::new(idx));
