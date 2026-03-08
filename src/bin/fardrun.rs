@@ -6,6 +6,12 @@ use fardlang::parse::parse_module as fardlang_parse_module;
 use fardlang::check::check_module as fardlang_check_module;
 use fardlang::eval::{eval_block, apply_imports, Env as FardlangEnv};
 use valuecore::val_to_v0;
+#[derive(Debug, Clone)]
+enum StrPart {
+    Lit(String),
+    Expr(Expr),
+}
+
 const QMARK_EXPECT_RESULT: &str = "QMARK_EXPECT_RESULT";
 const QMARK_PROPAGATE_ERR: &str = "QMARK_PROPAGATE_ERR";
 const RESULT_OK_TAG: &str = "ok";
@@ -572,6 +578,7 @@ enum Tok {
     Num(i64),
     Float(f64),
     Str(String),
+    StrInterp(Vec<StrPart>),
     Sym(String),
     Eof,
 }
@@ -651,6 +658,10 @@ impl Lex {
     fn peek(&self) -> Option<char> {
         self.s.get(self.i).copied()
     }
+    fn peek_char(&self) -> Option<char> {
+        self.s.get(self.i).copied()
+    }
+
     fn bump(&mut self) -> Option<char> {
         let c = self.peek()?;
         self.i += 1;
@@ -746,9 +757,39 @@ impl Lex {
         if c == '"' {
             self.bump();
             let mut t = String::new();
+            let mut parts: Vec<StrPart> = Vec::new();
+            let mut has_interp = false;
             while let Some(d) = self.bump() {
                 if d == '"' {
                     break;
+                }
+                if d == '$' && self.peek_char() == Some('{') {
+                    // string interpolation: collect what we have, then parse expr
+                    has_interp = true;
+                    self.bump(); // consume '{'
+                    parts.push(StrPart::Lit(t.clone()));
+                    t.clear();
+                    // collect the inner expression source until matching '}'
+                    let mut depth = 1usize;
+                    let mut inner = String::new();
+                    loop {
+                        match self.bump() {
+                            None => bail!("unterminated ${{}}"),
+                            Some('{') => { depth += 1; inner.push('{'); }
+                            Some('}') => {
+                                depth -= 1;
+                                if depth == 0 { break; }
+                                inner.push('}');
+                            }
+                            Some(c) => inner.push(c),
+                        }
+                    }
+                    // parse the inner expression
+                    let file = "<interp>".to_string();
+                    let mut ip = Parser::from_src(&inner, &file)?;
+                    let e = ip.parse_expr()?;
+                    parts.push(StrPart::Expr(e));
+                    continue;
                 }
                 if d == '\\' {
                     let e = self.bump().ok_or_else(|| anyhow!("bad escape"))?;
@@ -762,6 +803,10 @@ impl Lex {
                 } else {
                     t.push(d);
                 }
+            }
+            if has_interp {
+                parts.push(StrPart::Lit(t));
+                return Ok(Tok::StrInterp(parts));
             }
             return Ok(Tok::Str(t));
         }
@@ -911,6 +956,7 @@ enum Expr {
     FloatLit(f64),
     Bool(bool),
     Str(String),
+    StrInterp(Vec<StrPart>),
     Null,
     Bin(String, Box<Expr>, Box<Expr>),
     Unary(String, Box<Expr>),
@@ -1656,6 +1702,7 @@ impl Parser {
             Tok::Num(n) => Ok(Expr::Int(n)),
             Tok::Float(f) => Ok(Expr::FloatLit(f)),
             Tok::Str(s) => Ok(Expr::Str(s)),
+            Tok::StrInterp(parts) => Ok(Expr::StrInterp(parts)),
             Tok::Kw(s) if s == "true" => Ok(Expr::Bool(true)),
             Tok::Kw(s) if s == "false" => Ok(Expr::Bool(false)),
             Tok::Kw(s) if s == "null" => Ok(Expr::Null),
@@ -2261,6 +2308,26 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
         Expr::FloatLit(f) => Ok(Val::Float(*f)),
         Expr::Bool(b) => Ok(Val::Bool(*b)),
         Expr::Str(s) => Ok(Val::Text(s.clone())),
+        Expr::StrInterp(parts) => {
+            let mut result = String::new();
+            for part in parts {
+                match part {
+                    StrPart::Lit(s) => result.push_str(s),
+                    StrPart::Expr(e) => {
+                        let v = eval(e, env, tracer, loader)?;
+                        let s = match v {
+                            Val::Text(s) => s,
+                            Val::Int(n) => n.to_string(),
+                            Val::Float(f) => f.to_string(),
+                            Val::Bool(b) => b.to_string(),
+                            other => other.to_json().map(|j| canon_json(&j).unwrap_or_default()).unwrap_or_else(|| "?".to_string()),
+                        };
+                        result.push_str(&s);
+                    }
+                }
+            }
+            Ok(Val::Text(result))
+        },
         Expr::Null => Ok(Val::Unit),
         Expr::Var(n) => env.get(n).ok_or_else(|| anyhow!("unbound var: {n}")),
         Expr::List(xs) => {
