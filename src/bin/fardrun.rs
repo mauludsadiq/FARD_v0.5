@@ -258,6 +258,27 @@ fn main() -> Result<()> {
 
             em.insert("code".to_string(), J::Str(code.clone()));
             em.insert("message".to_string(), J::Str(msg.clone()));
+            // Walk anyhow context chain for "  --> file:line:col" added by eval_items
+            if !em.contains_key("span") {
+                for cause in e.chain() {
+                    let s = cause.to_string();
+                    if let Some(rest) = s.strip_prefix("  --> ") {
+                        // rest = "file:line:col"
+                        let parts: Vec<&str> = rest.rsplitn(3, ':').collect();
+                        if parts.len() == 3 {
+                            if let (Ok(col), Ok(line)) = (parts[0].trim().parse::<i64>(), parts[1].trim().parse::<i64>()) {
+                                let file = parts[2].to_string();
+                                let mut sm = Map::new();
+                                sm.insert("file".to_string(), J::Str(file));
+                                sm.insert("line".to_string(), J::Int(line));
+                                sm.insert("col".to_string(), J::Int(col));
+                                em.insert("span".to_string(), J::Object(sm));
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
             if let Some(se) = e.downcast_ref::<SpannedRuntimeError>() {
                 let mut bs = se.span.byte_start;
                 let mut be = se.span.byte_end;
@@ -2448,7 +2469,7 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                 ("+", Val::Int(l), Val::Int(r)) => Ok(Val::Int(l + r)),
                 ("-", Val::Int(l), Val::Int(r)) => Ok(Val::Int(l - r)),
                 ("*", Val::Int(l), Val::Int(r)) => Ok(Val::Int(l * r)),
-                ("/", Val::Int(l), Val::Int(r)) => Ok(Val::Int(l / r)),
+                ("/", Val::Int(l), Val::Int(r)) => { if r == 0 { bail!("ERROR_DIV_ZERO division by zero") } Ok(Val::Int(l / r)) }
                 ("+", Val::Float(l), Val::Float(r)) => Ok(Val::Float(l + r)),
                 ("-", Val::Float(l), Val::Float(r)) => Ok(Val::Float(l - r)),
                 ("*", Val::Float(l), Val::Float(r)) => Ok(Val::Float(l * r)),
