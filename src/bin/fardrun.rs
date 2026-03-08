@@ -2069,6 +2069,29 @@ fn parse_hex_bytes(s: &str) -> Result<Vec<u8>> {
     Ok(out)
 }
 
+fn vcore_to_fardrun(v: valuecore::Val) -> Val {
+    match v {
+        valuecore::Val::Unit    => Val::Unit,
+        valuecore::Val::Bool(b) => Val::Bool(b),
+        valuecore::Val::Int(n)  => Val::Int(n),
+        valuecore::Val::Text(s) => Val::Text(s),
+        valuecore::Val::Bytes(b) => Val::Bytes(b),
+        valuecore::Val::List(xs) => Val::List(xs.into_iter().map(vcore_to_fardrun).collect()),
+        valuecore::Val::Float(f) => Val::Float(f),
+        valuecore::Val::Record(pairs) => {
+            let mut m = BTreeMap::new();
+            for (k, v) in pairs {
+                m.insert(k, vcore_to_fardrun(v));
+            }
+            Val::Record(m)
+        }
+        valuecore::Val::Err { code, data } => Val::Err {
+            code,
+            data: Box::new(vcore_to_fardrun(*data)),
+        },
+    }
+}
+
 fn val_from_json(j: &J) -> Result<Val> {
     match j {
         J::Null => Ok(Val::Unit),
@@ -4642,12 +4665,8 @@ impl ModuleLoader {
         let vcore = eval_block(&main_decl.body, &mut env)
             .context("ERROR_EVAL fardlang")?;
 
-        // Convert valuecore::Val -> fardrun::Val via JSON round-trip
-        let v0 = val_to_v0(&vcore);
-        let json_bytes = valuecore::v0::encode_json(&v0);
-        let j: J = json_from_slice(&json_bytes).map_err(|e| anyhow!("{}", e))?;
-        let fardrun_val = val_from_json(&j)?;
-        Ok(fardrun_val)
+        // Convert valuecore::Val -> fardrun::Val directly (no v0 wire encoding)
+        Ok(vcore_to_fardrun(vcore))
     }
     fn eval_items(
         &mut self,
