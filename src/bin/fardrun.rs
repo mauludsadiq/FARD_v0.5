@@ -1883,6 +1883,12 @@ enum Builtin {
     StrIndexOf,
     StrChars,
     FsReadText,
+    FsWriteText,
+    FsExists,
+    FsReadDir,
+    FsStat,
+    FsDelete,
+    FsMakeDir,
     CodecHexEncode,
     CodecHexDecode,
     HashSha256Text,
@@ -2470,6 +2476,21 @@ fn is_result_val(v: &Val) -> bool {
     }
 }
 
+
+
+fn fs_sandbox_check(path: &str) -> Result<()> {
+    let p = std::path::Path::new(path);
+    // Reject absolute paths and any component that is ".."
+    if p.is_absolute() {
+        bail!("ERROR_SANDBOX fs path must be relative: {}", path);
+    }
+    for component in p.components() {
+        if component == std::path::Component::ParentDir {
+            bail!("ERROR_SANDBOX fs path must not contain ..: {}", path);
+        }
+    }
+    Ok(())
+}
 
 fn http_response_to_val(resp: ureq::Response) -> Result<Val> {
     let status = resp.status() as i64;
@@ -4009,6 +4030,98 @@ fn call_builtin(
                 _ => bail!("ERROR_BADARG fs.read_text expects string path"),
             }
         }
+
+        Builtin::FsWriteText => {
+            if args.len() != 2 { bail!("ERROR_ARITY fs.write_text expects 2 args"); }
+            let path = match &args[0] {
+                Val::Text(s) => s.clone(),
+                _ => bail!("ERROR_BADARG fs.write_text path must be text"),
+            };
+            let content = match &args[1] {
+                Val::Text(s) => s.clone(),
+                _ => bail!("ERROR_BADARG fs.write_text content must be text"),
+            };
+            fs_sandbox_check(&path)?;
+            if let Some(parent) = std::path::Path::new(&path).parent() {
+                if !parent.as_os_str().is_empty() {
+                    std::fs::create_dir_all(parent)
+                        .map_err(|e| anyhow!("ERROR_IO fs.write_text mkdir {}: {}", path, e))?;
+                }
+            }
+            std::fs::write(&path, content.as_bytes())
+                .map_err(|e| anyhow!("ERROR_IO fs.write_text {}: {}", path, e))?;
+            Ok(Val::Unit)
+        }
+        Builtin::FsExists => {
+            if args.len() != 1 { bail!("ERROR_ARITY fs.exists expects 1 arg"); }
+            let path = match &args[0] {
+                Val::Text(s) => s.clone(),
+                _ => bail!("ERROR_BADARG fs.exists path must be text"),
+            };
+            Ok(Val::Bool(std::path::Path::new(&path).exists()))
+        }
+        Builtin::FsReadDir => {
+            if args.len() != 1 { bail!("ERROR_ARITY fs.read_dir expects 1 arg"); }
+            let path = match &args[0] {
+                Val::Text(s) => s.clone(),
+                _ => bail!("ERROR_BADARG fs.read_dir path must be text"),
+            };
+            let entries = std::fs::read_dir(&path)
+                .map_err(|e| anyhow!("ERROR_IO fs.read_dir {}: {}", path, e))?;
+            let mut names: Vec<Val> = Vec::new();
+            for entry in entries {
+                let entry = entry.map_err(|e| anyhow!("ERROR_IO fs.read_dir entry: {}", e))?;
+                let name = entry.file_name().to_string_lossy().to_string();
+                names.push(Val::Text(name));
+            }
+            names.sort_by(|a, b| match (a, b) {
+                (Val::Text(x), Val::Text(y)) => x.cmp(y),
+                _ => std::cmp::Ordering::Equal,
+            });
+            Ok(Val::List(names))
+        }
+        Builtin::FsStat => {
+            if args.len() != 1 { bail!("ERROR_ARITY fs.stat expects 1 arg"); }
+            let path = match &args[0] {
+                Val::Text(s) => s.clone(),
+                _ => bail!("ERROR_BADARG fs.stat path must be text"),
+            };
+            let meta = std::fs::metadata(&path)
+                .map_err(|e| anyhow!("ERROR_IO fs.stat {}: {}", path, e))?;
+            let mut m = BTreeMap::new();
+            m.insert("is_file".to_string(), Val::Bool(meta.is_file()));
+            m.insert("is_dir".to_string(), Val::Bool(meta.is_dir()));
+            m.insert("size".to_string(), Val::Int(meta.len() as i64));
+            Ok(Val::Record(m))
+        }
+        Builtin::FsDelete => {
+            if args.len() != 1 { bail!("ERROR_ARITY fs.delete expects 1 arg"); }
+            let path = match &args[0] {
+                Val::Text(s) => s.clone(),
+                _ => bail!("ERROR_BADARG fs.delete path must be text"),
+            };
+            fs_sandbox_check(&path)?;
+            let p = std::path::Path::new(&path);
+            if p.is_dir() {
+                std::fs::remove_dir_all(&path)
+                    .map_err(|e| anyhow!("ERROR_IO fs.delete {}: {}", path, e))?;
+            } else {
+                std::fs::remove_file(&path)
+                    .map_err(|e| anyhow!("ERROR_IO fs.delete {}: {}", path, e))?;
+            }
+            Ok(Val::Unit)
+        }
+        Builtin::FsMakeDir => {
+            if args.len() != 1 { bail!("ERROR_ARITY fs.make_dir expects 1 arg"); }
+            let path = match &args[0] {
+                Val::Text(s) => s.clone(),
+                _ => bail!("ERROR_BADARG fs.make_dir path must be text"),
+            };
+            fs_sandbox_check(&path)?;
+            std::fs::create_dir_all(&path)
+                .map_err(|e| anyhow!("ERROR_IO fs.make_dir {}: {}", path, e))?;
+            Ok(Val::Unit)
+        }
         Builtin::StrSplitLines => {
             if args.len() != 1 {
                 bail!("ERROR_BADARG str.split_lines expects 1 arg");
@@ -5499,6 +5612,12 @@ impl ModuleLoader {
             "std/fs" => {
                 let mut m = BTreeMap::new();
                 m.insert("read_text".to_string(), Val::Builtin(Builtin::FsReadText));
+                m.insert("write_text".to_string(), Val::Builtin(Builtin::FsWriteText));
+                m.insert("exists".to_string(), Val::Builtin(Builtin::FsExists));
+                m.insert("read_dir".to_string(), Val::Builtin(Builtin::FsReadDir));
+                m.insert("stat".to_string(), Val::Builtin(Builtin::FsStat));
+                m.insert("delete".to_string(), Val::Builtin(Builtin::FsDelete));
+                m.insert("make_dir".to_string(), Val::Builtin(Builtin::FsMakeDir));
                 Ok(m)
             }
             "std/option" => {
