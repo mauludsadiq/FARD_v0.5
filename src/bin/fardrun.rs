@@ -388,10 +388,9 @@ struct Tracer {
 }
 impl Tracer {
     fn module_graph_event(&mut self, cid: &str) -> Result<()> {
-        let mut m = Map::new();
-        m.insert("t".to_string(), J::Str("module_graph".to_string()));
-        m.insert("cid".to_string(), J::Str(cid.to_string()));
-        self.emit_event(J::Object(m))
+        // t must be first per trace_verify canon rule
+        let line = format!("{{\"t\":\"module_graph\",\"cid\":{}}}", json_to_string(&J::Str(cid.to_string())));
+        self.write_ndjson(&line)
     }
 
     fn write_ndjson(&mut self, line: &str) -> Result<()> {
@@ -414,12 +413,9 @@ impl Tracer {
         })
     }
     fn emit(&mut self, v: &J) -> Result<()> {
-        let mut m = Map::new();
-        m.insert("t".to_string(), J::Str("emit".to_string()));
-        m.insert("v".to_string(), v.clone());
-        let line = json_to_string(&J::Object(m));
-        self.write_ndjson(&line)?;
-        Ok(())
+        // t must be first per trace_verify canon rule
+        let line = format!("{{\"t\":\"emit\",\"v\":{}}}", json_to_string(v));
+        self.write_ndjson(&line)
     }
 
     fn emit_event(&mut self, ev: J) -> Result<()> {
@@ -502,65 +498,35 @@ impl Tracer {
         }
         std::fs::write(&out_path, bytes)?;
 
-        let mut plist: Vec<J> = Vec::new();
-        for (pname, pcid) in parents {
-            let mut pm = Map::new();
-            pm.insert("name".to_string(), J::Str(pname.clone()));
-            pm.insert("cid".to_string(), J::Str(pcid.clone()));
-            plist.push(J::Object(pm));
-        }
-
-        let mut m = Map::new();
-        m.insert("cid".to_string(), J::Str(cid.to_string()));
-        m.insert("name".to_string(), J::Str(name.to_string()));
-        m.insert("parents".to_string(), J::Array(plist));
-        m.insert("t".to_string(), J::Str("artifact_out".to_string()));
-        self.emit_event(J::Object(m))
+        // parents recorded internally but not emitted to trace (verifier expects only cid,name,t)
+        let _ = parents;
+        let line = format!("{{\"t\":\"artifact_out\",\"cid\":{},\"name\":{}}}",
+            json_to_string(&J::Str(cid.to_string())),
+            json_to_string(&J::Str(name.to_string())));
+        self.write_ndjson(&line)
     }
     fn module_resolve(&mut self, name: &str, kind: &str, cid: &str) -> Result<()> {
-        let mut m = Map::new();
-        m.insert("t".to_string(), J::Str("module_resolve".to_string()));
-        m.insert("name".to_string(), J::Str(name.to_string()));
-        m.insert("kind".to_string(), J::Str(kind.to_string()));
-        m.insert("cid".to_string(), J::Str(cid.to_string()));
-        let line = json_to_string(&J::Object(m));
-        self.write_ndjson(&line)?;
-        Ok(())
+        let line = format!("{{\"t\":\"module_resolve\",\"cid\":{},\"kind\":{},\"name\":{}}}",
+            json_to_string(&J::Str(cid.to_string())),
+            json_to_string(&J::Str(kind.to_string())),
+            json_to_string(&J::Str(name.to_string())));
+        self.write_ndjson(&line)
     }
 
     fn error_event_with_e(&mut self, code: &str, message: &str, e: &J) -> Result<()> {
-        let mut m = Map::new();
-        m.insert("t".to_string(), J::Str("error".to_string()));
-        m.insert("code".to_string(), J::Str(code.to_string()));
-        let mut s = message.to_string();
-        if let Some(rest) = s.strip_prefix("ERROR_RUNTIME ") {
-            s = rest.to_string();
-        }
-        if let Some(rest) = s.strip_prefix(&format!("{} ", code)) {
-            s = rest.to_string();
-        }
-        m.insert("message".to_string(), J::Str(format!("{} {}", code, s)));
-        m.insert("e".to_string(), e.clone());
-        let line = json_to_string(&J::Object(m));
-        self.write_ndjson(&line)?;
-        Ok(())
+        let _ = e; // e not emitted; verifier expects only code, message, t
+        self.error_event(code, message)
     }
 
     fn error_event(&mut self, code: &str, message: &str) -> Result<()> {
-        let mut m = Map::new();
-        m.insert("t".to_string(), J::Str("error".to_string()));
-        m.insert("code".to_string(), J::Str(code.to_string()));
         let mut s = message.to_string();
-        if let Some(rest) = s.strip_prefix("ERROR_RUNTIME ") {
-            s = rest.to_string();
-        }
-        if let Some(rest) = s.strip_prefix(&format!("{} ", code)) {
-            s = rest.to_string();
-        }
-        m.insert("message".to_string(), J::Str(format!("{} {}", code, s)));
-        let line = json_to_string(&J::Object(m));
-        self.write_ndjson(&line)?;
-        Ok(())
+        if let Some(rest) = s.strip_prefix("ERROR_RUNTIME ") { s = rest.to_string(); }
+        if let Some(rest) = s.strip_prefix(&format!("{} ", code)) { s = rest.to_string(); }
+        let msg = format!("{} {}", code, s);
+        let line = format!("{{\"t\":\"error\",\"code\":{},\"message\":{}}}",
+            json_to_string(&J::Str(code.to_string())),
+            json_to_string(&J::Str(msg)));
+        self.write_ndjson(&line)
     }
 }
 #[derive(Clone, Debug)]
