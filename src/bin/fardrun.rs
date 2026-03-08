@@ -4662,6 +4662,20 @@ impl ModuleLoader {
 
         let mut env = FardlangEnv::with_fns(fns);
         apply_imports(&mut env, &m.imports);
+        // Also handle string-path imports: import "std/list" as list
+        // These land in source_imports; route std/* through std_aliases().
+        {
+            let table = fardlang::eval::std_aliases();
+            for si in &m.source_imports {
+                let path = si.path.trim_start_matches("std/");
+                let alias = if si.alias.is_empty() { path } else { si.alias.as_str() };
+                if let Some(mod_map) = table.get(path) {
+                    for (fn_name, builtin) in mod_map {
+                        env.aliases.insert(format!("{}.{}", alias, fn_name), builtin.clone());
+                    }
+                }
+            }
+        }
         let vcore = eval_block(&main_decl.body, &mut env)
             .context("ERROR_EVAL fardlang")?;
 
