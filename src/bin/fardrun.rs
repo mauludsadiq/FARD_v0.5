@@ -1791,6 +1791,8 @@ enum Builtin {
     TraceWarn,
     TraceError,
     TraceSpan,
+    ListGroupBy,
+    SembitPartition,
     HttpGet,
     HttpPost,
     HttpRequest,
@@ -3042,6 +3044,120 @@ fn call_builtin(
             end.insert("msg".to_string(), J::Str(name));
             tracer.emit(&J::Object(end))?;
             result
+        }
+        Builtin::ListGroupBy => {
+            // group_by(xs, key_fn) -> record of { key: [elements] }
+            if args.len() != 2 { bail!("ERROR_ARITY list.group_by expects 2 args"); }
+            let xs = match &args[0] {
+                Val::List(v) => v.clone(),
+                _ => bail!("ERROR_BADARG list.group_by arg0 must be list"),
+            };
+            let f = args[1].clone();
+            let mut groups: BTreeMap<String, Vec<Val>> = BTreeMap::new();
+            for x in xs {
+                let key_val = call(f.clone(), vec![x.clone()], tracer, loader)?;
+                let key_str = match &key_val {
+                    Val::Text(s) => s.clone(),
+                    Val::Bool(b) => b.to_string(),
+                    Val::Int(n) => n.to_string(),
+                    _ => bail!("ERROR_BADARG list.group_by key_fn must return text, bool, or int"),
+                };
+                groups.entry(key_str).or_default().push(x);
+            }
+            let record: BTreeMap<String, Val> = groups.into_iter()
+                .map(|(k, v)| (k, Val::List(v)))
+                .collect();
+            Ok(Val::Record(record))
+        }
+        // --- std/sembit ---
+        Builtin::ListGroupBy => {
+            if args.len() != 2 { bail!("ERROR_ARITY list.group_by expects 2 args"); }
+            let xs = match &args[0] { Val::List(v) => v.clone(), _ => bail!("ERROR_BADARG list.group_by arg0 must be list") };
+            let f = args[1].clone();
+            let mut groups: BTreeMap<String, Vec<Val>> = BTreeMap::new();
+            for x in xs {
+                let key_val = call(f.clone(), vec![x.clone()], tracer, loader)?;
+                let key_str = match &key_val {
+                    Val::Text(s) => s.clone(),
+                    Val::Bool(b) => b.to_string(),
+                    Val::Int(n) => n.to_string(),
+                    _ => bail!("ERROR_BADARG list.group_by key_fn must return text, bool, or int"),
+                };
+                groups.entry(key_str).or_default().push(x);
+            }
+            Ok(Val::Record(groups.into_iter().map(|(k,v)| (k, Val::List(v))).collect()))
+        }
+        Builtin::SembitPartition => {
+            if args.len() != 2 { bail!("ERROR_ARITY sembit.partition expects 2 args"); }
+            let domain = match &args[0] { Val::List(v) => v.clone(), _ => bail!("ERROR_BADARG sembit.partition domain must be list") };
+            let tests  = match &args[1] { Val::List(v) => v.clone(), _ => bail!("ERROR_BADARG sembit.partition tests must be list") };
+            let raw_items = domain.len();
+            let mut test_ids: Vec<String> = Vec::new();
+            let mut test_fns: Vec<Val> = Vec::new();
+            let mut tests_preimage = String::new();
+            for t in &tests {
+                let m = match t { Val::Record(m) => m, _ => bail!("ERROR_BADARG each test must be a record") };
+                let id = match m.get("id") { Some(Val::Text(s)) => s.clone(), _ => bail!("ERROR_BADARG test.id must be text") };
+                let f  = match m.get("f")  { Some(v) => v.clone(), _ => bail!("ERROR_BADARG test.f missing") };
+                tests_preimage.push_str(&id); tests_preimage.push('\n');
+                test_ids.push(id); test_fns.push(f);
+            }
+            let tests_hash = format!("sha256:{}", sha256_bytes_hex(tests_preimage.as_bytes()));
+            let mut sig_map: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+            let mut domain_preimage = String::new();
+            for (i, x) in domain.iter().enumerate() {
+                let mut sig_bools: Vec<bool> = Vec::new();
+                for f in &test_fns {
+                    let r = call(f.clone(), vec![x.clone()], tracer, loader)?;
+                    match r { Val::Bool(b) => sig_bools.push(b), _ => bail!("ERROR_BADARG test fn must return bool") };
+                }
+                let sig: String = sig_bools.iter().map(|b| if *b { '1' } else { '0' }).collect();
+                sig_map.entry(sig).or_default().push(i);
+                if let Some(j) = x.to_json() { domain_preimage.push_str(&canonical_json_string(&j)); domain_preimage.push('\n'); }
+            }
+            let quotient_digest = format!("sha256:{}", sha256_bytes_hex(domain_preimage.as_bytes()));
+            let classes = sig_map.len();
+            let raw_f = raw_items as f64;
+            let raw_entropy = if raw_items > 1 { raw_f.log2() } else { 0.0 };
+            let mut sem_entropy = 0.0f64;
+            let mut singletons = 0usize;
+            let mut quotient_list: Vec<Val> = Vec::new();
+            for (sig, members) in &sig_map {
+                let count = members.len();
+                if count == 1 { singletons += 1; }
+                let p = count as f64 / raw_f;
+                if p > 0.0 { sem_entropy -= p * p.log2(); }
+                let examples: Vec<Val> = members.iter().take(3).map(|&i| domain[i].clone()).collect();
+                let mut cls = BTreeMap::new();
+                cls.insert("examples".to_string(), Val::List(examples));
+                cls.insert("members".to_string(), Val::Int(count as i64));
+                cls.insert("sig".to_string(), Val::Text(sig.clone()));
+                quotient_list.push(Val::Record(cls));
+            }
+            let saved_bits = raw_entropy - sem_entropy;
+            let compression_pct = if raw_entropy > 0.0 { (saved_bits / raw_entropy) * 100.0 } else { 0.0 };
+            // emit cert event
+            let mut cert = BTreeMap::new();
+            cert.insert("classes".to_string(), J::Int(classes as i64));
+            cert.insert("level".to_string(), J::Str("info".to_string()));
+            cert.insert("meaning_gap".to_string(), J::Int((raw_items - classes) as i64));
+            cert.insert("msg".to_string(), J::Str("sembit.partition".to_string()));
+            cert.insert("quotient_digest".to_string(), J::Str(quotient_digest.clone()));
+            cert.insert("tests_hash".to_string(), J::Str(tests_hash.clone()));
+            tracer.emit(&J::Object(cert))?;
+            let mut result = BTreeMap::new();
+            result.insert("classes".to_string(),            Val::Int(classes as i64));
+            result.insert("compression_percent".to_string(),Val::Float(compression_pct));
+            result.insert("entropy_bits".to_string(),       Val::Float(sem_entropy));
+            result.insert("meaning_gap".to_string(),        Val::Int((raw_items - classes) as i64));
+            result.insert("quotient".to_string(),           Val::List(quotient_list));
+            result.insert("quotient_digest".to_string(),    Val::Text(quotient_digest));
+            result.insert("raw_entropy_bits".to_string(),   Val::Float(raw_entropy));
+            result.insert("raw_items".to_string(),          Val::Int(raw_items as i64));
+            result.insert("saved_bits".to_string(),         Val::Float(saved_bits));
+            result.insert("singletons".to_string(),         Val::Int(singletons as i64));
+            result.insert("tests_hash".to_string(),         Val::Text(tests_hash));
+            Ok(Val::Record(result))
         }
         // --- std/http ---
         Builtin::HttpGet => {
@@ -5494,6 +5610,8 @@ impl ModuleLoader {
                 m.insert("range".to_string(), Val::Builtin(Builtin::ListRange));
                 m.insert("repeat".to_string(), Val::Builtin(Builtin::ListRepeat));
                 m.insert("concat".to_string(), Val::Builtin(Builtin::ListConcat));
+                m.insert("group_by".to_string(), Val::Builtin(Builtin::ListGroupBy));
+                m.insert("group_by".to_string(), Val::Builtin(Builtin::ListGroupBy));
                 m.insert("fold".to_string(), Val::Builtin(Builtin::ListFold));
                 m.insert("map".to_string(), Val::Builtin(Builtin::ListMap));
                 m.insert("filter".to_string(), Val::Builtin(Builtin::ListFilter));
@@ -5718,6 +5836,11 @@ impl ModuleLoader {
                 m.insert("span".to_string(), Val::Builtin(Builtin::TraceSpan));
                 Ok(m)
             }
+            "std/sembit" => {
+                let mut m = BTreeMap::new();
+                m.insert("partition".to_string(), Val::Builtin(Builtin::SembitPartition));
+                Ok(m)
+            }
             "std/artifact" => {
                 let mut m = BTreeMap::new();
                 m.insert("import".to_string(), Val::Builtin(Builtin::ImportArtifact));
@@ -5843,7 +5966,7 @@ impl ModuleLoader {
     }
 
     fn stdlib_root_digest(&self) -> String {
-        let names: [&str; 23] = [
+        let names: [&str; 24] = [
             "std/artifact",
             "std/bytes",
             "std/codec",
@@ -5862,6 +5985,7 @@ impl ModuleLoader {
             "std/result",
             "std/str",
             "std/time",
+            "std/sembit",
             "std/trace",
             "std/png",
             "std/rec",
@@ -5923,6 +6047,8 @@ fn file_digest(p: &Path) -> Result<String> {
     h.update(&b);
     Ok(format!("sha256:{}", hex_lower(&h.finalize())))
 }
+
+fn canonical_json_string(v: &J) -> String { String::from_utf8(canonical_json_bytes(v)).unwrap_or_default() }
 
 fn canonical_json_bytes(v: &J) -> Vec<u8> {
     json_to_string(v).into_bytes()
