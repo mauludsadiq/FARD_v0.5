@@ -190,11 +190,59 @@ fn write_m5_digests(
 }
 
 fn main() -> Result<()> {
-    let (run, want_version) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
+    let (run, want_version, want_repl) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
     if want_version {
         println!("fard_runtime_version={}", env!("CARGO_PKG_VERSION"));
         println!("trace_format_version=0.1.0");
         println!("stdlib_root_cid=sha256:dev");
+        return Ok(());
+    }
+    if want_repl {
+        use std::io::{BufRead, Write};
+        println!("FARD v{} REPL — :quit to exit", env!("CARGO_PKG_VERSION"));
+        let stdin = std::io::stdin();
+        let mut env = Env::new();
+        let mut loader = ModuleLoader::new(Path::new("."));
+        let devnull = std::path::PathBuf::from("/dev/null");
+        let mut tracer = Tracer::new(&devnull, &devnull).unwrap_or_else(|_| {
+            // fallback: use temp dir
+            let t = std::env::temp_dir();
+            Tracer::new(&t, &t.join("repl_trace.ndjson")).expect("tracer")
+        });
+        loop {
+            print!("fard> ");
+            std::io::stdout().flush().ok();
+            let mut line = String::new();
+            match stdin.lock().read_line(&mut line) {
+                Ok(0) => { println!(); break; } // EOF
+                Ok(_) => {}
+                Err(_) => break,
+            }
+            let line = line.trim_end_matches('\n').trim_end_matches('\r');
+            if line == ":quit" || line == ":q" { break; }
+            if line.trim().is_empty() { continue; }
+            let file = "<repl>".to_string();
+            match Parser::from_src(line, &file) {
+                Err(e) => { eprintln!("parse error: {e}"); continue; }
+                Ok(mut p) => {
+                    match p.parse_module() {
+                        Err(e) => { eprintln!("parse error: {e}"); continue; }
+                        Ok(items) => {
+                            match loader.eval_items(items, &mut env, &mut tracer, Path::new(".")) {
+                                Err(e) => { eprintln!("error: {}", e.root_cause()); }
+                                Ok(v) => {
+                                    if !matches!(v, Val::Unit) {
+                                        if let Some(j) = v.to_json() {
+                                            println!("{}", canon_json(&j).unwrap_or_else(|_| "?".to_string()));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         return Ok(());
     }
     let program = run.program;

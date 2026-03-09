@@ -16,6 +16,7 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Command {
     Run(RunArgs),
+    Repl,
 }
 
 #[derive(Args, Debug)]
@@ -37,7 +38,7 @@ pub struct RunArgs {
 }
 
 impl Cli {
-    pub fn parse_compat() -> (RunArgs, bool) {
+    pub fn parse_compat() -> (RunArgs, bool, bool) {
         use std::ffi::OsString;
         let mut argv: Vec<OsString> = std::env::args_os().collect();
         if argv.len() >= 2 {
@@ -71,18 +72,30 @@ impl Cli {
                 registry: None,
                 enforce_lockfile: false,
             };
-            return (dummy, true);
+            return (dummy, true, false);
         }
 
+        let want_repl = matches!(cli.cmd, Some(Command::Repl));
         let run = match cli.cmd {
             Some(Command::Run(r)) => r,
-            None => {
+            Some(Command::Repl) | None => {
+                if want_repl {
+                    let dummy = RunArgs {
+                        program: PathBuf::from("."),
+                        out: PathBuf::from("."),
+                        lockfile: None,
+                        registry: None,
+                        enforce_lockfile: false,
+                    };
+                    return (dummy, false, true);
+                }
                 eprintln!("usage: fardrun run --program <file.fard> --out <dir>");
+                eprintln!("       fardrun repl");
                 eprintln!("       fardrun --version");
                 std::process::exit(0);
             }
         };
 
-        (run, false)
+        (run, false, false)
     }
 }
