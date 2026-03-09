@@ -42,6 +42,34 @@ fn sha256_bytes_hex(bytes: &[u8]) -> String {
     h.update(bytes);
     hex_lower(&h.finalize())
 }
+fn sha256_raw(bytes: &[u8]) -> Vec<u8> {
+    let mut h = NativeSha256::new();
+    h.update(bytes);
+    h.finalize().to_vec()
+}
+fn merkle_root_bytes(leaves: &[[u8; 32]]) -> [u8; 32] {
+    if leaves.is_empty() {
+        let r = sha256_raw(b"");
+        return r.as_slice().try_into().unwrap_or([0u8; 32]);
+    }
+    let mut level: Vec<[u8; 32]> = leaves.to_vec();
+    while level.len() > 1 {
+        let mut next = Vec::with_capacity((level.len() + 1) / 2);
+        let mut i = 0;
+        while i < level.len() {
+            let left = level[i];
+            let right = if i + 1 < level.len() { level[i + 1] } else { level[i] };
+            let mut buf = [0u8; 64];
+            buf[0..32].copy_from_slice(&left);
+            buf[32..64].copy_from_slice(&right);
+            let h = sha256_raw(&buf);
+            next.push(h.as_slice().try_into().unwrap_or([0u8; 32]));
+            i += 2;
+        }
+        level = next;
+    }
+    level[0]
+}
 fn canon_json(v: &J) -> Result<String> {
     fn canon_value(v: &J, out: &mut String) -> Result<()> {
         match v {
@@ -2282,6 +2310,8 @@ enum Builtin {
     MathFloor, MathCeil, MathRound, MathLog, MathLog2,
     // std/bits
     BitAnd, BitOr, BitXor, BitNot, BitShl, BitShr, BitPopcount,
+    // std/bytes
+    BytesConcat, BytesLen, BytesGet, BytesOfList, BytesMerkleRoot, BytesOfStr, BytesToList,
     // std/null
     NullIsNull, NullCoalesce, NullGuard,
     // std/path
@@ -4711,14 +4741,84 @@ fn call_builtin(
         Builtin::HashSha256Text => {
             if args.len() != 1 { bail!("ERROR_BADARG hash.sha256_text expects 1 arg"); }
             let s = match &args[0] { Val::Text(ss) => ss.clone(), _ => bail!("ERROR_BADARG type") };
-            Ok(Val::Text(format!("sha256:{}", sha256_bytes_hex(s.as_bytes()))))
+            Ok(Val::Bytes(sha256_raw(s.as_bytes())))
         }
         Builtin::HashSha256Bytes => {
             if args.len() != 1 { bail!("ERROR_BADARG hash.sha256_bytes expects 1 arg"); }
             match &args[0] {
-                Val::Text(ss) => Ok(Val::Text(format!("sha256:{}", sha256_bytes_hex(ss.as_bytes())))),
-                Val::Bytes(bs) => Ok(Val::Text(format!("sha256:{}", sha256_bytes_hex(bs)))),
-                _ => bail!("ERROR_BADARG hash.sha256_bytes expects str or bytes"),
+                Val::Text(ss) => Ok(Val::Bytes(sha256_raw(ss.as_bytes()))),
+                Val::Bytes(bs) => Ok(Val::Bytes(sha256_raw(bs))),
+                Val::List(xs) => {
+                    let mut v = Vec::with_capacity(xs.len());
+                    for x in xs { match x { Val::Int(n) => v.push((*n & 0xff) as u8), _ => bail!("ERROR_BADARG sha256_bytes list must contain ints") } }
+                    Ok(Val::Bytes(sha256_raw(&v)))
+                }
+                _ => bail!("ERROR_BADARG hash.sha256_bytes expects str, bytes, or list"),
+            }
+        }
+        Builtin::BytesConcat => {
+            if args.len() != 2 { bail!("ERROR_BADARG bytes.concat expects 2 args"); }
+            let mut a = match &args[0] { Val::Bytes(b) => b.clone(), _ => bail!("ERROR_BADARG bytes.concat arg0 must be bytes") };
+            let b = match &args[1] { Val::Bytes(b) => b.clone(), _ => bail!("ERROR_BADARG bytes.concat arg1 must be bytes") };
+            a.extend_from_slice(&b);
+            Ok(Val::Bytes(a))
+        }
+        Builtin::BytesLen => {
+            if args.len() != 1 { bail!("ERROR_BADARG bytes.len expects 1 arg"); }
+            match &args[0] {
+                Val::Bytes(b) => Ok(Val::Int(b.len() as i64)),
+                _ => bail!("ERROR_BADARG bytes.len expects bytes"),
+            }
+        }
+        Builtin::BytesGet => {
+            if args.len() != 2 { bail!("ERROR_BADARG bytes.get expects 2 args"); }
+            match (&args[0], &args[1]) {
+                (Val::Bytes(b), Val::Int(i)) => {
+                    let idx = *i as usize;
+                    if idx >= b.len() { bail!("ERROR_BOUNDS bytes.get index {} out of range", i) }
+                    Ok(Val::Int(b[idx] as i64))
+                }
+                _ => bail!("ERROR_BADARG bytes.get expects (bytes, int)"),
+            }
+        }
+        Builtin::BytesOfList => {
+            if args.len() != 1 { bail!("ERROR_BADARG bytes.of_list expects 1 arg"); }
+            match &args[0] {
+                Val::List(xs) => {
+                    let mut v = Vec::with_capacity(xs.len());
+                    for x in xs { match x { Val::Int(n) => v.push((*n & 0xff) as u8), _ => bail!("ERROR_BADARG bytes.of_list list must contain ints") } }
+                    Ok(Val::Bytes(v))
+                }
+                _ => bail!("ERROR_BADARG bytes.of_list expects list"),
+            }
+        }
+        Builtin::BytesToList => {
+            if args.len() != 1 { bail!("ERROR_BADARG bytes.to_list expects 1 arg"); }
+            match &args[0] {
+                Val::Bytes(b) => Ok(Val::List(b.iter().map(|x| Val::Int(*x as i64)).collect())),
+                _ => bail!("ERROR_BADARG bytes.to_list expects bytes"),
+            }
+        }
+        Builtin::BytesOfStr => {
+            if args.len() != 1 { bail!("ERROR_BADARG bytes.of_str expects 1 arg"); }
+            match &args[0] {
+                Val::Text(s) => Ok(Val::Bytes(s.as_bytes().to_vec())),
+                _ => bail!("ERROR_BADARG bytes.of_str expects string"),
+            }
+        }
+        Builtin::BytesMerkleRoot => {
+            // merkle_root(list_of_bytes) -> bytes
+            if args.len() != 1 { bail!("ERROR_BADARG bytes.merkle_root expects 1 arg"); }
+            match &args[0] {
+                Val::List(xs) => {
+                    let leaves: Result<Vec<[u8;32]>, _> = xs.iter().map(|x| match x {
+                        Val::Bytes(b) => b.as_slice().try_into().map_err(|_| anyhow!("ERROR_BADARG merkle_root each leaf must be 32 bytes")),
+                        _ => Err(anyhow!("ERROR_BADARG merkle_root expects list of bytes")),
+                    }).collect();
+                    let leaves = leaves?;
+                    Ok(Val::Bytes(merkle_root_bytes(&leaves).to_vec()))
+                }
+                _ => bail!("ERROR_BADARG bytes.merkle_root expects list"),
             }
         }
         Builtin::CodecHexEncode => {
@@ -6643,7 +6743,14 @@ impl ModuleLoader {
                 Ok(m)
             }
             "std/bytes" => {
-                let m: BTreeMap<String, Val> = BTreeMap::new();
+                let mut m = BTreeMap::new();
+                m.insert("concat".to_string(),      Val::Builtin(Builtin::BytesConcat));
+                m.insert("len".to_string(),          Val::Builtin(Builtin::BytesLen));
+                m.insert("get".to_string(),          Val::Builtin(Builtin::BytesGet));
+                m.insert("of_list".to_string(),      Val::Builtin(Builtin::BytesOfList));
+                m.insert("to_list".to_string(),      Val::Builtin(Builtin::BytesToList));
+                m.insert("of_str".to_string(),       Val::Builtin(Builtin::BytesOfStr));
+                m.insert("merkle_root".to_string(),  Val::Builtin(Builtin::BytesMerkleRoot));
                 Ok(m)
             }
 
