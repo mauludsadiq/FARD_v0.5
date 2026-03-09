@@ -18,6 +18,7 @@ pub enum Command {
     Run(RunArgs),
     Repl,
     Test(TestArgs),
+    Publish(PublishArgs),
 }
 
 #[derive(Args, Debug)]
@@ -47,8 +48,20 @@ pub struct RunArgs {
     pub enforce_lockfile: bool,
 }
 
+#[derive(Args, Debug)]
+pub struct PublishArgs {
+    #[arg(long)]
+    pub package: PathBuf,
+
+    #[arg(long)]
+    pub token: String,
+
+    #[arg(long, default_value = "mauludsadiq/FARD_v0.5")]
+    pub repo: String,
+}
+
 impl Cli {
-    pub fn parse_compat() -> (RunArgs, bool, bool, Option<TestArgs>) {
+    pub fn parse_compat() -> (RunArgs, bool, bool, Option<TestArgs>, Option<PublishArgs>) {
         use std::ffi::OsString;
         let mut argv: Vec<OsString> = std::env::args_os().collect();
         if argv.len() >= 2 {
@@ -82,7 +95,7 @@ impl Cli {
                 registry: None,
                 enforce_lockfile: false,
             };
-            return (dummy, true, false, None);
+            return (dummy, true, false, None, None);
         }
 
         let want_repl = matches!(cli.cmd, Some(Command::Repl));
@@ -96,7 +109,17 @@ impl Cli {
                     registry: None,
                     enforce_lockfile: false,
                 };
-                return (dummy, false, false, Some(t));
+                return (dummy, false, false, Some(t), None);
+            }
+            Some(Command::Publish(p)) => {
+                let dummy = RunArgs {
+                    program: p.package.clone(),
+                    out: PathBuf::from("."),
+                    lockfile: None,
+                    registry: None,
+                    enforce_lockfile: false,
+                };
+                return (dummy, false, false, None, Some(p));
             }
             Some(Command::Repl) | None => {
                 if want_repl {
@@ -107,7 +130,7 @@ impl Cli {
                         registry: None,
                         enforce_lockfile: false,
                     };
-                    return (dummy, false, true, None);
+                    return (dummy, false, true, None, None);
                 }
                 eprintln!("usage: fardrun run --program <file.fard> --out <dir>");
                 eprintln!("       fardrun test --program <file.fard>");
@@ -117,6 +140,6 @@ impl Cli {
             }
         };
 
-        (run, false, false, None)
+        (run, false, false, None, None)
     }
 }

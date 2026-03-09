@@ -254,7 +254,7 @@ fn write_m5_digests(
 }
 
 fn main() -> Result<()> {
-    let (run, want_version, want_repl, test_args) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
+    let (run, want_version, want_repl, test_args, publish_args) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
     if want_version {
         println!("fard_runtime_version={}", env!("CARGO_PKG_VERSION"));
         println!("trace_format_version=0.1.0");
@@ -385,6 +385,164 @@ fn main() -> Result<()> {
             println!("{}", json_to_string(&J::Object(out)));
         }
         std::process::exit(if failed > 0 { 1 } else { 0 });
+    }
+    // Publish
+    if let Some(pargs) = publish_args {
+        use std::io::Write;
+        let pkg_dir = &pargs.package;
+        let toml_path = pkg_dir.join("fard.toml");
+        let toml_src = fs::read_to_string(&toml_path)
+            .with_context(|| format!("cannot read fard.toml in {}", pkg_dir.display()))?;
+        // Parse name and version from fard.toml
+        let get_field = |key: &str| -> Option<String> {
+            toml_src.lines()
+                .find(|l| l.trim_start().starts_with(key))
+                .and_then(|l| l.split_once('='))
+                .map(|(_, v)| v.trim().trim_matches('"').to_string())
+        };
+        let pkg_name = get_field("name")
+            .ok_or_else(|| anyhow!("fard.toml missing 'name'"))?;
+        let pkg_version = get_field("version")
+            .ok_or_else(|| anyhow!("fard.toml missing 'version'"))?;
+        let tag = format!("pkg-{}-{}", pkg_name, pkg_version);
+        let tarball_name = format!("{}@{}.tar.gz", pkg_name, pkg_version);
+        eprintln!("[fard publish] packaging {}@{}...", pkg_name, pkg_version);
+        // Build tar.gz in temp dir
+        let tmp = std::env::temp_dir();
+        let tarball_path = tmp.join(&tarball_name);
+        let tar_gz = fs::File::create(&tarball_path)?;
+        let enc = flate2::write::GzEncoder::new(tar_gz, flate2::Compression::default());
+        let mut ar = tar::Builder::new(enc);
+        ar.append_dir_all(&pkg_name, pkg_dir)?;
+        ar.finish()?;
+        drop(ar);
+        // Compute sha256
+        let tar_bytes = fs::read(&tarball_path)?;
+        let sha = sha256_bytes_hex(&tar_bytes);
+        eprintln!("[fard publish] sha256: {}", sha);
+        // GitHub API: create release + upload asset
+        let repo = &pargs.repo;
+        let token = &pargs.token;
+        let auth = format!("token {}", token);
+        // Get or create release
+        eprintln!("[fard publish] creating release {}...", tag);
+        let check_url = format!("https://api.github.com/repos/{}/releases/tags/{}", repo, tag);
+        let rel_json: J = match ureq::get(&check_url)
+            .set("Authorization", &auth)
+            .set("User-Agent", "fardrun")
+            .call()
+        {
+            Ok(resp) => {
+                eprintln!("[fard publish] release already exists, updating...");
+                json_from_slice(resp.into_string()?.as_bytes())?
+            }
+            Err(_) => {
+                let rel_url = format!("https://api.github.com/repos/{}/releases", repo);
+                let rel_body = format!(r#"{{"tag_name":"{}","name":"Package: {}@{}","body":"FARD package","draft":false,"prerelease":false}}"#,
+                    tag, pkg_name, pkg_version);
+                let rel_resp = ureq::post(&rel_url)
+                    .set("Authorization", &auth)
+                    .set("Content-Type", "application/json")
+                    .set("User-Agent", "fardrun")
+                    .send_string(&rel_body)?;
+                json_from_slice(rel_resp.into_string()?.as_bytes())?
+            }
+        };
+        let upload_url_tmpl = rel_json.get("upload_url")
+            .and_then(|u| u.as_str())
+            .ok_or_else(|| anyhow!("GitHub API: missing upload_url — check token permissions"))?;
+        let upload_url = upload_url_tmpl.split('{').next().unwrap_or(upload_url_tmpl);
+        let upload_url = format!("{}?name={}", upload_url, tarball_name);
+        // Delete existing tarball asset if present
+        let rel_assets = rel_json.get("assets").and_then(|a| a.as_array()).cloned().unwrap_or_default();
+        if let Some(old_asset) = rel_assets.iter().find(|a| {
+            a.get("name").and_then(|n| n.as_str()) == Some(tarball_name.as_str())
+        }) {
+            let aid = old_asset.get("id").and_then(|i| i.as_i64()).unwrap_or(0);
+            ureq::delete(&format!("https://api.github.com/repos/{}/releases/assets/{}", repo, aid))
+                .set("Authorization", &auth).set("User-Agent", "fardrun").call().ok();
+        }
+        // Upload tarball
+        eprintln!("[fard publish] uploading {}...", tarball_name);
+        ureq::post(&upload_url)
+            .set("Authorization", &auth)
+            .set("Content-Type", "application/gzip")
+            .set("User-Agent", "fardrun")
+            .send_bytes(&tar_bytes)?;
+        // Update registry.json
+        eprintln!("[fard publish] updating registry.json...");
+        let registry_url = format!(
+            "https://api.github.com/repos/{}/releases/tags/registry",
+            repo
+        );
+        let reg_rel: J = json_from_slice(
+            ureq::get(&registry_url)
+                .set("Authorization", &auth)
+                .set("User-Agent", "fardrun")
+                .call()?.into_string()?.as_bytes()
+        )?;
+        // Download existing registry.json asset
+        let assets = reg_rel.get("assets").and_then(|a| a.as_array()).cloned().unwrap_or_default();
+        let mut registry: J = if let Some(asset) = assets.iter().find(|a| {
+            a.get("name").and_then(|n| n.as_str()) == Some("registry.json")
+        }) {
+            let dl_url = asset.get("browser_download_url").and_then(|u| u.as_str()).unwrap_or("");
+            let body = ureq::get(dl_url).call()?.into_string()?;
+            json_from_slice(body.as_bytes()).unwrap_or_else(|_| {
+                let mut m = std::collections::BTreeMap::new();
+                m.insert("packages".to_string(), J::Object(std::collections::BTreeMap::new()));
+                J::Object(m)
+            })
+        } else {
+            let mut m = std::collections::BTreeMap::new();
+            m.insert("packages".to_string(), J::Object(std::collections::BTreeMap::new()));
+            J::Object(m)
+        };
+        // Add new entry
+        let dl_url = format!(
+            "https://github.com/{}/releases/download/{}/{}",
+            repo, tag, tarball_name
+        );
+        let key = format!("{}@{}", pkg_name, pkg_version);
+        let mut entry = BTreeMap::new();
+        entry.insert("url".to_string(), J::Str(dl_url));
+        entry.insert("sha256".to_string(), J::Str(sha.clone()));
+        // Rebuild packages map
+        let mut pkgs: BTreeMap<String, J> = registry
+            .get("packages")
+            .and_then(|p| p.as_object())
+            .map(|m| m.iter().map(|(k,v)| (k.clone(), v.clone())).collect())
+            .unwrap_or_default();
+        pkgs.insert(key, J::Object(entry));
+        let mut new_registry = BTreeMap::new();
+        new_registry.insert("packages".to_string(), J::Object(pkgs));
+        let registry = J::Object(new_registry);
+        // Delete old registry.json asset if exists
+        if let Some(asset) = assets.iter().find(|a| {
+            a.get("name").and_then(|n| n.as_str()) == Some("registry.json")
+        }) {
+            let asset_id = asset.get("id").and_then(|i| i.as_i64()).unwrap_or(0);
+            let del_url = format!("https://api.github.com/repos/{}/releases/assets/{}", repo, asset_id);
+            ureq::delete(&del_url)
+                .set("Authorization", &auth)
+                .set("User-Agent", "fardrun")
+                .call().ok();
+        }
+        // Upload new registry.json
+        let reg_rel_id = reg_rel.get("id").and_then(|i| i.as_i64()).unwrap_or(0);
+        let reg_upload_url = format!(
+            "https://uploads.github.com/repos/{}/releases/{}/assets?name=registry.json",
+            repo, reg_rel_id
+        );
+        let reg_bytes = canonical_json_bytes(&registry);
+        ureq::post(&reg_upload_url)
+            .set("Authorization", &auth)
+            .set("Content-Type", "application/json")
+            .set("User-Agent", "fardrun")
+            .send_bytes(&reg_bytes)?;
+        eprintln!("[fard publish] published {}@{} ✓", pkg_name, pkg_version);
+        println!("{}@{}", pkg_name, pkg_version);
+        return Ok(());
     }
     let program = run.program;
     let out_dir = run.out;
