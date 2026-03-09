@@ -2275,6 +2275,8 @@ struct Func {
 enum Builtin {
     PngRed1x1,
     Unimplemented(&'static str),
+    // Type checking constructors
+    TypeCheck(String, Vec<String>),   // type_name, required_fields
     // std/math
     MathAbs, MathMin, MathMax, MathPow, MathSqrt,
     MathFloor, MathCeil, MathRound, MathLog, MathLog2,
@@ -3362,6 +3364,22 @@ fn call_builtin(
             Ok(Val::Bool(a == b))
         }
 
+        // Type checking constructor
+        Builtin::TypeCheck(type_name, required_fields) => match args.as_slice() {
+            [Val::Record(m)] => {
+                let mut missing: Vec<&String> = required_fields.iter()
+                    .filter(|f| !m.contains_key(f.as_str()))
+                    .collect();
+                if !missing.is_empty() {
+                    missing.sort();
+                    bail!("ERROR_TYPE {}: missing required field(s): {}",
+                        type_name, missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "));
+                }
+                Ok(Val::Record(m.clone()))
+            }
+            [other] => bail!("ERROR_TYPE {}: expected a record, got {:?}", type_name, other),
+            _ => bail!("ERROR_TYPE {}: constructor takes exactly one argument", type_name),
+        },
         // std/math
         Builtin::MathAbs => match args.as_slice() {
             [Val::Int(n)] => Ok(Val::Int(n.abs())),
@@ -6095,13 +6113,11 @@ impl ModuleLoader {
                             let field_names: Vec<String> = fields.iter().map(|f| match f {
                                 TypeField::Named(n, _) => n.clone(),
                             }).collect();
-                            let fname = type_name.clone();
-                            // Identity constructor — structural, no runtime tag
-                            let checker = Val::Func(Func {
-                                params: vec![Pat::Bind("__x".to_string())],
-                                body: Expr::Var("__x".to_string()),
-                                env: env.clone(),
-                            });
+                            // Type-checking constructor: validates required fields at call time
+                            let checker = Val::Builtin(Builtin::TypeCheck(
+                                type_name.clone(),
+                                field_names.clone(),
+                            ));
                             env.set(type_name, checker);
                         }
                         TypeDefKind::Sum(variants) => {
@@ -6110,15 +6126,11 @@ impl ModuleLoader {
                                 let field_names: Vec<String> = fields.iter().map(|f| match f {
                                     TypeField::Named(n, _) => n.clone(),
                                 }).collect();
-                                let vn = vname.clone();
-                                // Variant constructor: takes a record, adds $type tag
-                                // Build body as Expr::Var("__x") — identity, tag added at parse time
-                                // For sum types, constructor is identity (structural)
-                                let ctor = Val::Func(Func {
-                                    params: vec![Pat::Bind("__x".to_string())],
-                                    body: Expr::Var("__x".to_string()),
-                                    env: env.clone(),
-                                });
+                                // Type-checking constructor for sum variant
+                                let ctor = Val::Builtin(Builtin::TypeCheck(
+                                    format!("{}::{}", type_name, vname),
+                                    field_names.clone(),
+                                ));
                                 env.set(vname, ctor);
                             }
                         }
