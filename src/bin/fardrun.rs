@@ -2540,6 +2540,7 @@ enum Builtin {
     CastFloat, CastInt, CastText, StrJoin, ListAny, ListAll, ListFind, ListFindIndex, ListTake, ListDrop, ListFlatMap,
     MathSin, MathCos, MathTan, MathAtan2, IntToHex, IntToBin, FloatIsInf, TypeOf,
     EnvGet, EnvArgs, ProcessSpawn, ProcessExit,
+    ReMatch, ReFind, ReFindAll, ReSplit, ReReplace,
     LinalgTranspose,
     LinalgEigh,
     LinalgVecAdd,
@@ -6085,6 +6086,46 @@ fn call_builtin(
             }
             _ => bail!("ERROR_BADARG list.flat_map expects (list, fn)"),
         }
+        Builtin::ReMatch => match args.as_slice() {
+            [Val::Text(pattern), Val::Text(text)] => {
+                let re = regex::Regex::new(pattern).map_err(|e| anyhow::anyhow!("re.match: {}", e))?;
+                Ok(Val::Bool(re.is_match(text)))
+            }
+            _ => bail!("ERROR_BADARG re.match expects (pattern, text)"),
+        }
+        Builtin::ReFind => match args.as_slice() {
+            [Val::Text(pattern), Val::Text(text)] => {
+                let re = regex::Regex::new(pattern).map_err(|e| anyhow::anyhow!("re.find: {}", e))?;
+                match re.find(text) {
+                    Some(m) => { let mut rec = BTreeMap::new(); rec.insert("some".to_string(), Val::Text(m.as_str().to_string())); Ok(Val::Record(rec)) }
+                    None    => { let mut rec = BTreeMap::new(); rec.insert("none".to_string(), Val::Unit); Ok(Val::Record(rec)) }
+                }
+            }
+            _ => bail!("ERROR_BADARG re.find expects (pattern, text)"),
+        }
+        Builtin::ReFindAll => match args.as_slice() {
+            [Val::Text(pattern), Val::Text(text)] => {
+                let re = regex::Regex::new(pattern).map_err(|e| anyhow::anyhow!("re.find_all: {}", e))?;
+                let matches: Vec<Val> = re.find_iter(text).map(|m| Val::Text(m.as_str().to_string())).collect();
+                Ok(Val::List(matches))
+            }
+            _ => bail!("ERROR_BADARG re.find_all expects (pattern, text)"),
+        }
+        Builtin::ReSplit => match args.as_slice() {
+            [Val::Text(pattern), Val::Text(text)] => {
+                let re = regex::Regex::new(pattern).map_err(|e| anyhow::anyhow!("re.split: {}", e))?;
+                let parts: Vec<Val> = re.split(text).map(|s| Val::Text(s.to_string())).collect();
+                Ok(Val::List(parts))
+            }
+            _ => bail!("ERROR_BADARG re.split expects (pattern, text)"),
+        }
+        Builtin::ReReplace => match args.as_slice() {
+            [Val::Text(pattern), Val::Text(text), Val::Text(replacement)] => {
+                let re = regex::Regex::new(pattern).map_err(|e| anyhow::anyhow!("re.replace: {}", e))?;
+                Ok(Val::Text(re.replace_all(text, replacement.as_str()).to_string()))
+            }
+            _ => bail!("ERROR_BADARG re.replace expects (pattern, text, replacement)"),
+        }
         Builtin::EnvGet => match args.as_slice() {
             [Val::Text(key)] => {
                 match std::env::var(key.as_str()) {
@@ -7254,6 +7295,15 @@ impl ModuleLoader {
                 m.insert("base64url_decode".to_string(), Val::Builtin(Builtin::CodecBase64UrlDecode));
                 m.insert("hex_encode".to_string(), Val::Builtin(Builtin::CodecHexEncode));
                 m.insert("hex_decode".to_string(), Val::Builtin(Builtin::CodecHexDecode));
+                Ok(m)
+            }
+            "std/re" => {
+                let mut m = BTreeMap::new();
+                m.insert("is_match".to_string(), Val::Builtin(Builtin::ReMatch));
+                m.insert("find".to_string(), Val::Builtin(Builtin::ReFind));
+                m.insert("find_all".to_string(), Val::Builtin(Builtin::ReFindAll));
+                m.insert("split".to_string(), Val::Builtin(Builtin::ReSplit));
+                m.insert("replace".to_string(), Val::Builtin(Builtin::ReReplace));
                 Ok(m)
             }
             "std/env" => {
