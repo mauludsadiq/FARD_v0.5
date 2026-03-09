@@ -2537,7 +2537,7 @@ enum Builtin {
     LinalgSoftmax,
     LinalgArgmax,
     ListSet,
-    CastFloat, CastInt,
+    CastFloat, CastInt, CastText,
     LinalgTranspose,
     LinalgEigh,
     LinalgVecAdd,
@@ -5990,6 +5990,17 @@ fn call_builtin(
                 _ => bail!("ERROR_BADARG list.set expects (list, int, val)"),
             }
         }
+        Builtin::CastText => match args.as_slice() {
+            [Val::Int(n)] => {
+                // Convert unicode codepoint to single-char string
+                let c = char::from_u32(*n as u32).unwrap_or('?');
+                Ok(Val::Text(c.to_string()))
+            }
+            [Val::Float(f)] => Ok(Val::Text(f.to_string())),
+            [Val::Bool(b)] => Ok(Val::Text(b.to_string())),
+            [Val::Text(s)] => Ok(Val::Text(s.clone())),
+            _ => bail!("ERROR_BADARG cast.text expects one arg"),
+        }
         Builtin::CastFloat => {
             if args.len() != 1 { bail!("ERROR_BADARG float() expects 1 arg"); }
             match &args[0] {
@@ -6864,6 +6875,7 @@ impl ModuleLoader {
                 let mut m = BTreeMap::new();
                 m.insert("float".to_string(), Val::Builtin(Builtin::CastFloat));
                 m.insert("int".to_string(),   Val::Builtin(Builtin::CastInt));
+                m.insert("text".to_string(), Val::Builtin(Builtin::CastText));
                 Ok(m)
             }
             "std/int" => {
