@@ -2504,6 +2504,11 @@ enum Builtin {
     LinalgEye,
     LinalgMatvec,
     LinalgMatmul,
+    LinalgRelu,
+    LinalgSoftmax,
+    LinalgArgmax,
+    ListSet,
+    CastFloat, CastInt,
     LinalgTranspose,
     LinalgEigh,
     LinalgVecAdd,
@@ -5938,6 +5943,80 @@ fn call_builtin(
             let rows = m.len(); let cols = m[0].len();
             Ok(Val::List((0..cols).map(|j| Val::List((0..rows).map(|i| fv(m[i][j])).collect())).collect()))
         }
+        Builtin::ListSet => {
+            if args.len() != 3 { bail!("ERROR_BADARG list.set expects (list, idx, val)"); }
+            match (&args[0], &args[1]) {
+                (Val::List(xs), Val::Int(i)) => {
+                    let mut v = xs.clone();
+                    let idx = *i as usize;
+                    if idx >= v.len() { bail!("ERROR_BOUNDS list.set index {} out of range (len {})", i, v.len()); }
+                    v[idx] = args[2].clone();
+                    Ok(Val::List(v))
+                }
+                _ => bail!("ERROR_BADARG list.set expects (list, int, val)"),
+            }
+        }
+        Builtin::CastFloat => {
+            if args.len() != 1 { bail!("ERROR_BADARG float() expects 1 arg"); }
+            match &args[0] {
+                Val::Float(f) => Ok(Val::Float(*f)),
+                Val::Int(n)   => Ok(Val::Float(*n as f64)),
+                Val::Text(s)  => Ok(Val::Float(s.parse::<f64>().map_err(|_| anyhow!("ERROR_BADARG float() cannot parse '{}'", s))?)),
+                _ => bail!("ERROR_BADARG float() expects int, float, or string"),
+            }
+        }
+        Builtin::CastInt => {
+            if args.len() != 1 { bail!("ERROR_BADARG int() expects 1 arg"); }
+            match &args[0] {
+                Val::Int(n)   => Ok(Val::Int(*n)),
+                Val::Float(f) => Ok(Val::Int(*f as i64)),
+                Val::Text(s)  => Ok(Val::Int(s.parse::<i64>().map_err(|_| anyhow!("ERROR_BADARG int() cannot parse '{}'", s))?)),
+                _ => bail!("ERROR_BADARG int() expects int, float, or string"),
+            }
+        }
+        Builtin::LinalgRelu => {
+            if args.len() != 1 { bail!("ERROR_BADARG linalg.relu expects 1 arg"); }
+            match &args[0] {
+                Val::List(xs) => {
+                    let v: Result<Vec<Val>> = xs.iter().map(|x| {
+                        let f = val_to_f64_linalg(x)?;
+                        Ok(fv(f.max(0.0)))
+                    }).collect();
+                    Ok(Val::List(v?))
+                }
+                _ => bail!("ERROR_BADARG relu expects list"),
+            }
+        }
+        Builtin::LinalgSoftmax => {
+            if args.len() != 1 { bail!("ERROR_BADARG linalg.softmax expects 1 arg"); }
+            match &args[0] {
+                Val::List(xs) => {
+                    let fs: Result<Vec<f64>> = xs.iter().map(|x| val_to_f64_linalg(x)).collect();
+                    let fs = fs?;
+                    let max = fs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                    let exps: Vec<f64> = fs.iter().map(|&x| (x - max).exp()).collect();
+                    let sum: f64 = exps.iter().sum();
+                    Ok(Val::List(exps.iter().map(|&e| Val::Float(e / sum)).collect()))
+                }
+                _ => bail!("ERROR_BADARG softmax expects list"),
+            }
+        }
+        Builtin::LinalgArgmax => {
+            if args.len() != 1 { bail!("ERROR_BADARG linalg.argmax expects 1 arg"); }
+            match &args[0] {
+                Val::List(xs) => {
+                    if xs.is_empty() { bail!("ERROR_BADARG argmax on empty list"); }
+                    let mut best_i = 0usize;
+                    let mut best_v = f64::NEG_INFINITY;
+                    for (i, x) in xs.iter().enumerate() {
+                        let v = val_to_f64_linalg(x)?;
+                        if v > best_v { best_v = v; best_i = i; }
+                    }
+                    Ok(Val::Int(best_i as i64))
+                }
+                _ => bail!("ERROR_BADARG argmax expects list"),
+            }
+        }
         Builtin::LinalgMatvec => {
             let m = vl_to_mat(&args[0])?;
             let x = vl_to_f64(&args[1])?;
@@ -5974,6 +6053,17 @@ fn call_builtin(
 }
 
 fn fv(f: f64) -> Val { Val::Bytes(f.to_le_bytes().to_vec()) }
+fn val_to_f64_linalg(v: &Val) -> Result<f64> {
+    match v {
+        Val::Bytes(b) if b.len() == 8 => {
+            let arr: [u8;8] = b.as_slice().try_into().unwrap();
+            Ok(f64::from_le_bytes(arr))
+        }
+        Val::Float(f) => Ok(*f),
+        Val::Int(n)   => Ok(*n as f64),
+        _ => bail!("ERROR_BADARG linalg: expected float value, got {:?}", v),
+    }
+}
 
 fn fb64_1(args: &[Val]) -> anyhow::Result<f64> {
     match args.first() {
@@ -6627,6 +6717,7 @@ impl ModuleLoader {
                 m.insert("zip".to_string(), Val::Builtin(Builtin::ListZip));
                 m.insert("reverse".to_string(), Val::Builtin(Builtin::ListReverse));
                 m.insert("flatten".to_string(), Val::Builtin(Builtin::ListFlatten));
+                m.insert("set".to_string(), Val::Builtin(Builtin::ListSet));
                 m.insert(
                     "sort_by_int_key".to_string(),
                     Val::Builtin(Builtin::ListSortByIntKey),
@@ -6734,6 +6825,13 @@ impl ModuleLoader {
                 Ok(m)
             }
 
+            "std/cast" =>
+            {
+                let mut m = BTreeMap::new();
+                m.insert("float".to_string(), Val::Builtin(Builtin::CastFloat));
+                m.insert("int".to_string(),   Val::Builtin(Builtin::CastInt));
+                Ok(m)
+            }
             "std/int" => {
                 let mut m = BTreeMap::new();
                 m.insert("add".to_string(), Val::Builtin(Builtin::IntAdd));
@@ -6996,6 +7094,9 @@ impl ModuleLoader {
                 m.insert("zeros".to_string(), Val::Builtin(Builtin::LinalgZeros));
                 m.insert("eye".to_string(), Val::Builtin(Builtin::LinalgEye));
                 m.insert("matvec".to_string(), Val::Builtin(Builtin::LinalgMatvec));
+                m.insert("relu".to_string(), Val::Builtin(Builtin::LinalgRelu));
+                m.insert("softmax".to_string(), Val::Builtin(Builtin::LinalgSoftmax));
+                m.insert("argmax".to_string(), Val::Builtin(Builtin::LinalgArgmax));
                 m.insert("matmul".to_string(), Val::Builtin(Builtin::LinalgMatmul));
                 m.insert("transpose".to_string(), Val::Builtin(Builtin::LinalgTranspose));
                 m.insert("eigh".to_string(), Val::Builtin(Builtin::LinalgEigh));
