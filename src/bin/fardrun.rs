@@ -2547,7 +2547,7 @@ enum Builtin {
     CastFloat, CastInt, CastText, StrJoin, ListAny, ListAll, ListFind, ListFindIndex, ListTake, ListDrop, ListFlatMap,
     MathSin, MathCos, MathTan, MathAtan2, IntToHex, IntToBin, FloatIsInf, TypeOf,
     EnvGet, EnvArgs, ProcessSpawn, ProcessExit,
-    ReMatch, ReFind, ReFindAll, ReSplit, ReReplace,
+    ReMatch, ReFind, ReFindAll, ReSplit, ReReplace, FardEval,
     CellNew, CellGet, CellSet,
     LinalgTranspose,
     LinalgEigh,
@@ -6143,6 +6143,25 @@ fn call_builtin(
             [Val::List(v), new_val] if v.len() == 1 => Ok(Val::List(vec![new_val.clone()])),
             _ => bail!("cell.set expects (cell, value)"),
         }
+        Builtin::FardEval => match args.as_slice() {
+            [Val::Text(code)] => {
+                let mut p = Parser::from_src(code, "<eval>")?;
+                let items = p.parse_module()?;
+                let mut child_env = Env::new();
+                loader.eval_items(items, &mut child_env, tracer, std::path::Path::new("."))?;
+                // Return the last expression value from child_env, or Unit
+                match child_env.get("__result__") {
+                    Some(v) => Ok(v.clone()),
+                    None => {
+                        // re-eval as single expr for convenience
+                        let mut p2 = Parser::from_src(code, "<eval>")?;
+                        let expr = p2.parse_expr()?;
+                        eval(&expr, &mut child_env, tracer, loader)
+                    }
+                }
+            }
+            _ => bail!("ERROR_BADARG eval expects text"),
+        }
         Builtin::ReMatch => match args.as_slice() {
             [Val::Text(pattern), Val::Text(text)] => {
                 let re = regex::Regex::new(pattern).map_err(|e| anyhow::anyhow!("re.match: {}", e))?;
@@ -7359,6 +7378,11 @@ impl ModuleLoader {
                 m.insert("new".to_string(), Val::Builtin(Builtin::CellNew));
                 m.insert("get".to_string(), Val::Builtin(Builtin::CellGet));
                 m.insert("set".to_string(), Val::Builtin(Builtin::CellSet));
+                Ok(m)
+            }
+            "std/eval" => {
+                let mut m = BTreeMap::new();
+                m.insert("eval".to_string(), Val::Builtin(Builtin::FardEval));
                 Ok(m)
             }
             "std/re" => {
