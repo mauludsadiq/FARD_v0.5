@@ -1251,12 +1251,24 @@ impl Parser {
             let name = self.expect_ident()?;
             self.expect_sym("=")?;
             let rhs = self.parse_expr()?;
-            // If followed by `in`, this is a let-in expression — parse the
-            // continuation as a full expression and wrap remaining binds around it.
+            // If followed by `in`, this is a let-in expression
             if self.eat_kw("in") {
                 let mut tail = self.parse_expr()?;
-                // Wrap any pending `in` continuations (chained let-in)
                 tail = Expr::Let(name, Box::new(rhs), Box::new(tail));
+                for (n, r) in binds.into_iter().rev() {
+                    tail = Expr::Let(n, Box::new(r), Box::new(tail));
+                }
+                return Ok(tail);
+            }
+            // If followed by `|` (pipe/sequence), treat as: let name = rhs; next_expr
+            if matches!(self.peek(), Tok::Sym(s) if s == "|")
+                && !matches!(self.peek_n(1), Tok::Sym(s) if s == "|")
+            {
+                self.bump(); // consume |
+                binds.push((name, rhs));
+                // parse the continuation as a new block
+                let mut tail = self.parse_fn_block_inner()?;
+                // Note: parse_fn_block_inner will handle further lets and pipes
                 for (n, r) in binds.into_iter().rev() {
                     tail = Expr::Let(n, Box::new(r), Box::new(tail));
                 }
@@ -1265,6 +1277,14 @@ impl Parser {
             binds.push((name, rhs));
         }
         let mut tail = self.parse_expr()?;
+        // Support `expr | expr` as sequencing: bind result of lhs as `_`, eval rhs
+        while matches!(self.peek(), Tok::Sym(s) if s == "|") {
+            // Only treat | as pipe if next token after | is not |  (avoid || operator)
+            if matches!(self.peek_n(1), Tok::Sym(s) if s == "|") { break; }
+            self.bump(); // consume |
+            let rhs = self.parse_expr()?;
+            tail = Expr::Let("_".to_string(), Box::new(tail), Box::new(rhs));
+        }
         for (name, rhs) in binds.into_iter().rev() {
             tail = Expr::Let(name, Box::new(rhs), Box::new(tail));
         }
