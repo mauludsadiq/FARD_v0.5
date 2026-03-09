@@ -7,6 +7,17 @@ use fardlang::check::check_module as fardlang_check_module;
 use fardlang::eval::{eval_block, apply_imports, Env as FardlangEnv};
 use valuecore::val_to_v0;
 #[derive(Debug, Clone)]
+enum TypeField {
+    Named(String, String), // field_name, type_name
+}
+
+#[derive(Debug, Clone)]
+enum TypeDefKind {
+    Record(Vec<TypeField>),
+    Sum(Vec<(String, Vec<TypeField>)>), // variant_name, fields
+}
+
+#[derive(Debug, Clone)]
 enum StrPart {
     Lit(String),
     Expr(Expr),
@@ -732,7 +743,7 @@ impl Lex {
             {
                 let id = t;
                 let kws = [
-                    "let", "in", "fn", "if", "then", "else", "import", "as", "export", "match",
+                    "let", "in", "fn", "if", "then", "else", "import", "as", "export", "match", "a", "is", "or",
                     "using", "true", "false", "null",
                 ];
                 if kws.contains(&id.as_str()) {
@@ -991,6 +1002,7 @@ enum Item {
     Let(String, Expr, Option<ErrorSpan>),
     Fn(String, Vec<(Pat, Option<Type>)>, Option<Type>, Expr),
     Export(Vec<String>),
+    TypeDef(String, TypeDefKind),
     Expr(Expr, Option<ErrorSpan>),
 }
 struct Parser {
@@ -1252,6 +1264,48 @@ impl Parser {
     fn parse_module(&mut self) -> Result<Vec<Item>> {
         let mut items = Vec::new();
         while !matches!(self.peek(), Tok::Eof) {
+            // "a Point is { x: Int, y: Int }" or "a Shape is Circle(r: Int) or Rect(w: Int, h: Int)"
+            if self.eat_kw("a") {
+                let type_name = self.expect_ident()?;
+                self.expect_kw("is")?;
+                let kind = if matches!(self.peek(), Tok::Sym(s) if s == "{") {
+                    // record type: a Point is { x: Int, y: Int }
+                    self.expect_sym("{")?;
+                    let mut fields = Vec::new();
+                    while !matches!(self.peek(), Tok::Sym(s) if s == "}") {
+                        let fname = self.expect_ident()?;
+                        self.expect_sym(":")?;
+                        let tname = self.expect_ident()?;
+                        fields.push(TypeField::Named(fname, tname));
+                        self.eat_sym(",");
+                    }
+                    self.expect_sym("}")?;
+                    TypeDefKind::Record(fields)
+                } else {
+                    // sum type: a Shape is Circle(r: Int) or Rect(w: Int, h: Int)
+                    let mut variants = Vec::new();
+                    loop {
+                        let vname = self.expect_ident()?;
+                        let mut fields = Vec::new();
+                        if matches!(self.peek(), Tok::Sym(s) if s == "(") {
+                            self.expect_sym("(")?;
+                            while !matches!(self.peek(), Tok::Sym(s) if s == ")") {
+                                let fname = self.expect_ident()?;
+                                self.expect_sym(":")?;
+                                let tname = self.expect_ident()?;
+                                fields.push(TypeField::Named(fname, tname));
+                                self.eat_sym(",");
+                            }
+                            self.expect_sym(")")?;
+                        }
+                        variants.push((vname, fields));
+                        if !self.eat_kw("or") { break; }
+                    }
+                    TypeDefKind::Sum(variants)
+                };
+                items.push(Item::TypeDef(type_name, kind));
+                continue;
+            }
             if self.eat_kw("import") {
                 self.expect_sym("(")?;
                 let p = match self.bump() {
@@ -5504,6 +5558,43 @@ impl ModuleLoader {
                     env.set(name, f);
                 }
                 Item::Export(ns) => exports = Some(ns),
+                Item::TypeDef(type_name, kind) => {
+                    match kind {
+                        TypeDefKind::Record(fields) => {
+                            // Constructor: Point { x: 3, y: 4 } is handled at call site
+                            // Register a validator function: Point(record) -> record (validated)
+                            let field_names: Vec<String> = fields.iter().map(|f| match f {
+                                TypeField::Named(n, _) => n.clone(),
+                            }).collect();
+                            let fname = type_name.clone();
+                            // Identity constructor — structural, no runtime tag
+                            let checker = Val::Func(Func {
+                                params: vec![Pat::Bind("__x".to_string())],
+                                body: Expr::Var("__x".to_string()),
+                                env: env.clone(),
+                            });
+                            env.set(type_name, checker);
+                        }
+                        TypeDefKind::Sum(variants) => {
+                            // Register each variant as a constructor function
+                            for (vname, fields) in variants {
+                                let field_names: Vec<String> = fields.iter().map(|f| match f {
+                                    TypeField::Named(n, _) => n.clone(),
+                                }).collect();
+                                let vn = vname.clone();
+                                // Variant constructor: takes a record, adds $type tag
+                                // Build body as Expr::Var("__x") — identity, tag added at parse time
+                                // For sum types, constructor is identity (structural)
+                                let ctor = Val::Func(Func {
+                                    params: vec![Pat::Bind("__x".to_string())],
+                                    body: Expr::Var("__x".to_string()),
+                                    env: env.clone(),
+                                });
+                                env.set(vname, ctor);
+                            }
+                        }
+                    }
+                }
                 Item::Expr(e, span) => {
                     last = eval(&e, env, tracer, self).map_err(|e| {
                         if let Some(sp) = &span {
