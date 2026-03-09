@@ -2539,6 +2539,7 @@ enum Builtin {
     ListSet,
     CastFloat, CastInt, CastText, StrJoin, ListAny, ListAll, ListFind, ListFindIndex, ListTake, ListDrop, ListFlatMap,
     MathSin, MathCos, MathTan, MathAtan2, IntToHex, IntToBin, FloatIsInf, TypeOf,
+    EnvGet, EnvArgs, ProcessSpawn, ProcessExit,
     LinalgTranspose,
     LinalgEigh,
     LinalgVecAdd,
@@ -6084,6 +6085,41 @@ fn call_builtin(
             }
             _ => bail!("ERROR_BADARG list.flat_map expects (list, fn)"),
         }
+        Builtin::EnvGet => match args.as_slice() {
+            [Val::Text(key)] => {
+                match std::env::var(key.as_str()) {
+                    Ok(v) => { let mut m = BTreeMap::new(); m.insert("some".to_string(), Val::Text(v)); Ok(Val::Record(m)) }
+                    Err(_) => { let mut m = BTreeMap::new(); m.insert("none".to_string(), Val::Unit); Ok(Val::Record(m)) }
+                }
+            }
+            _ => bail!("ERROR_BADARG env.get expects text key"),
+        }
+        Builtin::EnvArgs => {
+            let args_list: Vec<Val> = std::env::args().map(|a| Val::Text(a)).collect();
+            Ok(Val::List(args_list))
+        }
+        Builtin::ProcessSpawn => match args.as_slice() {
+            [Val::Text(cmd), Val::List(cmd_args)] => {
+                let str_args: Vec<String> = cmd_args.iter().map(|a| match a {
+                    Val::Text(s) => Ok(s.clone()),
+                    _ => Err(anyhow::anyhow!("process.spawn: args must be text")),
+                }).collect::<Result<Vec<_>>>()?;
+                let out = std::process::Command::new(cmd.as_str())
+                    .args(&str_args)
+                    .output()
+                    .map_err(|e| anyhow::anyhow!("ERROR_IO process.spawn: {}", e))?;
+                let mut m = BTreeMap::new();
+                m.insert("stdout".to_string(), Val::Text(String::from_utf8_lossy(&out.stdout).to_string()));
+                m.insert("stderr".to_string(), Val::Text(String::from_utf8_lossy(&out.stderr).to_string()));
+                m.insert("code".to_string(), Val::Int(out.status.code().unwrap_or(-1) as i64));
+                Ok(Val::Record(m))
+            }
+            _ => bail!("ERROR_BADARG process.spawn expects (text, list)"),
+        }
+        Builtin::ProcessExit => match args.as_slice() {
+            [Val::Int(code)] => { std::process::exit(*code as i32); }
+            _ => { std::process::exit(0); }
+        }
         Builtin::MathSin => match args.as_slice() {
             [Val::Float(f)] => Ok(Val::Float(f.sin())),
             [Val::Int(n)] => Ok(Val::Float((*n as f64).sin())),
@@ -7221,7 +7257,15 @@ impl ModuleLoader {
                 Ok(m)
             }
             "std/env" => {
-                let m: BTreeMap<String, Val> = BTreeMap::new();
+                let mut m = BTreeMap::new();
+                m.insert("get".to_string(), Val::Builtin(Builtin::EnvGet));
+                m.insert("args".to_string(), Val::Builtin(Builtin::EnvArgs));
+                Ok(m)
+            }
+            "std/process" => {
+                let mut m = BTreeMap::new();
+                m.insert("spawn".to_string(), Val::Builtin(Builtin::ProcessSpawn));
+                m.insert("exit".to_string(), Val::Builtin(Builtin::ProcessExit));
                 Ok(m)
             }
             "std/hash" => {
