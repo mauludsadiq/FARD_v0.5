@@ -1125,7 +1125,7 @@ impl Lex {
             {
                 let id = t;
                 let kws = [
-                    "let", "in", "fn", "if", "then", "else", "import", "as", "export", "match", "test",
+                    "let", "in", "fn", "if", "then", "else", "import", "as", "export", "match", "test", "while",
                     "using", "true", "false", "null",
                 ];
                 if kws.contains(&id.as_str()) {
@@ -1406,6 +1406,7 @@ enum Expr {
     Try(Box<Expr>),
     Match(Box<Expr>, Vec<MatchArm>),
     Using(Pat, Box<Expr>, Box<Expr>),
+    While(Box<Expr>, Box<Expr>),
 }
 #[derive(Clone, Debug)]
 enum Item {
@@ -1985,6 +1986,13 @@ impl Parser {
                 _ => return Ok(Expr::LetPat(pat, Box::new(e1), Box::new(e2))),
             }
         }
+        if self.eat_kw("while") {
+            let cond = self.parse_expr()?;
+            self.expect_sym("{")?;
+            let body = self.parse_fn_block_inner()?;
+            self.expect_sym("}")?;
+            return Ok(Expr::While(Box::new(cond), Box::new(body)));
+        }
         if self.eat_kw("if") {
             let c = self.parse_expr()?;
             self.expect_kw("then")?;
@@ -2541,6 +2549,7 @@ enum Builtin {
     MathSin, MathCos, MathTan, MathAtan2, IntToHex, IntToBin, FloatIsInf, TypeOf,
     EnvGet, EnvArgs, ProcessSpawn, ProcessExit,
     ReMatch, ReFind, ReFindAll, ReSplit, ReReplace,
+    CellNew, CellGet, CellSet,
     LinalgTranspose,
     LinalgEigh,
     LinalgVecAdd,
@@ -2960,6 +2969,18 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                 bail!("{} let pattern did not match", ERROR_PAT_MISMATCH);
             }
             eval(e2, &mut child, tracer, loader)
+        }
+        Expr::While(cond, body) => {
+            let mut last = Val::Unit;
+            loop {
+                let cv = eval(cond, env, tracer, loader)?;
+                match cv {
+                    Val::Bool(true) => { last = eval(body, env, tracer, loader)?; }
+                    Val::Bool(false) => break,
+                    _ => bail!("while cond must be bool"),
+                }
+            }
+            Ok(last)
         }
         Expr::If(c, t, f) => {
             let cv = eval(c, env, tracer, loader)?;
@@ -6086,6 +6107,18 @@ fn call_builtin(
             }
             _ => bail!("ERROR_BADARG list.flat_map expects (list, fn)"),
         }
+        Builtin::CellNew => match args.as_slice() {
+            [v] => Ok(Val::List(vec![v.clone()])),  // cell is a single-element list as mutable box
+            _ => bail!("cell.new expects 1 arg"),
+        }
+        Builtin::CellGet => match args.as_slice() {
+            [Val::List(v)] if v.len() == 1 => Ok(v[0].clone()),
+            _ => bail!("cell.get expects a cell"),
+        }
+        Builtin::CellSet => match args.as_slice() {
+            [Val::List(v), new_val] if v.len() == 1 => Ok(Val::List(vec![new_val.clone()])),
+            _ => bail!("cell.set expects (cell, value)"),
+        }
         Builtin::ReMatch => match args.as_slice() {
             [Val::Text(pattern), Val::Text(text)] => {
                 let re = regex::Regex::new(pattern).map_err(|e| anyhow::anyhow!("re.match: {}", e))?;
@@ -7295,6 +7328,13 @@ impl ModuleLoader {
                 m.insert("base64url_decode".to_string(), Val::Builtin(Builtin::CodecBase64UrlDecode));
                 m.insert("hex_encode".to_string(), Val::Builtin(Builtin::CodecHexEncode));
                 m.insert("hex_decode".to_string(), Val::Builtin(Builtin::CodecHexDecode));
+                Ok(m)
+            }
+            "std/cell" => {
+                let mut m = BTreeMap::new();
+                m.insert("new".to_string(), Val::Builtin(Builtin::CellNew));
+                m.insert("get".to_string(), Val::Builtin(Builtin::CellGet));
+                m.insert("set".to_string(), Val::Builtin(Builtin::CellSet));
                 Ok(m)
             }
             "std/re" => {
