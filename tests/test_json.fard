@@ -1,0 +1,11 @@
+import("std/json") as json
+
+test "json.encode int" { json.encode(42) == "42" }
+test "json.encode string" { json.encode("hello") == "\"hello\"" }
+test "json.encode bool" { json.encode(true) == "true" }
+test "json.encode list" { json.encode([1,2,3]) == "[1,2,3]" }
+test "json.decode int" { json.decode("42") == 42 }
+test "json.decode string" { json.decode("\"hello\"") == "hello" }
+test "json.decode list" { json.decode("[1,2,3]") == [1,2,3] }
+test "json.roundtrip" { json.decode(json.encode([1,"two",true])) == [1,"two",true] }
+test "json.canonicalize" { json.canonicalize(json.encode({b: 2, a: 1})) == json.canonicalize(json.encode({a: 1, b: 2})) }
