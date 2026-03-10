@@ -1186,20 +1186,6 @@ impl Lex {
                 }
                 return Ok(Tok::Float(base));
             }
-            // Check for scientific notation on integers: 1e10
-            if self.peek().map(|c| c == 'e' || c == 'E').unwrap_or(false) {
-                self.i += 1;
-                let neg_exp = if self.peek() == Some('-') { self.i += 1; true }
-                              else if self.peek() == Some('+') { self.i += 1; false }
-                              else { false };
-                let mut exp: i32 = 0;
-                while let Some(d) = self.peek() {
-                    if d.is_ascii_digit() { exp = exp * 10 + (d as i32 - '0' as i32); self.i += 1; }
-                    else { break; }
-                }
-                let factor = 10f64.powi(if neg_exp { -exp } else { exp });
-                return Ok(Tok::Float(n as f64 * factor));
-            }
             return Ok(Tok::Num(n));
         }
         if c == '`' {
