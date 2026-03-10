@@ -1,0 +1,25 @@
+import("std/type") as type
+import("std/str") as str
+
+test "type.of int" { type.of(42) == "int" }
+test "type.of float" { type.of(3.14) == "float" }
+test "type.of text" { type.of("hi") == "text" }
+test "type.of bool" { type.of(true) == "bool" }
+test "type.of list" { type.of([1,2,3]) == "list" }
+test "type.of record" { type.of({a: 1}) == "record" }
+test "type.of unit" { type.of(null) == "unit" }
+test "type.of func" { type.of(fn(x) { x }) == "func" }
+
+let dispatch = fn(v) {
+  match type.of(v) {
+    "int"  => str.concat("int:", str.from_int(v)),
+    "text" => str.concat("text:", v),
+    "bool" => "bool",
+    _      => "other"
+  }
+}
+
+test "type dispatch int" { dispatch(99) == "int:99" }
+test "type dispatch text" { dispatch("hi") == "text:hi" }
+test "type dispatch bool" { dispatch(true) == "bool" }
+test "type dispatch list" { dispatch([1]) == "other" }
