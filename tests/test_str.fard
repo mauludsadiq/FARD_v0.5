@@ -1,0 +1,12 @@
+import("std/str") as str
+
+test "str.pad_left" { str.pad_left("42", 6, "0") == "000042" }
+test "str.pad_right" { str.pad_right("hi", 5, ".") == "hi..." }
+test "str.repeat" { str.repeat("ab", 3) == "ababab" }
+test "str.index_of hit" { str.index_of("hello world", "world") == 6 }
+test "str.index_of miss" { str.index_of("hello", "xyz") == -1 }
+test "str.chars" { str.chars("abc") == ["a","b","c"] }
+test "str.ends_with" { str.ends_with("hello", "lo") == true }
+test "str.replace" { str.replace("hello world", "world", "FARD") == "hello FARD" }
+test "str.from_int" { str.from_int(42) == "42" }
+test "str.from_float" { str.from_float(3.14) == "3.14" }

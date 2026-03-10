@@ -5150,6 +5150,7 @@ fn call_builtin(
                     Ok(Val::Text(f64::from_le_bytes(arr).to_string()))
                 }
                 Some(Val::Int(n)) => Ok(Val::Text((*n as f64).to_string())),
+                Some(Val::Float(f)) => Ok(Val::Text(f.to_string())),
                 _ => bail!("ERROR_BADARG str.from_float expects float"),
             }
         }
