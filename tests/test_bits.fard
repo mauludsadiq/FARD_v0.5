@@ -1,0 +1,16 @@
+import("std/bits") as bits
+
+test "band positive" { bits.band(12, 10) == 8 }
+test "bor positive" { bits.bor(12, 10) == 14 }
+test "bxor positive" { bits.bxor(12, 10) == 6 }
+test "bnot zero" { bits.bnot(0) == -1 }
+test "bnot one" { bits.bnot(1) == -2 }
+test "bnot negative" { bits.bnot(-1) == 0 }
+test "band negative" { bits.band(-1, 255) == 255 }
+test "bor negative" { bits.bor(-1, 0) == -1 }
+test "bxor negative" { bits.bxor(-1, -1) == 0 }
+test "bshl" { bits.bshl(1, 10) == 1024 }
+test "bshr positive" { bits.bshr(1024, 10) == 1 }
+test "bshr negative" { bits.bshr(-1, 1) == -1 }
+test "two complement -1 band" { bits.band(-1, 255) == 255 }
+test "two complement round trip" { bits.bnot(bits.bnot(42)) == 42 }
