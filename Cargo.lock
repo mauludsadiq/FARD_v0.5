@@ -478,6 +478,8 @@ dependencies = [
  "fardlang",
  "flate2",
  "hex",
+ "num-bigint",
+ "num-traits",
  "pretty_assertions",
  "rayon",
  "regex",

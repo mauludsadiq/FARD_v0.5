@@ -1,0 +1,18 @@
+import("std/bigint") as big
+
+let a = big.from_int(1000000000)
+let b = big.from_int(1000000000)
+let c = big.mul(a, b)
+
+test "bigint.from_int" { big.to_str(a) == "1000000000" }
+test "bigint.mul overflow" { big.to_str(c) == "1000000000000000000" }
+test "bigint.add" { big.to_str(big.add(a, b)) == "2000000000" }
+test "bigint.sub" { big.to_str(big.sub(b, a)) == "0" }
+test "bigint.div" { big.to_str(big.div(c, a)) == "1000000000" }
+test "bigint.mod" { big.to_str(big.mod(big.from_int(17), big.from_int(5))) == "2" }
+test "bigint.pow" { big.to_str(big.pow(big.from_int(2), 64)) == "18446744073709551616" }
+test "bigint.from_str" { big.to_str(big.from_str("99999999999999999999")) == "99999999999999999999" }
+test "bigint.eq true" { big.eq(big.from_int(42), big.from_int(42)) == true }
+test "bigint.eq false" { big.eq(big.from_int(42), big.from_int(43)) == false }
+test "bigint.lt" { big.lt(big.from_int(1), big.from_int(2)) == true }
+test "bigint.gt" { big.gt(big.from_int(2), big.from_int(1)) == true }

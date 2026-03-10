@@ -2318,6 +2318,7 @@ enum Val {
     BoundMethod(Box<Val>, Box<Val>),
     Chan(Arc<Mutex<std::collections::VecDeque<Val>>>, Arc<Mutex<bool>>),
     Mtx(Arc<Mutex<Val>>),
+    Big(Box<BigInt>),
 }
 
 impl Val {
@@ -2337,6 +2338,7 @@ impl Val {
             Val::Err { .. } => "err", Val::Func(_) => "func", Val::Builtin(_) => "builtin",
             Val::Chan(..) => "chan",
             Val::Mtx(..) => "mutex",
+            Val::Big(..) => "bigint",
         }
     }
 }
@@ -2573,6 +2575,7 @@ enum Builtin {
     FloatToStrFixed,
     UuidV4, UuidValidate,
     IntToStrPadded,
+    BigFromInt, BigFromStr, BigAdd, BigSub, BigMul, BigDiv, BigPow, BigToStr, BigEq, BigLt, BigGt, BigMod,
     DateTimeNow, DateTimeFormat, DateTimeParse, DateTimeAdd, DateTimeSub, DateTimeField,
     ListParMap,
     CellNew, CellGet, CellSet,
@@ -2601,6 +2604,8 @@ impl std::error::Error for QmarkPropagateErr {}
 
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc;
+use num_bigint::BigInt;
+use num_traits::Zero;
 
 #[derive(Clone, Debug)]
 struct Env {
@@ -2709,7 +2714,7 @@ impl Val {
                 Some(J::Object(obj))
             }
             Val::Err { code, .. } => Some(J::Str(format!("error:{}", code))),
-            Val::Func(_) | Val::Builtin(_) | Val::BoundMethod(..) | Val::Chan(..) | Val::Mtx(..) => None,
+            Val::Func(_) | Val::Builtin(_) | Val::BoundMethod(..) | Val::Chan(..) | Val::Mtx(..) | Val::Big(..) => None,
         }
     }
 }
@@ -2981,7 +2986,10 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                         Val::Err{..} => "err", Val::Record(_) => "record",
                         Val::Chan(..) => "chan",
                         Val::Mtx(..) => "mutex",
+                        Val::Big(..) => "bigint",
+            Val::Big(..) => "bigint",
             Val::Mtx(..) => "mutex",
+            Val::Big(..) => "bigint",
                     })
                 }
             }
@@ -6320,6 +6328,66 @@ fn call_builtin(
             }
             _ => bail!("ERROR_BADARG list.par_map expects (list, fn)"),
         }
+        Builtin::BigFromInt => match args.as_slice() {
+            [Val::Int(n)] => Ok(Val::Big(Box::new(BigInt::from(*n)))),
+            _ => bail!("bigint.from_int expects int"),
+        }
+        Builtin::BigFromStr => match args.as_slice() {
+            [Val::Text(s)] => {
+                let b: BigInt = s.parse().map_err(|_| anyhow::anyhow!("bigint.from_str: invalid {s}"))?;
+                Ok(Val::Big(Box::new(b)))
+            }
+            _ => bail!("bigint.from_str expects text"),
+        }
+        Builtin::BigAdd => match args.as_slice() {
+            [Val::Big(a), Val::Big(b)] => Ok(Val::Big(Box::new(*a.clone() + *b.clone()))),
+            _ => bail!("bigint.add expects (bigint, bigint)"),
+        }
+        Builtin::BigSub => match args.as_slice() {
+            [Val::Big(a), Val::Big(b)] => Ok(Val::Big(Box::new(*a.clone() - *b.clone()))),
+            _ => bail!("bigint.sub expects (bigint, bigint)"),
+        }
+        Builtin::BigMul => match args.as_slice() {
+            [Val::Big(a), Val::Big(b)] => Ok(Val::Big(Box::new(*a.clone() * *b.clone()))),
+            _ => bail!("bigint.mul expects (bigint, bigint)"),
+        }
+        Builtin::BigDiv => match args.as_slice() {
+            [Val::Big(a), Val::Big(b)] => {
+                if b.as_ref() == &BigInt::zero() { bail!("bigint.div: division by zero"); }
+                Ok(Val::Big(Box::new(*a.clone() / *b.clone())))
+            }
+            _ => bail!("bigint.div expects (bigint, bigint)"),
+        }
+        Builtin::BigMod => match args.as_slice() {
+            [Val::Big(a), Val::Big(b)] => {
+                if b.as_ref() == &BigInt::zero() { bail!("bigint.mod: division by zero"); }
+                Ok(Val::Big(Box::new(*a.clone() % *b.clone())))
+            }
+            _ => bail!("bigint.mod expects (bigint, bigint)"),
+        }
+        Builtin::BigPow => match args.as_slice() {
+            [Val::Big(a), Val::Int(n)] => {
+                if *n < 0 { bail!("bigint.pow: negative exponent"); }
+                Ok(Val::Big(Box::new(a.pow(*n as u32))))
+            }
+            _ => bail!("bigint.pow expects (bigint, int)"),
+        }
+        Builtin::BigToStr => match args.as_slice() {
+            [Val::Big(a)] => Ok(Val::Text(a.to_string())),
+            _ => bail!("bigint.to_str expects bigint"),
+        }
+        Builtin::BigEq => match args.as_slice() {
+            [Val::Big(a), Val::Big(b)] => Ok(Val::Bool(a == b)),
+            _ => bail!("bigint.eq expects (bigint, bigint)"),
+        }
+        Builtin::BigLt => match args.as_slice() {
+            [Val::Big(a), Val::Big(b)] => Ok(Val::Bool(a < b)),
+            _ => bail!("bigint.lt expects (bigint, bigint)"),
+        }
+        Builtin::BigGt => match args.as_slice() {
+            [Val::Big(a), Val::Big(b)] => Ok(Val::Bool(a > b)),
+            _ => bail!("bigint.gt expects (bigint, bigint)"),
+        }
         Builtin::IntToStrPadded => match args.as_slice() {
             [Val::Int(n), Val::Int(width), Val::Text(pad)] => {
                 let s = n.to_string();
@@ -7576,6 +7644,22 @@ impl ModuleLoader {
                 m.insert("repeat".to_string(), Val::Builtin(Builtin::StrRepeat));
                 m.insert("index_of".to_string(), Val::Builtin(Builtin::StrIndexOf));
                 m.insert("chars".to_string(), Val::Builtin(Builtin::StrChars));
+                Ok(m)
+            }
+            "std/bigint" => {
+                let mut m = BTreeMap::new();
+                m.insert("from_int".to_string(), Val::Builtin(Builtin::BigFromInt));
+                m.insert("from_str".to_string(), Val::Builtin(Builtin::BigFromStr));
+                m.insert("add".to_string(), Val::Builtin(Builtin::BigAdd));
+                m.insert("sub".to_string(), Val::Builtin(Builtin::BigSub));
+                m.insert("mul".to_string(), Val::Builtin(Builtin::BigMul));
+                m.insert("div".to_string(), Val::Builtin(Builtin::BigDiv));
+                m.insert("mod".to_string(), Val::Builtin(Builtin::BigMod));
+                m.insert("pow".to_string(), Val::Builtin(Builtin::BigPow));
+                m.insert("to_str".to_string(), Val::Builtin(Builtin::BigToStr));
+                m.insert("eq".to_string(), Val::Builtin(Builtin::BigEq));
+                m.insert("lt".to_string(), Val::Builtin(Builtin::BigLt));
+                m.insert("gt".to_string(), Val::Builtin(Builtin::BigGt));
                 Ok(m)
             }
             "std/mutex" => {
