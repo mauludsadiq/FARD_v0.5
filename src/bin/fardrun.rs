@@ -2551,6 +2551,7 @@ enum Builtin {
     Base64Encode, Base64Decode, CsvParse, CsvEncode,
     MapDelete, MapEntries,
     SetNew, SetAdd, SetRemove, SetHas, SetUnion, SetIntersect, SetDiff, SetToList, SetFromList, SetSize,
+    ListZipWith, ListChunk, ListSortBy,
     ListParMap,
     CellNew, CellGet, CellSet,
     LinalgTranspose,
@@ -6190,6 +6191,46 @@ fn call_builtin(
             }
             _ => bail!("ERROR_BADARG list.par_map expects (list, fn)"),
         }
+        Builtin::ListZipWith => match args.as_slice() {
+            [Val::List(a), Val::List(b), f] => {
+                let len = a.len().min(b.len());
+                let mut out = Vec::new();
+                for i in 0..len {
+                    out.push(call(f.clone(), vec![a[i].clone(), b[i].clone()], tracer, loader)?);
+                }
+                Ok(Val::List(out))
+            }
+            _ => bail!("ERROR_BADARG list.zip_with expects (list, list, fn)"),
+        }
+        Builtin::ListChunk => match args.as_slice() {
+            [Val::List(items), Val::Int(n)] if *n > 0 => {
+                let chunks: Vec<Val> = items.chunks(*n as usize)
+                    .map(|c| Val::List(c.to_vec()))
+                    .collect();
+                Ok(Val::List(chunks))
+            }
+            _ => bail!("ERROR_BADARG list.chunk expects (list, int>0)"),
+        }
+        Builtin::ListSortBy => match args.as_slice() {
+            [Val::List(items), f] => {
+                let mut items2 = items.clone();
+                let f = f.clone();
+                let mut err: Option<anyhow::Error> = None;
+                items2.sort_by(|a, b| {
+                    if err.is_some() { return std::cmp::Ordering::Equal; }
+                    let mut t = Tracer::new(std::path::Path::new("/tmp"), &std::path::Path::new("/tmp/fard_sort.ndjson")).unwrap();
+                    let mut l = ModuleLoader::new(std::path::Path::new("/tmp"));
+                    match call(f.clone(), vec![a.clone(), b.clone()], &mut t, &mut l) {
+                        Ok(Val::Int(n)) => n.cmp(&0),
+                        Ok(_) => { err = Some(anyhow::anyhow!("sort_by fn must return int")); std::cmp::Ordering::Equal }
+                        Err(e) => { err = Some(e); std::cmp::Ordering::Equal }
+                    }
+                });
+                if let Some(e) = err { return Err(e); }
+                Ok(Val::List(items2))
+            }
+            _ => bail!("ERROR_BADARG list.sort_by expects (list, fn)"),
+        }
         Builtin::SetNew => Ok(Val::List(vec![])),
         Builtin::SetAdd => match args.as_slice() {
             [Val::List(s), v] => {
@@ -7225,6 +7266,9 @@ impl ModuleLoader {
                 m.insert("drop".to_string(), Val::Builtin(Builtin::ListDrop));
                 m.insert("flat_map".to_string(), Val::Builtin(Builtin::ListFlatMap));
                 m.insert("par_map".to_string(), Val::Builtin(Builtin::ListParMap));
+                m.insert("zip_with".to_string(), Val::Builtin(Builtin::ListZipWith));
+                m.insert("chunk".to_string(), Val::Builtin(Builtin::ListChunk));
+                m.insert("sort_by".to_string(), Val::Builtin(Builtin::ListSortBy));
                 m.insert(
                     "sort_by_int_key".to_string(),
                     Val::Builtin(Builtin::ListSortByIntKey),

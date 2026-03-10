@@ -1,0 +1,8 @@
+import("std/list") as list
+
+test "list.zip_with" { list.zip_with([1,2,3], [10,20,30], fn(a,b) { a + b }) == [11,22,33] }
+test "list.zip_with shorter" { list.zip_with([1,2], [10,20,30], fn(a,b) { a + b }) == [11,22] }
+test "list.chunk 2" { list.chunk([1,2,3,4,5,6], 2) == [[1,2],[3,4],[5,6]] }
+test "list.chunk 3" { list.chunk([1,2,3,4,5], 3) == [[1,2,3],[4,5]] }
+test "list.sort_by asc" { list.sort_by([3,1,2], fn(a,b) { a - b }) == [1,2,3] }
+test "list.sort_by desc" { list.sort_by([3,1,2], fn(a,b) { b - a }) == [3,2,1] }
