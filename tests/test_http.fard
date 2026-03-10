@@ -1,0 +1,12 @@
+import("std/http") as http
+import("std/str") as str
+
+let res = http.get("https://httpbin.org/get")
+test "http.get status 200" { res.status == 200 }
+test "http.get body is text" { str.len(res.body) > 0 }
+
+let post_res = http.post("https://httpbin.org/post", "{\"x\":1}")
+test "http.post status 200" { post_res.status == 200 }
+
+let status_res = http.get("https://httpbin.org/status/404")
+test "http.get 404 status" { status_res.status == 404 }
