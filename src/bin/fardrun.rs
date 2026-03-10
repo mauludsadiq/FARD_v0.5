@@ -2552,6 +2552,7 @@ enum Builtin {
     MapDelete, MapEntries,
     SetNew, SetAdd, SetRemove, SetHas, SetUnion, SetIntersect, SetDiff, SetToList, SetFromList, SetSize,
     ListZipWith, ListChunk, ListSortBy,
+    MathAsin, MathAcos, MathAtan, MathLog10,
     ListParMap,
     CellNew, CellGet, CellSet,
     LinalgTranspose,
@@ -6191,6 +6192,26 @@ fn call_builtin(
             }
             _ => bail!("ERROR_BADARG list.par_map expects (list, fn)"),
         }
+        Builtin::MathAsin => match args.as_slice() {
+            [Val::Float(f)] => Ok(Val::Float(f.asin())),
+            [Val::Int(n)] => Ok(Val::Float((*n as f64).asin())),
+            _ => bail!("ERROR_BADARG math.asin expects number"),
+        }
+        Builtin::MathAcos => match args.as_slice() {
+            [Val::Float(f)] => Ok(Val::Float(f.acos())),
+            [Val::Int(n)] => Ok(Val::Float((*n as f64).acos())),
+            _ => bail!("ERROR_BADARG math.acos expects number"),
+        }
+        Builtin::MathAtan => match args.as_slice() {
+            [Val::Float(f)] => Ok(Val::Float(f.atan())),
+            [Val::Int(n)] => Ok(Val::Float((*n as f64).atan())),
+            _ => bail!("ERROR_BADARG math.atan expects number"),
+        }
+        Builtin::MathLog10 => match args.as_slice() {
+            [Val::Float(f)] => Ok(Val::Float(f.log10())),
+            [Val::Int(n)] => Ok(Val::Float((*n as f64).log10())),
+            _ => bail!("ERROR_BADARG math.log10 expects number"),
+        }
         Builtin::ListZipWith => match args.as_slice() {
             [Val::List(a), Val::List(b), f] => {
                 let len = a.len().min(b.len());
@@ -7500,6 +7521,10 @@ impl ModuleLoader {
                 m.insert("pi".to_string(), Val::Float(std::f64::consts::PI));
                 m.insert("e".to_string(), Val::Float(std::f64::consts::E));
                 m.insert("inf".to_string(), Val::Float(f64::INFINITY));
+                m.insert("asin".to_string(), Val::Builtin(Builtin::MathAsin));
+                m.insert("acos".to_string(), Val::Builtin(Builtin::MathAcos));
+                m.insert("atan".to_string(), Val::Builtin(Builtin::MathAtan));
+                m.insert("log10".to_string(), Val::Builtin(Builtin::MathLog10));
                 Ok(m)
             }
             "std/null" => {
