@@ -1,0 +1,15 @@
+fn greet(name, greeting) {
+  str.concat(str.concat(greeting, " "), name)
+}
+
+fn add(x, y) { x + y }
+
+fn rect_area(width, height) { width * height }
+
+import("std/str") as str
+
+test "named args basic" { greet(name: "Alice", greeting: "Hello") == "Hello Alice" }
+test "named args reordered" { greet(greeting: "Hi", name: "Bob") == "Hi Bob" }
+test "named args add" { add(y: 3, x: 7) == 10 }
+test "named args rect" { rect_area(height: 4, width: 5) == 20 }
+test "named args rect ordered" { rect_area(width: 3, height: 6) == 18 }

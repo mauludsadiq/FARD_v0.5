@@ -1422,6 +1422,7 @@ enum Expr {
     Using(Pat, Box<Expr>, Box<Expr>),
     While(Box<Expr>, Box<Expr>, Box<Expr>),
     Return(Box<Expr>),
+    NamedCall(Box<Expr>, Vec<(String, Expr)>),
 }
 #[derive(Clone, Debug)]
 enum Item {
@@ -2131,20 +2132,33 @@ impl Parser {
             }
             if self.eat_sym("(") {
                 let mut args = Vec::new();
+                let mut named: Vec<(String, Expr)> = Vec::new();
+                let mut is_named = false;
                 if !self.eat_sym(")") {
                     loop {
-                        let a = self.parse_expr()?;
-                        args.push(a);
-                        if self.eat_sym(")") {
-                            break;
+                        // Check for named arg: ident ":"
+                        let is_name = matches!(self.peek(), Tok::Ident(_))
+                            && matches!(self.peek_n(1), Tok::Sym(s) if s == ":");
+                        if is_name {
+                            is_named = true;
+                            let name = self.expect_ident()?;
+                            self.expect_sym(":")?;
+                            let v = self.parse_expr()?;
+                            named.push((name, v));
+                        } else {
+                            let a = self.parse_expr()?;
+                            args.push(a);
                         }
+                        if self.eat_sym(")") { break; }
                         self.expect_sym(",")?;
-                        if self.eat_sym(")") {
-                            break;
-                        }
+                        if self.eat_sym(")") { break; }
                     }
                 }
-                e = Expr::Call(Box::new(e), args);
+                if is_named {
+                    e = Expr::NamedCall(Box::new(e), named);
+                } else {
+                    e = Expr::Call(Box::new(e), args);
+                }
                 continue;
             }
             if self.eat_sym("[") {
@@ -3018,10 +3032,57 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
             }
             eval(e2, &mut child, tracer, loader)
         }
-        Expr::Return(e) => {
-            let v = eval(e, env, tracer, loader)?;
-            RETURN_VAL.with(|cell| { *cell.borrow_mut() = Some(v); });
-            bail!("FARD_EARLY_RETURN");
+        Expr::NamedCall(f_expr, named_args) => {
+            let fv = eval(f_expr, env, tracer, loader)?;
+            // Extract param names from function
+            let params = match &fv {
+                Val::Func(f) => f.params.iter().map(|p| match p {
+                    Pat::Bind(n) => n.clone(),
+                    _ => "_".to_string(),
+                }).collect::<Vec<_>>(),
+                _ => bail!("named call on non-function"),
+            };
+            // Build ordered args
+            let mut ordered: Vec<Val> = vec![Val::Unit; params.len()];
+            let mut filled = vec![false; params.len()];
+            for (name, expr) in named_args {
+                let v = eval(expr, env, tracer, loader)?;
+                if let Some(i) = params.iter().position(|p| p == name) {
+                    ordered[i] = v;
+                    filled[i] = true;
+                } else {
+                    bail!("named arg '{}' not found in function params {:?}", name, params);
+                }
+            }
+            for (i, ok) in filled.iter().enumerate() {
+                if !ok { bail!("named arg '{}' not provided", params[i]); }
+            }
+            call(fv, ordered, tracer, loader)
+        }
+        Expr::NamedCall(f_expr, named_args) => {
+            let fv = eval(f_expr, env, tracer, loader)?;
+            let params = match &fv {
+                Val::Func(f) => f.params.iter().map(|p| match p {
+                    Pat::Bind(n) => n.clone(),
+                    _ => "_".to_string(),
+                }).collect::<Vec<_>>(),
+                _ => bail!("named call on non-function"),
+            };
+            let mut ordered: Vec<Val> = vec![Val::Unit; params.len()];
+            let mut filled = vec![false; params.len()];
+            for (name, expr) in named_args {
+                let v = eval(expr, env, tracer, loader)?;
+                if let Some(i) = params.iter().position(|p| p == name) {
+                    ordered[i] = v;
+                    filled[i] = true;
+                } else {
+                    bail!("named arg '{}' not found in params", name);
+                }
+            }
+            for (i, ok) in filled.iter().enumerate() {
+                if !ok { bail!("named arg '{}' not provided", params[i]); }
+            }
+            call(fv, ordered, tracer, loader)
         }
         Expr::Return(e) => {
             let v = eval(e, env, tracer, loader)?;
