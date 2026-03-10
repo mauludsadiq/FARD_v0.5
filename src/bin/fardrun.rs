@@ -288,6 +288,10 @@ fn write_m5_digests(
     Ok(())
 }
 
+thread_local! {
+    static RETURN_VAL: std::cell::RefCell<Option<Val>> = std::cell::RefCell::new(None);
+}
+
 fn main() -> Result<()> {
     let (run, want_version, want_repl, test_args, publish_args) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
     if want_version {
@@ -1126,7 +1130,7 @@ impl Lex {
             {
                 let id = t;
                 let kws = [
-                    "let", "in", "fn", "if", "then", "else", "import", "as", "export", "match", "test", "while",
+                    "let", "in", "fn", "if", "then", "else", "import", "as", "export", "match", "test", "while", "return",
                     "using", "true", "false", "null",
                 ];
                 if kws.contains(&id.as_str()) {
@@ -1417,6 +1421,7 @@ enum Expr {
     Match(Box<Expr>, Vec<MatchArm>),
     Using(Pat, Box<Expr>, Box<Expr>),
     While(Box<Expr>, Box<Expr>, Box<Expr>),
+    Return(Box<Expr>),
 }
 #[derive(Clone, Debug)]
 enum Item {
@@ -2002,6 +2007,10 @@ impl Parser {
             let body = self.parse_expr()?;
             return Ok(Expr::While(Box::new(init), Box::new(cond), Box::new(body)));
         }
+        if self.eat_kw("return") {
+            let e = self.parse_expr()?;
+            return Ok(Expr::Return(Box::new(e)));
+        }
         if self.eat_kw("if") {
             let c = self.parse_expr()?;
             self.expect_kw("then")?;
@@ -2009,6 +2018,7 @@ impl Parser {
                 // Disambiguate: `then { let ... }` block vs `then { k: v }` record.
                 // A block starts with `let` or is empty. A record starts with ident/kw + colon.
                 let is_block = matches!(self.peek_n(1), Tok::Kw(s) if s == "let")
+                    || matches!(self.peek_n(1), Tok::Kw(s) if s == "return")
                     || matches!(self.peek_n(1), Tok::Sym(s) if s == "}");
                 if is_block {
                     self.bump();
@@ -3008,6 +3018,16 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
             }
             eval(e2, &mut child, tracer, loader)
         }
+        Expr::Return(e) => {
+            let v = eval(e, env, tracer, loader)?;
+            RETURN_VAL.with(|cell| { *cell.borrow_mut() = Some(v); });
+            bail!("FARD_EARLY_RETURN");
+        }
+        Expr::Return(e) => {
+            let v = eval(e, env, tracer, loader)?;
+            RETURN_VAL.with(|cell| { *cell.borrow_mut() = Some(v); });
+            bail!("FARD_EARLY_RETURN");
+        }
         Expr::While(init_expr, cond_expr, body_expr) => {
             let mut state = eval(init_expr, env, tracer, loader)?;
             let mut chain: [u8;32] = sha256_raw(b"").try_into().unwrap_or([0u8;32]);
@@ -3400,6 +3420,8 @@ fn call(f: Val, args: Vec<Val>, tracer: &mut Tracer, loader: &mut ModuleLoader) 
                     Err(err) => {
                         if let Some(q) = err.downcast_ref::<QMarkUnwind>() {
                             return Ok(mk_result_err(q.err.clone()));
+                        } else if err.to_string() == "FARD_EARLY_RETURN" {
+                            return Ok(RETURN_VAL.with(|cell| cell.borrow_mut().take()).unwrap_or(Val::Unit));
                         } else {
                             return Err(err);
                         }

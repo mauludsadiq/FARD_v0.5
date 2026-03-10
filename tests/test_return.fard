@@ -1,0 +1,26 @@
+fn clamp(x, lo, hi) {
+  let _ = if x < lo then { return lo } else null in
+  let _ = if x > hi then { return hi } else null in
+  x
+}
+
+fn early_int(n) {
+  let _ = if n == 0 then { return 99 } else null in
+  n * 2
+}
+
+fn first_pos(a, b, c) {
+  let _ = if a > 0 then { return a } else null in
+  let _ = if b > 0 then { return b } else null in
+  let _ = if c > 0 then { return c } else null in
+  -1
+}
+
+test "clamp low" { clamp(0, 1, 10) == 1 }
+test "clamp high" { clamp(20, 1, 10) == 10 }
+test "clamp mid" { clamp(5, 1, 10) == 5 }
+test "early return zero" { early_int(0) == 99 }
+test "early return non-zero" { early_int(5) == 10 }
+test "first_pos a" { first_pos(3, -1, -1) == 3 }
+test "first_pos b" { first_pos(-1, 4, -1) == 4 }
+test "first_pos none" { first_pos(-1, -1, -1) == -1 }
