@@ -1,0 +1,20 @@
+import("std/uuid") as uuid
+import("std/datetime") as dt
+import("std/str") as str
+
+test "uuid.v4 length" { str.len(uuid.v4()) == 36 }
+test "uuid.v4 has dashes" { str.contains(uuid.v4(), "-") == true }
+test "uuid.validate valid" { uuid.validate("550e8400-e29b-41d4-a716-446655440000") == true }
+test "uuid.validate invalid" { uuid.validate("not-a-uuid") == false }
+
+let epoch = 0
+test "datetime.format year" { dt.format(epoch, "%Y") == "1970" }
+test "datetime.format month" { dt.format(epoch, "%m") == "01" }
+test "datetime.field year" { dt.field(epoch, "year") == 1970 }
+test "datetime.field month" { dt.field(epoch, "month") == 1 }
+test "datetime.field day" { dt.field(epoch, "day") == 1 }
+test "datetime.add days" { dt.field(dt.add(epoch, "days", 1), "day") == 2 }
+test "datetime.add hours" { dt.field(dt.add(epoch, "hours", 25), "day") == 2 }
+test "datetime.diff" { dt.diff(86400, 0) == 86400 }
+test "datetime.parse" { dt.parse("1970-01-01 00:00:00", "%Y-%m-%d %H:%M:%S") == 0 }
+test "datetime.now positive" { dt.now() > 0 }

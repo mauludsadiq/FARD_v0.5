@@ -2554,6 +2554,8 @@ enum Builtin {
     ListZipWith, ListChunk, ListSortBy,
     MathAsin, MathAcos, MathAtan, MathLog10,
     FloatToStrFixed,
+    UuidV4, UuidValidate,
+    DateTimeNow, DateTimeFormat, DateTimeParse, DateTimeAdd, DateTimeSub, DateTimeField,
     ListParMap,
     CellNew, CellGet, CellSet,
     LinalgTranspose,
@@ -6193,6 +6195,69 @@ fn call_builtin(
             }
             _ => bail!("ERROR_BADARG list.par_map expects (list, fn)"),
         }
+        Builtin::UuidV4 => {
+            Ok(Val::Text(uuid::Uuid::new_v4().to_string()))
+        }
+        Builtin::UuidValidate => match args.as_slice() {
+            [Val::Text(s)] => Ok(Val::Bool(uuid::Uuid::parse_str(s).is_ok())),
+            _ => bail!("ERROR_BADARG uuid.validate expects text"),
+        }
+        Builtin::DateTimeNow => {
+            Ok(Val::Int(chrono::Utc::now().timestamp()))
+        }
+        Builtin::DateTimeFormat => match args.as_slice() {
+            [Val::Int(ts), Val::Text(fmt)] => {
+                let dt = chrono::DateTime::from_timestamp(*ts, 0)
+                    .ok_or_else(|| anyhow::anyhow!("datetime.format: invalid timestamp"))?;
+                Ok(Val::Text(dt.format(fmt).to_string()))
+            }
+            _ => bail!("ERROR_BADARG datetime.format expects (int, text)"),
+        }
+        Builtin::DateTimeParse => match args.as_slice() {
+            [Val::Text(s), Val::Text(fmt)] => {
+                let dt = chrono::NaiveDateTime::parse_from_str(s, fmt)
+                    .map_err(|e| anyhow::anyhow!("datetime.parse: {}", e))?;
+                Ok(Val::Int(dt.and_utc().timestamp()))
+            }
+            _ => bail!("ERROR_BADARG datetime.parse expects (text, fmt)"),
+        }
+        Builtin::DateTimeAdd => match args.as_slice() {
+            [Val::Int(ts), Val::Text(unit), Val::Int(n)] => {
+                let dt = chrono::DateTime::from_timestamp(*ts, 0)
+                    .ok_or_else(|| anyhow::anyhow!("datetime.add: invalid timestamp"))?;
+                let result = match unit.as_str() {
+                    "seconds" => dt + chrono::Duration::seconds(*n),
+                    "minutes" => dt + chrono::Duration::minutes(*n),
+                    "hours"   => dt + chrono::Duration::hours(*n),
+                    "days"    => dt + chrono::Duration::days(*n),
+                    _ => bail!("datetime.add: unknown unit {unit}"),
+                };
+                Ok(Val::Int(result.timestamp()))
+            }
+            _ => bail!("ERROR_BADARG datetime.add expects (ts, unit, n)"),
+        }
+        Builtin::DateTimeSub => match args.as_slice() {
+            [Val::Int(a), Val::Int(b)] => Ok(Val::Int(a - b)),
+            _ => bail!("ERROR_BADARG datetime.diff expects (ts, ts)"),
+        }
+        Builtin::DateTimeField => match args.as_slice() {
+            [Val::Int(ts), Val::Text(field)] => {
+                use chrono::Datelike;
+                use chrono::Timelike;
+                let dt = chrono::DateTime::from_timestamp(*ts, 0)
+                    .ok_or_else(|| anyhow::anyhow!("datetime.field: invalid timestamp"))?;
+                match field.as_str() {
+                    "year"   => Ok(Val::Int(dt.year() as i64)),
+                    "month"  => Ok(Val::Int(dt.month() as i64)),
+                    "day"    => Ok(Val::Int(dt.day() as i64)),
+                    "hour"   => Ok(Val::Int(dt.hour() as i64)),
+                    "minute" => Ok(Val::Int(dt.minute() as i64)),
+                    "second" => Ok(Val::Int(dt.second() as i64)),
+                    _ => bail!("datetime.field: unknown field {field}"),
+                }
+            }
+            _ => bail!("ERROR_BADARG datetime.field expects (ts, field)"),
+        }
         Builtin::FloatToStrFixed => match args.as_slice() {
             [Val::Float(f), Val::Int(decimals)] => {
                 Ok(Val::Text(format!("{:.prec$}", f, prec = *decimals as usize)))
@@ -7372,6 +7437,22 @@ impl ModuleLoader {
                 m.insert("repeat".to_string(), Val::Builtin(Builtin::StrRepeat));
                 m.insert("index_of".to_string(), Val::Builtin(Builtin::StrIndexOf));
                 m.insert("chars".to_string(), Val::Builtin(Builtin::StrChars));
+                Ok(m)
+            }
+            "std/uuid" => {
+                let mut m = BTreeMap::new();
+                m.insert("v4".to_string(), Val::Builtin(Builtin::UuidV4));
+                m.insert("validate".to_string(), Val::Builtin(Builtin::UuidValidate));
+                Ok(m)
+            }
+            "std/datetime" => {
+                let mut m = BTreeMap::new();
+                m.insert("now".to_string(), Val::Builtin(Builtin::DateTimeNow));
+                m.insert("format".to_string(), Val::Builtin(Builtin::DateTimeFormat));
+                m.insert("parse".to_string(), Val::Builtin(Builtin::DateTimeParse));
+                m.insert("add".to_string(), Val::Builtin(Builtin::DateTimeAdd));
+                m.insert("diff".to_string(), Val::Builtin(Builtin::DateTimeSub));
+                m.insert("field".to_string(), Val::Builtin(Builtin::DateTimeField));
                 Ok(m)
             }
             "std/set" => {
