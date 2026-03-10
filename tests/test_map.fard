@@ -1,0 +1,9 @@
+import("std/map") as map
+
+test "map.new and set" { let m = map.set(map.new(), "x", 42) in map.get(m, "x") == 42 }
+test "map.has true" { let m = map.set(map.new(), "x", 1) in map.has(m, "x") == true }
+test "map.has false" { let m = map.new() in map.has(m, "x") == false }
+test "map.delete" { let m = map.set(map.new(), "x", 1) in map.has(map.delete(m, "x"), "x") == false }
+test "map.keys" { let m = map.set(map.set(map.new(), "a", 1), "b", 2) in map.keys(m) == ["a","b"] }
+test "map.values" { let m = map.set(map.set(map.new(), "a", 1), "b", 2) in map.values(m) == [1,2] }
+test "map.entries" { let m = map.set(map.new(), "k", 99) in let e = map.entries(m) in e[0].key == "k" }

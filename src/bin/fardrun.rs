@@ -2549,6 +2549,7 @@ enum Builtin {
     EnvGet, EnvArgs, ProcessSpawn, ProcessExit,
     ReMatch, ReFind, ReFindAll, ReSplit, ReReplace, FardEval,
     Base64Encode, Base64Decode, CsvParse, CsvEncode,
+    MapDelete, MapEntries,
     ListParMap,
     CellNew, CellGet, CellSet,
     LinalgTranspose,
@@ -6187,6 +6188,26 @@ fn call_builtin(
             }
             _ => bail!("ERROR_BADARG list.par_map expects (list, fn)"),
         }
+        Builtin::MapDelete => match args.as_slice() {
+            [Val::Record(m), Val::Text(k)] => {
+                let mut m2 = m.clone();
+                m2.remove(k);
+                Ok(Val::Record(m2))
+            }
+            _ => bail!("ERROR_BADARG map.delete expects (map, key)"),
+        }
+        Builtin::MapEntries => match args.as_slice() {
+            [Val::Record(m)] => {
+                let entries: Vec<Val> = m.iter().map(|(k, v)| {
+                    let mut rec = BTreeMap::new();
+                    rec.insert("key".to_string(), Val::Text(k.clone()));
+                    rec.insert("value".to_string(), v.clone());
+                    Val::Record(rec)
+                }).collect();
+                Ok(Val::List(entries))
+            }
+            _ => bail!("ERROR_BADARG map.entries expects a map"),
+        }
         Builtin::Base64Encode => match args.as_slice() {
             [Val::Bytes(b)] => {
                 use base64::Engine;
@@ -7226,6 +7247,10 @@ impl ModuleLoader {
                 m.insert("keys".to_string(), Val::Builtin(Builtin::RecKeys));
                 m.insert("values".to_string(), Val::Builtin(Builtin::RecValues));
                 m.insert("has".to_string(), Val::Builtin(Builtin::RecHas));
+                m.insert("delete".to_string(), Val::Builtin(Builtin::MapDelete));
+                m.insert("entries".to_string(), Val::Builtin(Builtin::MapEntries));
+                m.insert("new".to_string(), Val::Builtin(Builtin::RecEmpty));
+                m.insert("from_entries".to_string(), Val::Builtin(Builtin::RecEmpty));
                 Ok(m)
             }
             "std/rec" => {
