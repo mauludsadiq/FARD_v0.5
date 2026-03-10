@@ -1,0 +1,79 @@
+import("std/io") as io
+import("std/str") as str
+import("std/list") as list
+import("std/datetime") as dt
+import("std/hash") as hash
+import("std/json") as json
+
+let version = "1.0.0"
+let now = dt.now()
+let date = dt.format(now, "%Y-%m-%d")
+
+let modules = [
+  {name: "std/str",      fns: ["concat", "join", "split", "len", "slice", "trim", "upper", "lower", "contains", "starts_with", "ends_with", "replace", "index_of", "chars", "pad_left", "pad_right", "repeat", "from_int", "from_float"]},
+  {name: "std/list",     fns: ["map", "filter", "fold", "any", "all", "find", "find_index", "flat_map", "take", "drop", "len", "zip_with", "chunk", "sort_by", "par_map", "reverse", "concat"]},
+  {name: "std/math",     fns: ["sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sqrt", "pow", "abs", "floor", "ceil", "round", "log", "log2", "log10", "exp", "pi", "e"]},
+  {name: "std/float",    fns: ["to_str_fixed", "is_nan", "is_inf"]},
+  {name: "std/re",       fns: ["is_match", "find", "find_all", "split", "replace"]},
+  {name: "std/map",      fns: ["new", "get", "set", "has", "delete", "keys", "values", "entries"]},
+  {name: "std/set",      fns: ["new", "add", "remove", "has", "union", "intersect", "diff", "to_list", "from_list", "size"]},
+  {name: "std/json",     fns: ["encode", "decode", "canonicalize"]},
+  {name: "std/base64",   fns: ["encode", "decode"]},
+  {name: "std/csv",      fns: ["parse", "encode"]},
+  {name: "std/hash",     fns: ["sha256_bytes", "sha256_text"]},
+  {name: "std/uuid",     fns: ["v4", "validate"]},
+  {name: "std/datetime", fns: ["now", "format", "parse", "add", "diff", "field"]},
+  {name: "std/path",     fns: ["join", "base", "dir", "ext", "isAbs", "normalize"]},
+  {name: "std/io",       fns: ["read_file", "write_file", "append_file", "read_lines", "file_exists", "delete_file", "read_stdin", "list_dir", "make_dir"]},
+  {name: "std/http",     fns: ["get", "post", "request"]},
+  {name: "std/result",   fns: ["ok", "err", "is_ok", "is_err", "unwrap_ok", "unwrap_err", "map", "andThen"]},
+  {name: "std/option",   fns: ["some", "none", "is_some", "is_none", "map", "and_then", "unwrap_or", "from_nullable", "to_result"]},
+  {name: "std/type",     fns: ["of"]},
+  {name: "std/eval",     fns: ["eval"]},
+  {name: "std/chan",     fns: ["new", "send", "recv", "try_recv", "close"]},
+  {name: "std/mutex",    fns: ["new", "lock", "unlock", "with_lock"]}
+]
+
+let render_module = fn(m) {
+  let fn_list = str.join(m.fns, ", ") in
+  str.concat(str.concat(str.concat(str.concat("  ", m.name), " — "), fn_list), "\n")
+}
+
+let module_lines = list.map(modules, render_module)
+let module_section = str.join(module_lines, "")
+let module_count = str.from_int(list.len(modules))
+let fn_count = str.from_int(list.fold(modules, 0, fn(acc, m) { acc + list.len(m.fns) }))
+
+let spec = str.join([
+  "FARD v", version, " — Language Specification\n",
+  "Generated: ", date, "\n",
+  "========================================\n\n",
+  "FARD is a pure, deterministic, content-addressed scripting language.\n",
+  "Every run produces a cryptographic digest committing to inputs and outputs.\n\n",
+  "PRIMITIVES\n",
+  "----------\n",
+  "  int, float, bool, text, bytes, list, record, func, chan, mutex\n\n",
+  "CONTROL FLOW\n",
+  "------------\n",
+  "  if/else, match (comma-delimited arms), while (certified computation primitive)\n",
+  "  let bindings, fn definitions, top-level recursion, pipe operator |>\n\n",
+  "STDLIB — ", module_count, " modules, ", fn_count, " functions\n",
+  "--------------------------------------\n",
+  module_section, "\n",
+  "GUARANTEES\n",
+  "----------\n",
+  "  - Every run emits fard_run_digest=sha256:... to stdout\n",
+  "  - while loops produce a step-by-step hash chain\n",
+  "  - All output written to --out dir with digests.json\n\n",
+  "TEST SUITE\n",
+  "----------\n",
+  "  197+ tests in pure FARD across all stdlib modules\n\n",
+  "FARD v", version, " — self-specifying, self-verifying.\n"
+], "")
+
+let out_path = "SPEC.md"
+let _ = io.write_file(out_path, spec)
+let digest = hash.sha256_text(spec)
+let meta = {version: version, date: date, spec_sha256: digest, modules: module_count, functions: fn_count}
+let _ = io.write_file("SPEC_META.json", json.encode(meta))
+{ok: true, spec_sha256: digest, written: out_path}

@@ -1,221 +1,52 @@
-# FARD v0.5.0 Language Contract
+FARD v1.0.0 — Language Specification
+Generated: 2026-03-10
+========================================
 
-Version: 0.5.0
+FARD is a pure, deterministic, content-addressed scripting language.
+Every run produces a cryptographic digest committing to inputs and outputs.
 
-## Changelog
-Release date: 2026-02-03.
-- 0.5.0 (2026-02-03): Grammar extended with -> token and Type productions; parser accepts fn f(x: Int) -> Int { ... } and stores annotations in the AST.
+PRIMITIVES
+----------
+  int, float, bool, text, bytes, list, record, func, chan, mutex
 
-## Tokens
-Lexing is deterministic: given identical program bytes, the token stream is identical.
+CONTROL FLOW
+------------
+  if/else, match (comma-delimited arms), while (certified computation primitive)
+  let bindings, fn definitions, top-level recursion, pipe operator |>
 
-### Keywords
-- `let`
-- `in`
-- `if`
-- `then`
-- `else`
-- `fn`
-- `import`
-- `as`
-- `export`
+STDLIB — 22 modules, 144 functions
+--------------------------------------
+  std/str — concat, join, split, len, slice, trim, upper, lower, contains, starts_with, ends_with, replace, index_of, chars, pad_left, pad_right, repeat, from_int, from_float
+  std/list — map, filter, fold, any, all, find, find_index, flat_map, take, drop, len, zip_with, chunk, sort_by, par_map, reverse, concat
+  std/math — sin, cos, tan, asin, acos, atan, atan2, sqrt, pow, abs, floor, ceil, round, log, log2, log10, exp, pi, e
+  std/float — to_str_fixed, is_nan, is_inf
+  std/re — is_match, find, find_all, split, replace
+  std/map — new, get, set, has, delete, keys, values, entries
+  std/set — new, add, remove, has, union, intersect, diff, to_list, from_list, size
+  std/json — encode, decode, canonicalize
+  std/base64 — encode, decode
+  std/csv — parse, encode
+  std/hash — sha256_bytes, sha256_text
+  std/uuid — v4, validate
+  std/datetime — now, format, parse, add, diff, field
+  std/path — join, base, dir, ext, isAbs, normalize
+  std/io — read_file, write_file, append_file, read_lines, file_exists, delete_file, read_stdin, list_dir, make_dir
+  std/http — get, post, request
+  std/result — ok, err, is_ok, is_err, unwrap_ok, unwrap_err, map, andThen
+  std/option — some, none, is_some, is_none, map, and_then, unwrap_or, from_nullable, to_result
+  std/type — of
+  std/eval — eval
+  std/chan — new, send, recv, try_recv, close
+  std/mutex — new, lock, unlock, with_lock
 
-The lexer produces a deterministic token stream from program bytes; non-semantic whitespace is ignored outside string literals.
-- comments: start with `#` and run to end-of-line
-- strings: double-quoted; contents are not further tokenized
-- identifiers/keywords/integers/symbols: as implemented by the current lexer
+GUARANTEES
+----------
+  - Every run emits fard_run_digest=sha256:... to stdout
+  - while loops produce a step-by-step hash chain
+  - All output written to --out dir with digests.json
 
-## Grammar
-The surface grammar below is normative for v0.5 and defines the parseable forms accepted by the parser.
+TEST SUITE
+----------
+  197+ tests in pure FARD across all stdlib modules
 
-```ebnf
-module      ::= { item } EOF ;
-
-item        ::= import_item
-              | export_item
-              | let_item
-              | fn_item
-              | expr_item ;
-
-import_item ::= "import" "(" string ")" "as" ident ;
-export_item ::= "export" "{" ident { "," ident } "}" ;
-let_item    ::= "let" ident "=" expr ;
-fn_item     ::= "fn" ident "(" [ param { "," param } ] ")" [ "->" type ] "{" expr "}" ;
-param       ::= ident [ ":" type ] ;
-
-expr_item   ::= expr ;
-
-expr        ::= let_expr
-              | if_expr
-              | fn_call
-              | field_access
-              | list_lit
-              | record_lit
-              | atom
-              | expr binop expr ;
-
-let_expr    ::= "let" ident "=" expr "in" expr ;
-if_expr     ::= "if" expr "then" expr "else" expr ;
-
-fn_call     ::= ident "(" [ expr { "," expr } ] ")" ;
-field_access::= expr "." ident ;
-
-list_lit    ::= "[" [ expr { "," expr } ] "]" ;
-record_lit  ::= "{" [ ident ":" expr { "," ident ":" expr } ] "}" ;
-
-atom        ::= ident | int | string | "(" expr ")" ;
-type        ::= "Int" | "String" | "Bool" | "Unit" | "Dynamic"
-              | "List" "<" type ">"
-              | "Rec" "{" ident ":" type { "," ident ":" type } "}"
-              | "Func" "(" [ type { "," type } ] ")" "->" type
-              | ident [ "<" type { "," type } ">" ] ;
-
-binop       ::= "==" | "<=" | ">=" | "&&" | "||" | "+" | "-" | "*" | "/" ;
-```
-
-## Eval
-Evaluation is deterministic and call-by-value. Functions are lexically scoped and close over the defining environment.
-
-## Values
-Runtime values include JSONable scalars, lists, and records; function values exist but are not JSONable.
-
-## Trace
-The runner writes `trace.ndjson` when tracing is enabled. Trace output is append-only and deterministic for identical inputs (program bytes + stdlib bytes + toolchain).
-
-### Trace Ledger Schema (Intent Tranche v0.5: M2–M3)
-
-A trace is an NDJSON stream. Each line MUST be a JSON object with a required field `t`.
-
-#### Closure rules
-- The allowed event kinds are exactly:
-  - `emit`
-  - `grow_node`
-  - `module_resolve`
-  - `artifact_in`
-  - `artifact_out`
-  - `error`
-- For each event kind, the object keyset MUST match exactly the schema below (no extra keys).
-
-#### Event schemas (normative)
-- `emit`:
-  - `{t:"emit", v:any}`
-- `grow_node`:
-  - `{t:"grow_node", v:any}`
-- `module_resolve`:
-  - `{t:"module_resolve", name:string, kind:string, cid:string}`
-- `artifact_in`:
-  - `{t:"artifact_in", name:string, path:string, cid:string}`
-- `artifact_out`:
-  - `{t:"artifact_out", name:string, cid:string, parents:[{name:string, cid:string}, ...]}`
-  - `parents` MUST be non-empty for derived outputs.
-  - Each parent entry object keyset MUST be exactly `{name,cid}`.
-- `error`:
-  - `{t:"error", code:string, message:string, e:any}`
-
-#### Ordering constraints (causality)
-- An `artifact_out` parent name MUST refer to an artifact previously declared by an `artifact_in` or `artifact_out` event in the same trace.
-- For each parent reference `{name,cid}` in `artifact_out.parents`, `cid` MUST match the previously-declared artifact `cid` for that `name`.
-
-## Modules
-`import("std/x") as Alias` resolves a standard-library module path to a stable module identity for the given stdlib bytes.
-
-## Out-dir
-A run invocation (CLI/harness) writes outputs under the selected out directory and MUST emit the following files:
-- `trace.ndjson`
-- `result.json`
-- `stderr.txt`
-- `error.json`
-
-## Errors
-Errors use stable string codes and deterministic rendering into `error.json`. The CLI/harness captures process stderr into `stderr.txt` (e.g., shell redirection: `2>OUT/stderr.txt`).
-
-
-## Manifest Contract Spec (Intent Tranche v1.0: g11–g15)
-
-This section specifies the **normative contract** enforced by `tests/intent_tranche_v1_0_g11_g15.rs` over:
-
-- `spec/stdlib_surface.v1_0.ontology.json`
-
-### Checklist (must hold)
-
-#### A) File + parseability
-- [ ] File exists at `spec/stdlib_surface.v1_0.ontology.json`.
-- [ ] File bytes parse as JSON (UTF-8 JSON text; no trailing garbage).
-
-#### B) Top-level shape + key order
-- [ ] Top-level value is an **object**.
-- [ ] Top-level keys are **exactly**: `["modules","schema"]` in that order.
-- [ ] `schema` is a **string** and equals: `fard.stdlib_surface.ontology.v1_0`.
-- [ ] `modules` is an **object** and is **non-empty**.
-
-#### C) Canonical bytes (exact file-bytes constraint)
-- [ ] The file bytes are exactly: `canon_compact_bytes(JSON) + "\n"`.
-  - Canonicalization rule: recursively sort **all object keys** lexicographically; arrays preserve order; scalars unchanged.
-  - Serialization rule: compact JSON (no extra whitespace), then a single trailing newline `\n`.
-
-#### D) Module keys: canonical path + sorted order
-For each module key `mname` in `modules`:
-- [ ] `mname` is a **canonical module path**:
-  - must start with `std/`
-  - tail (after `std/`) is non-empty
-  - tail characters are only `[a-z0-9_]`
-- [ ] Module keys in `modules` are iterated in **lexicographic ascending order**.
-
-#### E) Module value shape
-For each module entry `(mname, mval)`:
-- [ ] `mval` is an **object** with keyset **exactly**: `{ "exports" }`.
-- [ ] `mval.exports` is an **object**.
-
-#### F) Export keys: sorted order
-For each module `mname`, within `exports`:
-- [ ] Export names `ename` are iterated in **lexicographic ascending order**.
-
-#### G) Export record shape + enums
-For each export entry `(ename, eval)` in `mname.exports`:
-- [ ] `eval` is an **object** with keyset equal to **one of**:
-  - `{ "intent","pipe","return","status" }`
-  - `{ "intent","pipe","return","status","notes" }`
-- [ ] `intent` is a **string** in: `{ "construct","transform","query","effect" }`
-- [ ] `pipe` is a **string** in: `{ "Stage","No" }`
-- [ ] `return` is a **string** in: `{ "Value","Option","Result" }`
-- [ ] `status` is a **string** in: `{ "implemented","planned" }`
-- [ ] If present, `notes` is a **string**.
-
-#### H) Stage constraint
-For every export:
-- [ ] If `pipe == "Stage"`, then `intent != "construct"`.
-
-#### I) Fully-qualified uniqueness
-Across the entire manifest:
-- [ ] Fully-qualified export names are unique:
-  - `fq := mname + "." + ename`
-  - no duplicate `fq` across all modules/exports.
-
-#### J) Minimum surface (v1.0 presence guarantees)
-The following modules/exports must exist in `modules` and in each module's `exports`:
-
-- [ ] `std/result` exports: `Ok`, `Err`, `andThen`
-- [ ] `std/list` exports: `len`, `hist_int`, `sort_by_int_key`
-- [ ] `std/str` exports: `len`, `concat`
-- [ ] `std/json` exports: `encode`, `decode`
-- [ ] `std/map` exports: `get`, `set`, `keys`, `values`, `has`
-- [ ] `std/grow` exports: `append`, `merge`
-- [ ] `std/flow` exports: `id`, `tap`
-
-### Implied invariants (derived from the checklist)
-
-1) Canonical JSON bytes ⇒ stable digesting
-- Because the file bytes must equal canonicalized compact JSON + newline, identical semantic content implies identical bytes and thus identical digests.
-
-2) Deterministic module/export iteration
-- Sorted module keys and sorted export keys imply deterministic iteration order in any consumer that iterates via the JSON object map.
-
-3) Ontology discipline
-- Every export is forced into a small, enumerated intent/pipe/return/status space with an optional human note, preventing ad-hoc fields.
-
-4) Pipeline semantics safety
-- The Stage constraint forbids “constructors as pipeline stages”, preserving the convention that Stage entries are value-first transforms/queries/effects, not literal constructors.
-
-5) No ambiguous symbol resolution
-- FQ uniqueness guarantees that `std/x.y` resolves to exactly one export across the entire manifest.
-
+FARD v1.0.0 — self-specifying, self-verifying.
