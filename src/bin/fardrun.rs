@@ -2549,6 +2549,7 @@ enum Builtin {
     EnvGet, EnvArgs, ProcessSpawn, ProcessExit,
     ReMatch, ReFind, ReFindAll, ReSplit, ReReplace, FardEval,
     Base64Encode, Base64Decode, CsvParse, CsvEncode,
+    ListParMap,
     CellNew, CellGet, CellSet,
     LinalgTranspose,
     LinalgEigh,
@@ -6163,6 +6164,29 @@ fn call_builtin(
             }
             _ => bail!("ERROR_BADARG eval expects text"),
         }
+        Builtin::ListParMap => match args.as_slice() {
+            [Val::List(items), f] => {
+                let items = items.clone();
+                let f = f.clone();
+                // Use thread-per-item for pure functions (no IO/module access)
+                let handles: Vec<_> = items.into_iter().map(|item| {
+                    let f2 = f.clone();
+                    std::thread::spawn(move || {
+                        let tmp = std::path::Path::new("/tmp");
+                        let null_path = tmp.join(format!("fard_par_{}.ndjson", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().subsec_nanos()));
+                        let mut tracer = Tracer::new(tmp, &null_path).unwrap();
+                        let mut loader = ModuleLoader::new(tmp);
+                        call(f2, vec![item], &mut tracer, &mut loader)
+                    })
+                }).collect();
+                let mut results = Vec::new();
+                for h in handles {
+                    results.push(h.join().map_err(|_| anyhow::anyhow!("par_map thread panicked"))??);
+                }
+                Ok(Val::List(results))
+            }
+            _ => bail!("ERROR_BADARG list.par_map expects (list, fn)"),
+        }
         Builtin::Base64Encode => match args.as_slice() {
             [Val::Bytes(b)] => {
                 use base64::Engine;
@@ -7120,6 +7144,7 @@ impl ModuleLoader {
                 m.insert("take".to_string(), Val::Builtin(Builtin::ListTake));
                 m.insert("drop".to_string(), Val::Builtin(Builtin::ListDrop));
                 m.insert("flat_map".to_string(), Val::Builtin(Builtin::ListFlatMap));
+                m.insert("par_map".to_string(), Val::Builtin(Builtin::ListParMap));
                 m.insert(
                     "sort_by_int_key".to_string(),
                     Val::Builtin(Builtin::ListSortByIntKey),
