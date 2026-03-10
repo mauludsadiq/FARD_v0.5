@@ -2397,7 +2397,7 @@ enum Builtin {
     BytesConcat, BytesLen, BytesGet, BytesOfList, BytesMerkleRoot, BytesOfStr, BytesToList,
     // std/io
     IoReadFile, IoWriteFile, IoAppendFile, IoReadLines, IoFileExists, IoDeleteFile,
-    IoReadStdin, IoListDir, IoMakeDir,
+    IoReadStdin, IoListDir, IoMakeDir, IoReadStdinLines,
     ChanNew, ChanSend, ChanRecv, ChanTryRecv, ChanClose,
     MutexNew, MutexLock, MutexUnlock, MutexWithLock,
     // std/cli
@@ -5114,6 +5114,14 @@ fn call_builtin(
                 Ok(Val::Bool(true))
             }
             _ => bail!("ERROR_BADARG chan.close expects chan"),
+        }
+        Builtin::IoReadStdinLines => {
+            use std::io::BufRead;
+            let stdin = std::io::stdin();
+            let lines: Vec<Val> = stdin.lock().lines()
+                .map(|l| Val::Text(l.unwrap_or_default()))
+                .collect();
+            Ok(Val::List(lines))
         }
         Builtin::IoReadStdin => {
             let mut buf = String::new();
@@ -8016,6 +8024,7 @@ Ok(m)
                 m.insert("file_exists".to_string(), Val::Builtin(Builtin::IoFileExists));
                 m.insert("delete_file".to_string(), Val::Builtin(Builtin::IoDeleteFile));
                 m.insert("read_stdin".to_string(),  Val::Builtin(Builtin::IoReadStdin));
+                m.insert("read_stdin_lines".to_string(), Val::Builtin(Builtin::IoReadStdinLines));
                 m.insert("list_dir".to_string(),    Val::Builtin(Builtin::IoListDir));
                 m.insert("make_dir".to_string(),    Val::Builtin(Builtin::IoMakeDir));
                 Ok(m)

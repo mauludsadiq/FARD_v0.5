@@ -1,0 +1,7 @@
+import("std/io") as io
+import("std/list") as list
+
+let lines = io.read_stdin_lines()
+test "stdin lines count" { list.len(lines) == 3 }
+test "stdin lines first" { lines[0] == "alpha" }
+test "stdin lines last" { lines[2] == "gamma" }
