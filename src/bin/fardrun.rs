@@ -2343,6 +2343,7 @@ enum Val {
     Chan(Arc<Mutex<std::collections::VecDeque<Val>>>, Arc<Mutex<bool>>),
     Mtx(Arc<Mutex<Val>>),
     Big(Box<BigInt>),
+    Promise(Arc<Mutex<Option<Result<Val, String>>>>),
 }
 
 impl Val {
@@ -2363,6 +2364,7 @@ impl Val {
             Val::Chan(..) => "chan",
             Val::Mtx(..) => "mutex",
             Val::Big(..) => "bigint",
+            Val::Promise(..) => "promise",
         }
     }
 }
@@ -2600,6 +2602,7 @@ enum Builtin {
     UuidV4, UuidValidate,
     IntToStrPadded,
     BigFromInt, BigFromStr, BigAdd, BigSub, BigMul, BigDiv, BigPow, BigToStr, BigEq, BigLt, BigGt, BigMod,
+    PromiseSpawn, PromiseAwait,
     DateTimeNow, DateTimeFormat, DateTimeParse, DateTimeAdd, DateTimeSub, DateTimeField,
     ListParMap,
     CellNew, CellGet, CellSet,
@@ -2738,7 +2741,7 @@ impl Val {
                 Some(J::Object(obj))
             }
             Val::Err { code, .. } => Some(J::Str(format!("error:{}", code))),
-            Val::Func(_) | Val::Builtin(_) | Val::BoundMethod(..) | Val::Chan(..) | Val::Mtx(..) | Val::Big(..) => None,
+            Val::Func(_) | Val::Builtin(_) | Val::BoundMethod(..) | Val::Chan(..) | Val::Mtx(..) | Val::Big(..) | Val::Promise(..) => None,
         }
     }
 }
@@ -3011,9 +3014,13 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                         Val::Chan(..) => "chan",
                         Val::Mtx(..) => "mutex",
                         Val::Big(..) => "bigint",
+                        Val::Promise(..) => "promise",
+            Val::Promise(..) => "promise",
             Val::Big(..) => "bigint",
+            Val::Promise(..) => "promise",
             Val::Mtx(..) => "mutex",
             Val::Big(..) => "bigint",
+            Val::Promise(..) => "promise",
                     })
                 }
             }
@@ -6419,6 +6426,44 @@ fn call_builtin(
             }
             _ => bail!("ERROR_BADARG list.par_map expects (list, fn)"),
         }
+        Builtin::PromiseSpawn => match args.as_slice() {
+            [f] => {
+                let fv = f.clone();
+                let slot: Arc<Mutex<Option<Result<Val, String>>>> = Arc::new(Mutex::new(None));
+                let slot2 = slot.clone();
+                std::thread::spawn(move || {
+                    let tmp = std::env::temp_dir();
+                    let trace_path = tmp.join(format!("promise_trace_{}.ndjson", uuid::Uuid::new_v4()));
+                    let trace_file = fs::File::create(&trace_path).unwrap();
+                    let mut tracer = Tracer {
+                        first_event: true,
+                        artifact_cids: std::collections::BTreeMap::new(),
+                        w: trace_file,
+                        out_dir: tmp.clone(),
+                    };
+                    let mut loader = ModuleLoader::new(&tmp);
+                    let result = call(fv, vec![], &mut tracer, &mut loader)
+                        .map_err(|e| e.to_string());
+                    let _ = fs::remove_file(&trace_path);
+                    *slot2.lock().unwrap() = Some(result);
+                });
+                Ok(Val::Promise(slot))
+            }
+            _ => bail!("promise.spawn expects a function"),
+        }
+        Builtin::PromiseAwait => match args.as_slice() {
+            [Val::Promise(slot)] => {
+                loop {
+                    let done = slot.lock().unwrap().is_some();
+                    if done {
+                        let result = slot.lock().unwrap().take().unwrap();
+                        return result.map_err(|e| anyhow::anyhow!("{}", e));
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+            }
+            _ => bail!("promise.await expects a promise"),
+        }
         Builtin::BigFromInt => match args.as_slice() {
             [Val::Int(n)] => Ok(Val::Big(Box::new(BigInt::from(*n)))),
             _ => bail!("bigint.from_int expects int"),
@@ -7735,6 +7780,12 @@ impl ModuleLoader {
                 m.insert("repeat".to_string(), Val::Builtin(Builtin::StrRepeat));
                 m.insert("index_of".to_string(), Val::Builtin(Builtin::StrIndexOf));
                 m.insert("chars".to_string(), Val::Builtin(Builtin::StrChars));
+                Ok(m)
+            }
+            "std/promise" => {
+                let mut m = BTreeMap::new();
+                m.insert("spawn".to_string(), Val::Builtin(Builtin::PromiseSpawn));
+                m.insert("await".to_string(), Val::Builtin(Builtin::PromiseAwait));
                 Ok(m)
             }
             "std/bigint" => {

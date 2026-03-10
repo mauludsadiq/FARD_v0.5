@@ -1,0 +1,24 @@
+import("std/promise") as promise
+
+test "promise spawn and await" {
+  let p = promise.spawn(fn() { 42 }) in
+  promise.await(p) == 42
+}
+
+test "promise with computation" {
+  let p = promise.spawn(fn() { 1 + 2 + 3 + 4 + 5 }) in
+  promise.await(p) == 15
+}
+
+test "promise returns text" {
+  let p = promise.spawn(fn() { "hello" }) in
+  promise.await(p) == "hello"
+}
+
+test "promise multiple" {
+  let p1 = promise.spawn(fn() { 10 }) in
+  let p2 = promise.spawn(fn() { 20 }) in
+  let a = promise.await(p1) in
+  let b = promise.await(p2) in
+  a + b == 30
+}
