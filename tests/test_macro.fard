@@ -1,0 +1,37 @@
+import("std/ast") as ast
+import("std/eval") as e
+import("std/str") as str
+import("std/list") as list
+
+let defmacro = fn(template, bindings) {
+  let code = list.fold(bindings, template, fn(acc, pair) {
+    str.replace(acc, pair[0], pair[1])
+  }) in
+  e.eval(code)
+}
+
+test "macro simple substitution" {
+  defmacro("__X__ + __Y__", [["__X__", "10"], ["__Y__", "20"]]) == 30
+}
+
+test "macro named fn" {
+  let code = defmacro("fn adder(x) { x + _N_ }\nadder(10)", [["_N_", "5"]]) in
+  code == 15
+}
+
+test "macro conditional" {
+  defmacro("if __COND__ then __T__ else __F__", [["__COND__", "true"], ["__T__", "42"], ["__F__", "0"]]) == 42
+}
+
+test "macro list" {
+  defmacro("[__A__, __B__, __C__]", [["__A__", "1"], ["__B__", "2"], ["__C__", "3"]]) == [1,2,3]
+}
+
+test "ast roundtrip" {
+  let nodes = ast.parse("1 + 2 + 3") in
+  nodes[0].t == "bin"
+}
+
+test "eval basic" {
+  e.eval("42 * 2") == 84
+}

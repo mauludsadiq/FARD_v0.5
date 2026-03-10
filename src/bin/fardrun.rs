@@ -6390,17 +6390,8 @@ fn call_builtin(
                 let mut p = Parser::from_src(code, "<eval>")?;
                 let items = p.parse_module()?;
                 let mut child_env = Env::new();
-                loader.eval_items(items, &mut child_env, tracer, std::path::Path::new("."))?;
-                // Return the last expression value from child_env, or Unit
-                match child_env.get("__result__") {
-                    Some(v) => Ok(v.clone()),
-                    None => {
-                        // re-eval as single expr for convenience
-                        let mut p2 = Parser::from_src(code, "<eval>")?;
-                        let expr = p2.parse_expr()?;
-                        eval(&expr, &mut child_env, tracer, loader)
-                    }
-                }
+                let last = loader.eval_items(items, &mut child_env, tracer, std::path::Path::new("."))?;
+                Ok(last)
             }
             _ => bail!("ERROR_BADARG eval expects text"),
         }
