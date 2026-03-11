@@ -294,7 +294,7 @@ thread_local! {
 }
 
 fn main() -> Result<()> {
-    let (run, want_version, want_repl, test_args, publish_args) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
+    let (run, want_version, want_repl, test_args, publish_args, install_args) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
     if want_version {
         println!("fard_runtime_version={}", env!("CARGO_PKG_VERSION"));
         println!("trace_format_version=0.1.0");
@@ -580,6 +580,72 @@ fn main() -> Result<()> {
             .send_bytes(&reg_bytes)?;
         eprintln!("[fard publish] published {}@{} ✓", pkg_name, pkg_version);
         println!("{}@{}", pkg_name, pkg_version);
+        return Ok(());
+    }
+    if let Some(iargs) = install_args {
+        use fard_v0_5_language_gate::cli::fardrun_cli::InstallArgs;
+        // Install a specific dep or all deps from fard.toml
+        let deps_to_install: Vec<(String, String)> = if let Some(dep) = &iargs.dep {
+            // Single dep: name@version
+            let (pkg, ver) = dep.split_once('@')
+                .ok_or_else(|| anyhow!("--dep must be name@version, got: {}", dep))?;
+            vec![(pkg.to_string(), ver.to_string())]
+        } else {
+            // Read fard.toml [deps]
+            let toml_src = fs::read_to_string(&iargs.manifest)
+                .with_context(|| format!("cannot read {}", iargs.manifest.display()))?;
+            let mut deps = Vec::new();
+            let mut in_deps = false;
+            for line in toml_src.lines() {
+                let line = line.trim();
+                if line == "[deps]" { in_deps = true; continue; }
+                if line.starts_with('[') { in_deps = false; continue; }
+                if in_deps && line.contains('=') {
+                    let mut parts = line.splitn(2, '=');
+                    let _k = parts.next().unwrap_or("").trim();
+                    let v = parts.next().unwrap_or("").trim().trim_matches('"').to_string();
+                    if let Some((pkg, ver)) = v.split_once('@') {
+                        deps.push((pkg.to_string(), ver.to_string()));
+                    }
+                }
+            }
+            deps
+        };
+        if deps_to_install.is_empty() {
+            eprintln!("[fard install] no deps found in {}", iargs.manifest.display());
+            return Ok(());
+        }
+        for (pkg, ver) in &deps_to_install {
+            eprintln!("[fard install] installing {}@{}...", pkg, ver);
+            // Local registry: copy into cache directly
+            if let Some(reg) = &iargs.registry {
+                let src_path = reg.join("pkgs").join(pkg).join(ver);
+                let cache_dir = fard_cache_dir();
+                let dst = cache_dir.join(format!("{}@{}", pkg, ver));
+                if dst.join(".fetched").exists() {
+                    eprintln!("[fard install] {}@{} already cached", pkg, ver);
+                    continue;
+                }
+                if src_path.exists() {
+                    fs::create_dir_all(&dst).ok();
+                    // Copy all files
+                    for entry in fs::read_dir(&src_path).into_iter().flatten().flatten() {
+                        let dest_file = dst.join(entry.file_name());
+                        fs::copy(entry.path(), &dest_file).ok();
+                    }
+                    fs::write(dst.join(".fetched"), b"").ok();
+                    eprintln!("[fard install] {}@{} → {} (local)", pkg, ver, dst.display());
+                } else {
+                    eprintln!("[fard install] ERROR {}@{}: not found in local registry at {}", pkg, ver, src_path.display());
+                }
+                continue;
+            }
+            match fetch_package(pkg, ver) {
+                Ok(path) => eprintln!("[fard install] {}@{} → {}", pkg, ver, path.display()),
+                Err(e) => eprintln!("[fard install] ERROR {}@{}: {}", pkg, ver, e),
+            }
+        }
+        eprintln!("[fard install] done ({} package(s))", deps_to_install.len());
         return Ok(());
     }
     let program = run.program;

@@ -19,6 +19,7 @@ pub enum Command {
     Repl,
     Test(TestArgs),
     Publish(PublishArgs),
+    Install(InstallArgs),
 }
 
 #[derive(Args, Debug)]
@@ -64,8 +65,18 @@ pub struct PublishArgs {
     pub repo: String,
 }
 
+#[derive(Args, Debug)]
+pub struct InstallArgs {
+    #[arg(long)]
+    pub dep: Option<String>,
+    #[arg(long, default_value = "fard.toml")]
+    pub manifest: PathBuf,
+    #[arg(long)]
+    pub registry: Option<PathBuf>,
+}
+
 impl Cli {
-    pub fn parse_compat() -> (RunArgs, bool, bool, Option<TestArgs>, Option<PublishArgs>) {
+    pub fn parse_compat() -> (RunArgs, bool, bool, Option<TestArgs>, Option<PublishArgs>, Option<InstallArgs>) {
         use std::ffi::OsString;
         let mut argv: Vec<OsString> = std::env::args_os().collect();
         if argv.len() >= 2 {
@@ -100,7 +111,7 @@ impl Cli {
                 enforce_lockfile: false,
                     program_args: vec![],
             };
-            return (dummy, true, false, None, None);
+            return (dummy, true, false, None, None, None);
         }
 
         let want_repl = matches!(cli.cmd, Some(Command::Repl));
@@ -115,7 +126,7 @@ impl Cli {
                     enforce_lockfile: false,
                     program_args: vec![],
                 };
-                return (dummy, false, false, Some(t), None);
+                return (dummy, false, false, Some(t), None, None);
             }
             Some(Command::Publish(p)) => {
                 let dummy = RunArgs {
@@ -126,7 +137,18 @@ impl Cli {
                     enforce_lockfile: false,
                     program_args: vec![],
                 };
-                return (dummy, false, false, None, Some(p));
+                return (dummy, false, false, None, Some(p), None);
+            }
+            Some(Command::Install(i)) => {
+                let dummy = RunArgs {
+                    program: i.manifest.clone(),
+                    out: PathBuf::from("."),
+                    lockfile: None,
+                    registry: None,
+                    enforce_lockfile: false,
+                    program_args: vec![],
+                };
+                return (dummy, false, false, None, None, Some(i));
             }
             Some(Command::Repl) | None => {
                 if want_repl {
@@ -138,7 +160,7 @@ impl Cli {
                         enforce_lockfile: false,
                     program_args: vec![],
                     };
-                    return (dummy, false, true, None, None);
+                    return (dummy, false, true, None, None, None);
                 }
                 eprintln!("usage: fardrun run --program <file.fard> --out <dir>");
                 eprintln!("       fardrun test --program <file.fard>");
@@ -148,6 +170,6 @@ impl Cli {
             }
         };
 
-        (run, false, false, None, None)
+        (run, false, false, None, None, None)
     }
 }
