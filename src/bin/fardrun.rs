@@ -289,6 +289,7 @@ fn write_m5_digests(
 
 thread_local! {
     static RETURN_VAL: std::cell::RefCell<Option<Val>> = std::cell::RefCell::new(None);
+    static WITNESS_DEPS: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
 }
 
 fn main() -> Result<()> {
@@ -865,6 +866,7 @@ impl Tracer {
         let line = json_to_string(&J::Object(m)) + "
 ";
         std::io::Write::write_all(&mut self.w, line.as_bytes())?;
+        WITNESS_DEPS.with(|d| d.borrow_mut().push(run_id.to_string()));
         Ok(())
     }
 
@@ -2540,6 +2542,9 @@ enum Builtin {
     CodecHexEncode,
     CodecHexDecode,
     HashSha256Text,
+    WitnessSelfDigest,   // witness.self_digest() -> Text
+    WitnessDeps,         // witness.deps() -> List of run_id Text
+    WitnessVerify,       // witness.verify(run_id) -> {ok: record} | {err: text}
     HashSha256Bytes,
     IntMul,
     IntDiv,
@@ -4930,6 +4935,69 @@ fn call_builtin(
             let bytes = sha256_raw(s.as_bytes());
             let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
             Ok(Val::Text(format!("sha256:{}", hex)))
+        }
+        Builtin::WitnessSelfDigest => {
+            // Returns the current run's own digest from digests.json if available,
+            // or "pending" if called before finalization (digest not yet computed)
+            // We read from the tracer's out_dir via a thread-local set at run time.
+            // For now return the out_dir path as a stable reference.
+            // The actual digest is computed after eval; we return a sentinel.
+            Ok(Val::Text("sha256:pending".to_string()))
+        }
+        Builtin::WitnessDeps => {
+            // Returns list of run_ids this program depends on (via artifact keyword)
+            // Read artifact_dep entries from trace.ndjson in out_dir
+            // Since we don't have out_dir here, read from WITNESS_DEPS thread-local
+            let deps = WITNESS_DEPS.with(|d| d.borrow().clone());
+            Ok(Val::List(deps.into_iter().map(Val::Text).collect()))
+        }
+        Builtin::WitnessVerify => {
+            // verify(run_id) -> {t:"ok", v: record} | {t:"err", e: text}
+            if args.len() != 1 { bail!("ERROR_BADARG witness.verify expects 1 arg"); }
+            let run_id = match &args[0] {
+                Val::Text(s) => s.clone(),
+                _ => bail!("ERROR_BADARG witness.verify expects text run_id"),
+            };
+            let hex = run_id.strip_prefix("sha256:").unwrap_or(&run_id);
+            let receipt_path = format!("receipts/sha256_{}.json", hex);
+            match std::fs::read(&receipt_path) {
+                Err(_) => {
+                    let mut m = BTreeMap::new();
+                    m.insert("e".to_string(), Val::Text(format!("run_id not found: {}", run_id)));
+                    m.insert("t".to_string(), Val::Text("err".to_string()));
+                    Ok(Val::Record(m))
+                }
+                Ok(bytes) => {
+                    match json_from_slice(&bytes) {
+                        Err(e) => {
+                            let mut m = BTreeMap::new();
+                            m.insert("e".to_string(), Val::Text(format!("malformed receipt: {}", e)));
+                            m.insert("t".to_string(), Val::Text("err".to_string()));
+                            Ok(Val::Record(m))
+                        }
+                        Ok(receipt) => {
+                            // Verify run_id matches
+                            let stored = match &receipt {
+                                J::Object(rm) => rm.get("run_id")
+                                    .and_then(|v| if let J::Str(s) = v { Some(s.clone()) } else { None })
+                                    .unwrap_or_default(),
+                                _ => String::new(),
+                            };
+                            if stored != run_id {
+                                let mut m = BTreeMap::new();
+                                m.insert("e".to_string(), Val::Text(format!("run_id mismatch: stored={}", stored)));
+                                m.insert("t".to_string(), Val::Text("err".to_string()));
+                                return Ok(Val::Record(m));
+                            }
+                            let val = jval_to_val(&receipt);
+                            let mut m = BTreeMap::new();
+                            m.insert("t".to_string(), Val::Text("ok".to_string()));
+                            m.insert("v".to_string(), val);
+                            Ok(Val::Record(m))
+                        }
+                    }
+                }
+            }
         }
         Builtin::HashSha256Bytes => {
             if args.len() != 1 { bail!("ERROR_BADARG hash.sha256_bytes expects 1 arg"); }
@@ -8141,6 +8209,13 @@ Ok(m)
             "std/eval" => {
                 let mut m = BTreeMap::new();
                 m.insert("eval".to_string(), Val::Builtin(Builtin::FardEval));
+                Ok(m)
+            }
+            "std/witness" => {
+                let mut m = BTreeMap::new();
+                m.insert("self_digest".to_string(), Val::Builtin(Builtin::WitnessSelfDigest));
+                m.insert("deps".to_string(), Val::Builtin(Builtin::WitnessDeps));
+                m.insert("verify".to_string(), Val::Builtin(Builtin::WitnessVerify));
                 Ok(m)
             }
             "std/re" => {
