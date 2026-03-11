@@ -2570,6 +2570,7 @@ enum Builtin {
     WitnessSelfDigest,   // witness.self_digest() -> Text
     WitnessDeps,         // witness.deps() -> List of run_id Text
     WitnessVerify,       // witness.verify(run_id) -> {ok: record} | {err: text}
+    WitnessVerifyChain,  // witness.verify_chain(run_id) -> {ok: depth} | {err: {run_id, reason}}
     HashSha256Bytes,
     IntMul,
     IntDiv,
@@ -5020,6 +5021,75 @@ fn call_builtin(
                 }
             }
         }
+        Builtin::WitnessVerifyChain => {
+            // verify_chain(run_id) -> {ok: depth} | {err: {run_id, reason}}
+            if args.len() != 1 { bail!("ERROR_BADARG witness.verify_chain expects 1 arg"); }
+            let root_id = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG verify_chain expects text") };
+            // Walk derived_from chain recursively, verify every node
+            let mut queue: Vec<String> = vec![root_id.clone()];
+            let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let mut depth: i64 = 0;
+            while let Some(run_id) = queue.pop() {
+                if visited.contains(&run_id) { continue; }
+                visited.insert(run_id.clone());
+                let hex = run_id.strip_prefix("sha256:").unwrap_or(&run_id);
+                let receipt_path = format!("receipts/sha256_{}.json", hex);
+                let bytes = match std::fs::read(&receipt_path) {
+                    Ok(b) => b,
+                    Err(_) => {
+                        let mut em = BTreeMap::new();
+                        em.insert("reason".to_string(), Val::Text(format!("receipt not found")));
+                        em.insert("run_id".to_string(), Val::Text(run_id));
+                        let mut m = BTreeMap::new();
+                        m.insert("e".to_string(), Val::Record(em));
+                        m.insert("t".to_string(), Val::Text("err".to_string()));
+                        return Ok(Val::Record(m));
+                    }
+                };
+                let receipt = match json_from_slice(&bytes) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        let mut em = BTreeMap::new();
+                        em.insert("reason".to_string(), Val::Text(format!("malformed receipt: {}", e)));
+                        em.insert("run_id".to_string(), Val::Text(run_id));
+                        let mut m = BTreeMap::new();
+                        m.insert("e".to_string(), Val::Record(em));
+                        m.insert("t".to_string(), Val::Text("err".to_string()));
+                        return Ok(Val::Record(m));
+                    }
+                };
+                // Verify run_id matches
+                let stored = match &receipt {
+                    J::Object(rm) => rm.get("run_id").and_then(|v| if let J::Str(s) = v { Some(s.clone()) } else { None }).unwrap_or_default(),
+                    _ => String::new(),
+                };
+                if stored != run_id {
+                    let mut em = BTreeMap::new();
+                    em.insert("reason".to_string(), Val::Text(format!("run_id mismatch: stored={}", stored)));
+                    em.insert("run_id".to_string(), Val::Text(run_id));
+                    let mut m = BTreeMap::new();
+                    m.insert("e".to_string(), Val::Record(em));
+                    m.insert("t".to_string(), Val::Text("err".to_string()));
+                    return Ok(Val::Record(m));
+                }
+                depth += 1;
+                // Enqueue derived_from
+                if let J::Object(rm) = &receipt {
+                    if let Some(J::Array(deps)) = rm.get("derived_from") {
+                        for dep in deps {
+                            if let J::Str(dep_id) = dep {
+                                queue.push(dep_id.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            let mut m = BTreeMap::new();
+            m.insert("depth".to_string(), Val::Int(depth));
+            m.insert("t".to_string(), Val::Text("ok".to_string()));
+            Ok(Val::Record(m))
+        }
+
         Builtin::HashSha256Bytes => {
             if args.len() != 1 { bail!("ERROR_BADARG hash.sha256_bytes expects 1 arg"); }
             match &args[0] {
@@ -8237,6 +8307,7 @@ Ok(m)
                 m.insert("self_digest".to_string(), Val::Builtin(Builtin::WitnessSelfDigest));
                 m.insert("deps".to_string(), Val::Builtin(Builtin::WitnessDeps));
                 m.insert("verify".to_string(), Val::Builtin(Builtin::WitnessVerify));
+                m.insert("verify_chain".to_string(), Val::Builtin(Builtin::WitnessVerifyChain));
                 Ok(m)
             }
             "std/re" => {
