@@ -4903,7 +4903,9 @@ fn call_builtin(
         Builtin::HashSha256Text => {
             if args.len() != 1 { bail!("ERROR_BADARG hash.sha256_text expects 1 arg"); }
             let s = match &args[0] { Val::Text(ss) => ss.clone(), _ => bail!("ERROR_BADARG type") };
-            Ok(Val::Bytes(sha256_raw(s.as_bytes())))
+            let bytes = sha256_raw(s.as_bytes());
+            let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+            Ok(Val::Text(format!("sha256:{}", hex)))
         }
         Builtin::HashSha256Bytes => {
             if args.len() != 1 { bail!("ERROR_BADARG hash.sha256_bytes expects 1 arg"); }
