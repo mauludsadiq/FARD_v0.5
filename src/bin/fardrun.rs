@@ -592,6 +592,9 @@ fn main() -> Result<()> {
     let result_path = out_dir.join("result.json");
     let mut tracer = Tracer::new(&out_dir, &trace_path)?;
     let mut loader = ModuleLoader::new(program.parent().unwrap_or(Path::new(".")));
+    // Load fard.toml from program directory for pkg dep resolution
+    let fard_toml_path = program.parent().unwrap_or(Path::new(".")).join("fard.toml");
+    loader.load_fard_toml(&fard_toml_path);
     let runtime_version = env!("CARGO_PKG_VERSION");
     let trace_format_version = "0.1.0";
     if let Some(rp) = registry_dir.clone() {
@@ -7426,6 +7429,7 @@ struct ModuleLoader {
     enforce_lockfile: bool,
     graph: ModuleGraph,
     current: Option<usize>,
+    pkg_deps: HashMap<String, String>, // short name -> "name@version"
 }
 impl ModuleLoader {
     fn new(root: &Path) -> Self {
@@ -7438,8 +7442,29 @@ impl ModuleLoader {
             enforce_lockfile: false,
             graph: ModuleGraph::new(),
             current: None,
+            pkg_deps: HashMap::new(),
         }
     }
+    fn load_fard_toml(&mut self, toml_path: &Path) {
+        if let Ok(src) = fs::read_to_string(toml_path) {
+            // Parse [deps] section: name = "name@version"
+            let mut in_deps = false;
+            for line in src.lines() {
+                let line = line.trim();
+                if line == "[deps]" { in_deps = true; continue; }
+                if line.starts_with('[') { in_deps = false; continue; }
+                if in_deps && line.contains('=') {
+                    let mut parts = line.splitn(2, '=');
+                    let k = parts.next().unwrap_or("").trim().to_string();
+                    let v = parts.next().unwrap_or("").trim().trim_matches('"').to_string();
+                    if !k.is_empty() && !v.is_empty() {
+                        self.pkg_deps.insert(k, v);
+                    }
+                }
+            }
+        }
+    }
+
     fn graph_note_import(
         &mut self,
         callee_spec: &str,
@@ -7697,6 +7722,15 @@ impl ModuleLoader {
                 } else {
                     name
                 };
+                // Resolve short name via fard.toml [deps] if no @ present
+                let resolved_spec: String = if !spec.contains('@') {
+                    slf.pkg_deps.get(spec)
+                        .cloned()
+                        .ok_or_else(|| anyhow!("ERROR_RUNTIME pkg '{}' not found in fard.toml [deps]", spec))?
+                } else {
+                    spec.to_string()
+                };
+                let spec = resolved_spec.as_str();
                 let (pkg, ver_and_mod) = spec
                     .split_once("@")
                     .ok_or_else(|| anyhow!("ERROR_RUNTIME bad pkg import: {name}"))?;
