@@ -291,6 +291,7 @@ thread_local! {
     static RETURN_VAL: std::cell::RefCell<Option<Val>> = std::cell::RefCell::new(None);
     static WITNESS_DEPS: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
     static SELF_DIGEST: std::cell::RefCell<String> = std::cell::RefCell::new(String::new());
+    static FFI_LIBS: std::cell::RefCell<std::collections::HashMap<String, libloading::Library>> = std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
 fn main() -> Result<()> {
@@ -2640,6 +2641,9 @@ enum Builtin {
     WitnessDeps,         // witness.deps() -> List of run_id Text
     WitnessVerify,       // witness.verify(run_id) -> {ok: record} | {err: text}
     WitnessVerifyChain,  // witness.verify_chain(run_id) -> {ok: depth} | {err: {run_id, reason}}
+    FfiOpen,   // ffi.open(path) -> {ok: handle_id} | {err: text}
+    FfiCall,   // ffi.call(handle_id, symbol, args) -> {ok: val} | {err: text}
+    FfiClose,  // ffi.close(handle_id) -> null
     HashSha256Bytes,
     IntMul,
     IntDiv,
@@ -5157,6 +5161,197 @@ fn call_builtin(
             m.insert("depth".to_string(), Val::Int(depth));
             m.insert("t".to_string(), Val::Text("ok".to_string()));
             Ok(Val::Record(m))
+        }
+
+        Builtin::FfiOpen => {
+            if args.len() != 1 { bail!("ERROR_BADARG ffi.open expects 1 arg"); }
+            let path = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.open expects text path") };
+            let mut m = BTreeMap::new();
+            match unsafe { libloading::Library::new(&path) } {
+                Ok(lib) => {
+                    FFI_LIBS.with(|libs| { libs.borrow_mut().insert(path.clone(), lib); });
+                    m.insert("ok".to_string(), Val::Text(path));
+                    m.insert("t".to_string(), Val::Text("ok".to_string()));
+                }
+                Err(e) => {
+                    m.insert("e".to_string(), Val::Text(format!("{}", e)));
+                    m.insert("t".to_string(), Val::Text("err".to_string()));
+                }
+            }
+            Ok(Val::Record(m))
+        }
+        Builtin::FfiCall => {
+            if args.len() != 3 { bail!("ERROR_BADARG ffi.call expects 3 args"); }
+            let handle = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.call: handle must be text") };
+            let symbol = match &args[1] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.call: symbol must be text") };
+            let ffi_args = match &args[2] { Val::List(l) => l.clone(), _ => bail!("ERROR_BADARG ffi.call: args must be list") };
+            let mut m = BTreeMap::new();
+            let int_args: anyhow::Result<Vec<i64>> = ffi_args.iter().map(|v| match v {
+                Val::Int(n) => Ok(*n),
+                _ => Err(anyhow::anyhow!("ERROR_FFI only int args supported in v1")),
+            }).collect();
+            match int_args {
+                Err(e) => { m.insert("e".to_string(), Val::Text(format!("{}", e))); m.insert("t".to_string(), Val::Text("err".to_string())); }
+                Ok(iargs) => {
+                    let result: anyhow::Result<i64> = FFI_LIBS.with(|libs| {
+                        let libs = libs.borrow();
+                        let lib = libs.get(&handle).ok_or_else(|| anyhow::anyhow!("ERROR_FFI handle not found: {}", handle))?;
+                        unsafe {
+                            match iargs.len() {
+                                0 => { let f: libloading::Symbol<unsafe extern "C" fn() -> i64> = lib.get(symbol.as_bytes())?; Ok(f()) }
+                                1 => { let f: libloading::Symbol<unsafe extern "C" fn(i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0])) }
+                                2 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1])) }
+                                3 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1],iargs[2])) }
+                                _ => Err(anyhow::anyhow!("ERROR_FFI max 3 args in v1")),
+                            }
+                        }
+                    });
+                    match result {
+                        Ok(n) => { m.insert("ok".to_string(), Val::Int(n)); m.insert("t".to_string(), Val::Text("ok".to_string())); }
+                        Err(e) => { m.insert("e".to_string(), Val::Text(format!("{}", e))); m.insert("t".to_string(), Val::Text("err".to_string())); }
+                    }
+                }
+            }
+            Ok(Val::Record(m))
+        }
+        Builtin::FfiClose => {
+            if args.len() != 1 { bail!("ERROR_BADARG ffi.close expects 1 arg"); }
+            let handle = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.close expects text") };
+            FFI_LIBS.with(|libs| { libs.borrow_mut().remove(&handle); });
+            Ok(Val::Unit)
+        }
+
+        Builtin::FfiOpen => {
+            if args.len() != 1 { bail!("ERROR_BADARG ffi.open expects 1 arg"); }
+            let path = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.open expects text path") };
+            let mut m = BTreeMap::new();
+            match unsafe { libloading::Library::new(&path) } {
+                Ok(lib) => {
+                    FFI_LIBS.with(|libs| { libs.borrow_mut().insert(path.clone(), lib); });
+                    m.insert("ok".to_string(), Val::Text(path));
+                    m.insert("t".to_string(), Val::Text("ok".to_string()));
+                }
+                Err(e) => {
+                    m.insert("e".to_string(), Val::Text(format!("{}", e)));
+                    m.insert("t".to_string(), Val::Text("err".to_string()));
+                }
+            }
+            Ok(Val::Record(m))
+        }
+        Builtin::FfiCall => {
+            if args.len() != 3 { bail!("ERROR_BADARG ffi.call expects 3 args"); }
+            let handle = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.call: handle must be text") };
+            let symbol = match &args[1] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.call: symbol must be text") };
+            let ffi_args = match &args[2] { Val::List(l) => l.clone(), _ => bail!("ERROR_BADARG ffi.call: args must be list") };
+            let mut m = BTreeMap::new();
+            let int_args: anyhow::Result<Vec<i64>> = ffi_args.iter().map(|v| match v {
+                Val::Int(n) => Ok(*n),
+                _ => Err(anyhow::anyhow!("ERROR_FFI only int args supported in v1")),
+            }).collect();
+            match int_args {
+                Err(e) => { m.insert("e".to_string(), Val::Text(format!("{}", e))); m.insert("t".to_string(), Val::Text("err".to_string())); }
+                Ok(iargs) => {
+                    let result: anyhow::Result<i64> = FFI_LIBS.with(|libs| {
+                        let libs = libs.borrow();
+                        let lib = libs.get(&handle).ok_or_else(|| anyhow::anyhow!("ERROR_FFI handle not found: {}", handle))?;
+                        unsafe {
+                            match iargs.len() {
+                                0 => { let f: libloading::Symbol<unsafe extern "C" fn() -> i64> = lib.get(symbol.as_bytes())?; Ok(f()) }
+                                1 => { let f: libloading::Symbol<unsafe extern "C" fn(i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0])) }
+                                2 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1])) }
+                                3 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1],iargs[2])) }
+                                _ => Err(anyhow::anyhow!("ERROR_FFI max 3 args in v1")),
+                            }
+                        }
+                    });
+                    match result {
+                        Ok(n) => { m.insert("ok".to_string(), Val::Int(n)); m.insert("t".to_string(), Val::Text("ok".to_string())); }
+                        Err(e) => { m.insert("e".to_string(), Val::Text(format!("{}", e))); m.insert("t".to_string(), Val::Text("err".to_string())); }
+                    }
+                }
+            }
+            Ok(Val::Record(m))
+        }
+        Builtin::FfiClose => {
+            if args.len() != 1 { bail!("ERROR_BADARG ffi.close expects 1 arg"); }
+            let handle = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.close expects text") };
+            FFI_LIBS.with(|libs| { libs.borrow_mut().remove(&handle); });
+            Ok(Val::Unit)
+        }
+
+        Builtin::FfiOpen => {
+            // ffi.open(path) -> {ok: handle_id} | {err: text}
+            if args.len() != 1 { bail!("ERROR_BADARG ffi.open expects 1 arg"); }
+            let path = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.open expects text path") };
+            let mut m = BTreeMap::new();
+            match unsafe { libloading::Library::new(&path) } {
+                Ok(lib) => {
+                    // Store library in thread-local, return handle id (path as key)
+                    FFI_LIBS.with(|libs| {
+                        libs.borrow_mut().insert(path.clone(), lib);
+                    });
+                    m.insert("ok".to_string(), Val::Text(path));
+                    m.insert("t".to_string(), Val::Text("ok".to_string()));
+                }
+                Err(e) => {
+                    m.insert("e".to_string(), Val::Text(format!("{}", e)));
+                    m.insert("t".to_string(), Val::Text("err".to_string()));
+                }
+            }
+            Ok(Val::Record(m))
+        }
+        Builtin::FfiCall => {
+            // ffi.call(handle_id, symbol, args_list) -> {ok: val} | {err: text}
+            if args.len() != 3 { bail!("ERROR_BADARG ffi.call expects 3 args: handle, symbol, args"); }
+            let handle = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.call: handle must be text") };
+            let symbol = match &args[1] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.call: symbol must be text") };
+            let ffi_args = match &args[2] { Val::List(l) => l.clone(), _ => bail!("ERROR_BADARG ffi.call: args must be list") };
+            let mut m = BTreeMap::new();
+            // Only support i64 args/return for now (safe, deterministic subset)
+            let int_args: Result<Vec<i64>> = ffi_args.iter().map(|v| match v {
+                Val::Int(n) => Ok(*n),
+                _ => Err(anyhow!("ERROR_FFI ffi.call: only int args supported in v1")),
+            }).collect();
+            match int_args {
+                Err(e) => {
+                    m.insert("e".to_string(), Val::Text(format!("{}", e)));
+                    m.insert("t".to_string(), Val::Text("err".to_string()));
+                    return Ok(Val::Record(m));
+                }
+                Ok(iargs) => {
+                    let result = FFI_LIBS.with(|libs| -> Result<i64> {
+                        let libs = libs.borrow();
+                        let lib = libs.get(&handle).ok_or_else(|| anyhow!("ERROR_FFI handle not found: {}", handle))?;
+                        unsafe {
+                            match iargs.len() {
+                                0 => { let f: libloading::Symbol<unsafe extern "C" fn() -> i64> = lib.get(symbol.as_bytes())?; Ok(f()) }
+                                1 => { let f: libloading::Symbol<unsafe extern "C" fn(i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0])) }
+                                2 => { let f: libloading::Symbol<unsafe extern "C" fn(i64, i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0], iargs[1])) }
+                                3 => { let f: libloading::Symbol<unsafe extern "C" fn(i64, i64, i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0], iargs[1], iargs[2])) }
+                                _ => bail!("ERROR_FFI ffi.call: max 3 args supported in v1"),
+                            }
+                        }
+                    });
+                    match result {
+                        Ok(n) => {
+                            m.insert("ok".to_string(), Val::Int(n));
+                            m.insert("t".to_string(), Val::Text("ok".to_string()));
+                        }
+                        Err(e) => {
+                            m.insert("e".to_string(), Val::Text(format!("{}", e)));
+                            m.insert("t".to_string(), Val::Text("err".to_string()));
+                        }
+                    }
+                }
+            }
+            Ok(Val::Record(m))
+        }
+        Builtin::FfiClose => {
+            // ffi.close(handle_id) -> null
+            if args.len() != 1 { bail!("ERROR_BADARG ffi.close expects 1 arg"); }
+            let handle = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.close expects text") };
+            FFI_LIBS.with(|libs| { libs.borrow_mut().remove(&handle); });
+            Ok(Val::Unit)
         }
 
         Builtin::HashSha256Bytes => {
@@ -8410,6 +8605,13 @@ Ok(m)
                 m.insert("verify_chain".to_string(), Val::Builtin(Builtin::WitnessVerifyChain));
                 Ok(m)
             }
+            "std/ffi" => {
+                let mut m = BTreeMap::new();
+                m.insert("open".to_string(),  Val::Builtin(Builtin::FfiOpen));
+                m.insert("call".to_string(),  Val::Builtin(Builtin::FfiCall));
+                m.insert("close".to_string(), Val::Builtin(Builtin::FfiClose));
+                Ok(m)
+            }
             "std/re" => {
                 let mut m = BTreeMap::new();
                 m.insert("is_match".to_string(), Val::Builtin(Builtin::ReMatch));
@@ -8561,6 +8763,8 @@ Ok(m)
             "std/rec",
             "std/crypto",
             "std/rand",
+            "std/ffi",
+            "std/witness",
         ];
 
         let mut pairs: Vec<(String, String)> = names
