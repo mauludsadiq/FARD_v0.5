@@ -40,4 +40,5 @@ members = [
   "crates/fardc",
   "crates/fardlang",
   "crates/fardcli",
+  "crates/fard-lsp",
 ]

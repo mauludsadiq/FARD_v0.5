@@ -1,0 +1,15 @@
+[package]
+name = "fard-lsp"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "fard-lsp"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+tokio = { version = "1", features = ["full"] }
+tower-lsp = "0.20"
+serde_json = "1"
+fard_v0_5_language_gate = { path = "../.." }

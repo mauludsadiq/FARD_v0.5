@@ -1,0 +1,37 @@
+{
+  "name": "fard-language",
+  "displayName": "FARD Language",
+  "description": "FARD language support — syntax highlighting, diagnostics, hover",
+  "version": "0.1.0",
+  "publisher": "mauludsadiq",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Programming Languages"],
+  "activationEvents": ["onLanguage:fard"],
+  "main": "./src/extension.js",
+  "contributes": {
+    "languages": [{
+      "id": "fard",
+      "aliases": ["FARD", "fard"],
+      "extensions": [".fard"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "fard",
+      "scopeName": "source.fard",
+      "path": "./syntaxes/fard.tmLanguage.json"
+    }],
+    "configuration": {
+      "title": "FARD",
+      "properties": {
+        "fard.lspPath": {
+          "type": "string",
+          "default": "fard-lsp",
+          "description": "Path to the fard-lsp binary"
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^8.1.0"
+  }
+}

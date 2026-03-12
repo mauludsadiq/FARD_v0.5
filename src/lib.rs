@@ -370,3 +370,71 @@ pub mod cli;
 pub mod digest;
 
 pub mod gates;
+
+/// Parse a FARD source string and return a list of error messages with line/col.
+/// Used by fard-lsp for diagnostics.
+pub fn parse_check(source: &str, filename: &str) -> Vec<(u32, u32, String)> {
+    // We shell out to the binary parser indirectly by re-using the run_fard path.
+    // For now, use a subprocess approach: write to temp file and run fardrun --parse-only.
+    // This avoids needing to expose the internal Parser struct.
+    let mut errors = Vec::new();
+    let tmp = std::env::temp_dir().join("fard_lsp_check.fard");
+    if std::fs::write(&tmp, source).is_err() {
+        return errors;
+    }
+    let fardrun = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("fardrun")))
+        .unwrap_or_else(|| std::path::PathBuf::from("fardrun"));
+    let out_tmp = std::env::temp_dir().join("fard_lsp_check_out");
+    let result = std::process::Command::new(&fardrun)
+        .args(["run", "--program", &tmp.to_string_lossy(), "--out", &out_tmp.to_string_lossy()])
+        .output();
+    match result {
+        Ok(out) if !out.status.success() => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            for line in stderr.lines() {
+                if line.contains("ERROR_PARSE") || line.contains("parse error") || line.contains("ERROR_EVAL") {
+                    let (l, c) = extract_lsp_pos(line);
+                    errors.push((l, c, line.to_string()));
+                }
+            }
+            if errors.is_empty() && !stderr.trim().is_empty() {
+                errors.push((0, 0, stderr.lines().last().unwrap_or("error").to_string()));
+            }
+        }
+        Err(e) => {
+            errors.push((0, 0, format!("fardrun not found: {}", e)));
+        }
+        _ => {}
+    }
+    let _ = std::fs::remove_file(&tmp);
+    let _ = std::fs::remove_dir_all(&out_tmp);
+    errors
+}
+
+fn extract_lsp_pos(msg: &str) -> (u32, u32) {
+    let mut line = 0u32;
+    let mut col = 0u32;
+    if let Some(idx) = msg.find("line ") {
+        let rest = &msg[idx + 5..];
+        if let Some(n) = rest.split_whitespace().next().and_then(|s| s.parse::<u32>().ok()) {
+            line = n.saturating_sub(1);
+        }
+    }
+    if let Some(idx) = msg.find("col ") {
+        let rest = &msg[idx + 4..];
+        if let Some(n) = rest.split_whitespace().next().and_then(|s| s.parse::<u32>().ok()) {
+            col = n.saturating_sub(1);
+        }
+    }
+    // Also try :line:col format
+    let parts: Vec<&str> = msg.split(':').collect();
+    if parts.len() >= 3 {
+        if let (Ok(l), Ok(c)) = (parts[parts.len()-2].trim().parse::<u32>(), parts[parts.len()-1].trim().split_whitespace().next().unwrap_or("0").parse::<u32>()) {
+            if l > 0 { line = l - 1; }
+            if c > 0 { col = c - 1; }
+        }
+    }
+    (line, col)
+}

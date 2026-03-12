@@ -1,0 +1,67 @@
+{
+  "name": "FARD",
+  "scopeName": "source.fard",
+  "fileTypes": ["fard"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#keywords" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#operators" },
+    { "include": "#artifact" },
+    { "include": "#import" }
+  ],
+  "repository": {
+    "comments": {
+      "match": "//.*$",
+      "name": "comment.line.double-slash.fard"
+    },
+    "keywords": {
+      "match": "\\b(let|fn|if|then|else|match|while|return|import|export|artifact|as|null|true|false|type)\\b",
+      "name": "keyword.control.fard"
+    },
+    "strings": {
+      "patterns": [
+        {
+          "begin": "\"",
+          "end": "\"",
+          "name": "string.quoted.double.fard",
+          "patterns": [
+            { "match": "\\${[^}]*}", "name": "variable.other.fard" },
+            { "match": "\\\\.", "name": "constant.character.escape.fard" }
+          ]
+        },
+        {
+          "begin": "`",
+          "end": "`",
+          "name": "string.quoted.backtick.fard",
+          "patterns": [
+            { "match": "\\${[^}]*}", "name": "variable.other.fard" }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "match": "\\b-?[0-9]+([.][0-9]+)?\\b",
+      "name": "constant.numeric.fard"
+    },
+    "operators": {
+      "match": "(=>|->|==|!=|<=|>=|<|>|&&|\\|\\||!|\\+|-|\\*|/|%)",
+      "name": "keyword.operator.fard"
+    },
+    "artifact": {
+      "match": "\\bartifact\\s+(\\w+)\\s*=\\s*(\"sha256:[a-f0-9]+\")",
+      "captures": {
+        "1": { "name": "variable.other.fard" },
+        "2": { "name": "constant.other.hash.fard" }
+      }
+    },
+    "import": {
+      "match": "\\bimport\\s*\\(\\s*(\"[^\"]+\")\\s*\\)\\s*as\\s+(\\w+)",
+      "captures": {
+        "1": { "name": "string.quoted.double.fard" },
+        "2": { "name": "variable.other.fard" }
+      }
+    }
+  }
+}
