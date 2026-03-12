@@ -2644,6 +2644,8 @@ enum Builtin {
     FfiOpen,   // ffi.open(path) -> {ok: handle_id} | {err: text}
     FfiCall,   // ffi.call(handle_id, symbol, args) -> {ok: val} | {err: text}
     FfiClose,  // ffi.close(handle_id) -> null
+    NetServe,   // net.serve(port, handler) -> never (blocking)
+    NetRespond, // net.respond(req, status, headers, body) -> null (internal)
     HashSha256Bytes,
     IntMul,
     IntDiv,
@@ -5218,6 +5220,73 @@ fn call_builtin(
             if args.len() != 1 { bail!("ERROR_BADARG ffi.close expects 1 arg"); }
             let handle = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.close expects text") };
             FFI_LIBS.with(|libs| { libs.borrow_mut().remove(&handle); });
+            Ok(Val::Unit)
+        }
+
+        Builtin::NetServe => {
+            // net.serve(port, handler_fn) -> blocking server
+            // handler_fn receives {method, path, headers, body} -> {status, headers, body}
+            if args.len() != 2 { bail!("ERROR_BADARG net.serve expects 2 args: port, handler"); }
+            let port = match &args[0] { Val::Int(n) => *n as u16, _ => bail!("ERROR_BADARG net.serve: port must be int") };
+            let handler = args[1].clone();
+            let addr = format!("0.0.0.0:{}", port);
+            let server = tiny_http::Server::http(&addr)
+                .map_err(|e| anyhow!("ERROR_NET net.serve failed to bind {}: {}", addr, e))?;
+            eprintln!("[fard] net.serve listening on http://{}", addr);
+            for raw_req in server.incoming_requests() {
+                let method = raw_req.method().as_str().to_string();
+                let url = raw_req.url().to_string();
+                let mut header_map = BTreeMap::new();
+                for h in raw_req.headers() {
+                    header_map.insert(
+                        h.field.as_str().as_str().to_lowercase(),
+                        Val::Text(h.value.as_str().to_string()),
+                    );
+                }
+                let mut body_bytes = Vec::new();
+                let mut req_body = raw_req;
+                std::io::Read::read_to_end(req_body.as_reader(), &mut body_bytes).ok();
+                let body_str = String::from_utf8_lossy(&body_bytes).to_string();
+                // Build request record
+                let mut req_rec = BTreeMap::new();
+                req_rec.insert("method".to_string(), Val::Text(method));
+                req_rec.insert("path".to_string(), Val::Text(url));
+                req_rec.insert("headers".to_string(), Val::Record(header_map));
+                req_rec.insert("body".to_string(), Val::Text(body_str));
+                let req_val = Val::Record(req_rec);
+                // Call handler
+                let resp_val = match call(handler.clone(), vec![req_val], tracer, loader) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!("[fard] net.serve handler error: {}", e);
+                        let mut m = BTreeMap::new();
+                        m.insert("status".to_string(), Val::Int(500));
+                        m.insert("body".to_string(), Val::Text(format!("handler error: {}", e)));
+                        m.insert("headers".to_string(), Val::Record(BTreeMap::new()));
+                        Val::Record(m)
+                    }
+                };
+                // Extract response fields
+                let status = match &resp_val { Val::Record(m) => match m.get("status") { Some(Val::Int(n)) => *n as u32, _ => 200 }, _ => 200 };
+                let body_text = match &resp_val { Val::Record(m) => match m.get("body") { Some(Val::Text(s)) => s.clone(), Some(v) => format!("{:?}", v), _ => String::new() }, _ => String::new() };
+                let content_type = match &resp_val {
+                    Val::Record(m) => match m.get("headers") {
+                        Some(Val::Record(hm)) => match hm.get("content-type") {
+                            Some(Val::Text(ct)) => ct.clone(),
+                            _ => "text/plain".to_string(),
+                        },
+                        _ => "text/plain".to_string(),
+                    },
+                    _ => "text/plain".to_string(),
+                };
+                let response = tiny_http::Response::from_string(body_text)
+                    .with_status_code(status)
+                    .with_header(tiny_http::Header::from_bytes(b"Content-Type", content_type.as_bytes()).unwrap());
+                req_body.respond(response).ok();
+            }
+            Ok(Val::Unit)
+        }
+        Builtin::NetRespond => {
             Ok(Val::Unit)
         }
 
@@ -8646,6 +8715,11 @@ Ok(m)
                 m.insert("request".to_string(), Val::Builtin(Builtin::HttpRequest));
                 Ok(m)
             }
+            "std/net" => {
+                let mut m = BTreeMap::new();
+                m.insert("serve".to_string(), Val::Builtin(Builtin::NetServe));
+                Ok(m)
+            }
             "std/record" => {
                 let m: BTreeMap<String, Val> = BTreeMap::new();
                 Ok(m)
@@ -8738,7 +8812,7 @@ Ok(m)
     }
 
     fn stdlib_root_digest(&self) -> String {
-        let names: [&str; 26] = [
+        let names: [&str; 27] = [
             "std/artifact",
             "std/bytes",
             "std/codec",
@@ -8765,6 +8839,7 @@ Ok(m)
             "std/rand",
             "std/ffi",
             "std/witness",
+            "std/net",
         ];
 
         let mut pairs: Vec<(String, String)> = names
