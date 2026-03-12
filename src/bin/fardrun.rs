@@ -2653,6 +2653,10 @@ enum Builtin {
     CryptoMerkleRoot,     // crypto.merkle_root(list_of_hex) -> hex
     CompressGzip,         // compress.gzip(text) -> bytes_hex
     CompressGunzip,       // compress.gunzip(bytes_hex) -> {ok: text} | {err: text}
+    GraphOf,       // graph.of(run_id) -> {nodes, edges} | {err: text}
+    GraphAncestors, // graph.ancestors(run_id) -> list of run_ids
+    GraphLeaves,    // graph.leaves(run_id) -> list of root run_ids
+    GraphToDot,     // graph.to_dot(graph) -> dot string
     HashSha256Bytes,
     IntMul,
     IntDiv,
@@ -5429,6 +5433,138 @@ fn call_builtin(
                 }
             }
             Ok(Val::Record(m))
+        }
+
+        Builtin::GraphOf => {
+            // graph.of(run_id) -> {ok: {nodes, edges}} | {err: text}
+            if args.len() != 1 { bail!("ERROR_BADARG graph.of expects 1 arg"); }
+            let root_id = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG graph.of expects text") };
+            let mut queue: Vec<String> = vec![root_id.clone()];
+            let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let mut nodes: Vec<Val> = Vec::new();
+            let mut edges: Vec<Val> = Vec::new();
+            let mut err_m = BTreeMap::new();
+            let mut had_err = false;
+            while let Some(run_id) = queue.pop() {
+                if visited.contains(&run_id) { continue; }
+                visited.insert(run_id.clone());
+                let hex = run_id.strip_prefix("sha256:").unwrap_or(&run_id);
+                let receipt_path = format!("receipts/sha256_{}.json", hex);
+                let bytes = match std::fs::read(&receipt_path) {
+                    Ok(b) => b,
+                    Err(_) => { err_m.insert("e".to_string(), Val::Text(format!("receipt not found: {}", run_id))); err_m.insert("t".to_string(), Val::Text("err".to_string())); had_err = true; break; }
+                };
+                let receipt = match json_from_slice(&bytes) {
+                    Ok(r) => r,
+                    Err(e) => { err_m.insert("e".to_string(), Val::Text(format!("malformed receipt {}: {}", run_id, e))); err_m.insert("t".to_string(), Val::Text("err".to_string())); had_err = true; break; }
+                };
+                // Build node record
+                let output = match &receipt { J::Object(rm) => rm.get("output").cloned().unwrap_or(J::Null), _ => J::Null };
+                let mut node = BTreeMap::new();
+                node.insert("run_id".to_string(), Val::Text(run_id.clone()));
+                node.insert("output".to_string(), jval_to_val(&output));
+                nodes.push(Val::Record(node));
+                // Enqueue and record edges from derived_from
+                if let J::Object(rm) = &receipt {
+                    if let Some(J::Array(deps)) = rm.get("derived_from") {
+                        for dep in deps {
+                            if let J::Str(dep_id) = dep {
+                                let mut edge = BTreeMap::new();
+                                edge.insert("from".to_string(), Val::Text(run_id.clone()));
+                                edge.insert("to".to_string(), Val::Text(dep_id.clone()));
+                                edges.push(Val::Record(edge));
+                                queue.push(dep_id.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            if had_err { return Ok(Val::Record(err_m)); }
+            let mut graph = BTreeMap::new();
+            graph.insert("edges".to_string(), Val::List(edges));
+            graph.insert("nodes".to_string(), Val::List(nodes));
+            let mut m = BTreeMap::new();
+            m.insert("ok".to_string(), Val::Record(graph));
+            m.insert("t".to_string(), Val::Text("ok".to_string()));
+            Ok(Val::Record(m))
+        }
+        Builtin::GraphAncestors => {
+            // graph.ancestors(run_id) -> list of all ancestor run_ids (excluding root)
+            if args.len() != 1 { bail!("ERROR_BADARG graph.ancestors expects 1 arg"); }
+            let root_id = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG graph.ancestors expects text") };
+            let mut queue: Vec<String> = vec![root_id.clone()];
+            let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let mut ancestors: Vec<Val> = Vec::new();
+            while let Some(run_id) = queue.pop() {
+                if visited.contains(&run_id) { continue; }
+                visited.insert(run_id.clone());
+                if run_id != root_id { ancestors.push(Val::Text(run_id.clone())); }
+                let hex = run_id.strip_prefix("sha256:").unwrap_or(&run_id);
+                let receipt_path = format!("receipts/sha256_{}.json", hex);
+                if let Ok(bytes) = std::fs::read(&receipt_path) {
+                    if let Ok(J::Object(rm)) = json_from_slice(&bytes) {
+                        if let Some(J::Array(deps)) = rm.get("derived_from") {
+                            for dep in deps { if let J::Str(dep_id) = dep { queue.push(dep_id.clone()); } }
+                        }
+                    }
+                }
+            }
+            Ok(Val::List(ancestors))
+        }
+        Builtin::GraphLeaves => {
+            // graph.leaves(run_id) -> list of root run_ids (nodes with no derived_from)
+            if args.len() != 1 { bail!("ERROR_BADARG graph.leaves expects 1 arg"); }
+            let root_id = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG graph.leaves expects text") };
+            let mut queue: Vec<String> = vec![root_id.clone()];
+            let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let mut leaves: Vec<Val> = Vec::new();
+            while let Some(run_id) = queue.pop() {
+                if visited.contains(&run_id) { continue; }
+                visited.insert(run_id.clone());
+                let hex = run_id.strip_prefix("sha256:").unwrap_or(&run_id);
+                let receipt_path = format!("receipts/sha256_{}.json", hex);
+                if let Ok(bytes) = std::fs::read(&receipt_path) {
+                    if let Ok(J::Object(rm)) = json_from_slice(&bytes) {
+                        let deps = rm.get("derived_from").and_then(|d| if let J::Array(a) = d { Some(a.clone()) } else { None }).unwrap_or_default();
+                        if deps.is_empty() {
+                            leaves.push(Val::Text(run_id.clone()));
+                        } else {
+                            for dep in deps { if let J::Str(dep_id) = dep { queue.push(dep_id.clone()); } }
+                        }
+                    }
+                } else {
+                    leaves.push(Val::Text(run_id.clone()));
+                }
+            }
+            Ok(Val::List(leaves))
+        }
+        Builtin::GraphToDot => {
+            // graph.to_dot(graph_record) -> dot string
+            if args.len() != 1 { bail!("ERROR_BADARG graph.to_dot expects 1 arg"); }
+            let graph = match &args[0] { Val::Record(m) => m.clone(), _ => bail!("ERROR_BADARG graph.to_dot expects record from graph.of") };
+            let nodes = match graph.get("nodes") { Some(Val::List(l)) => l.clone(), _ => Vec::new() };
+            let edges = match graph.get("edges") { Some(Val::List(l)) => l.clone(), _ => Vec::new() };
+            let mut dot = String::from("digraph witness {
+  rankdir=BT;
+  node [shape=box fontname=monospace];
+");
+            for node in &nodes {
+                if let Val::Record(nr) = node {
+                    let run_id = match nr.get("run_id") { Some(Val::Text(s)) => s.clone(), _ => continue };
+                    let short = &run_id[run_id.len().saturating_sub(12)..];
+                    dot.push_str(&format!("  \"{}\" [label=\"{}\"];\n", run_id, short));
+                }
+            }
+            for edge in &edges {
+                if let Val::Record(er) = edge {
+                    let from = match er.get("from") { Some(Val::Text(s)) => s.clone(), _ => continue };
+                    let to   = match er.get("to")   { Some(Val::Text(s)) => s.clone(), _ => continue };
+                    dot.push_str(&format!("  \"{}\" -> \"{}\";\n", from, to));
+                }
+            }
+            dot.push_str("}
+");
+            Ok(Val::Text(dot))
         }
 
         Builtin::FfiOpen => {
@@ -8880,6 +9016,14 @@ Ok(m)
                 m.insert("gunzip".to_string(),  Val::Builtin(Builtin::CompressGunzip));
                 Ok(m)
             }
+            "std/graph" => {
+                let mut m = BTreeMap::new();
+                m.insert("of".to_string(),        Val::Builtin(Builtin::GraphOf));
+                m.insert("ancestors".to_string(),  Val::Builtin(Builtin::GraphAncestors));
+                m.insert("leaves".to_string(),     Val::Builtin(Builtin::GraphLeaves));
+                m.insert("to_dot".to_string(),     Val::Builtin(Builtin::GraphToDot));
+                Ok(m)
+            }
             "std/rand" => {
                 let mut m = BTreeMap::new();
                 m.insert("uuid_v4".to_string(), Val::Builtin(Builtin::RandUuidV4));
@@ -8963,7 +9107,7 @@ Ok(m)
     }
 
     fn stdlib_root_digest(&self) -> String {
-        let names: [&str; 28] = [
+        let names: [&str; 29] = [
             "std/artifact",
             "std/bytes",
             "std/codec",
@@ -8992,6 +9136,7 @@ Ok(m)
             "std/witness",
             "std/net",
             "std/compress",
+            "std/graph",
         ];
 
         let mut pairs: Vec<(String, String)> = names
