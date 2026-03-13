@@ -5186,9 +5186,17 @@ fn call_builtin(
                 visited.insert(run_id.clone());
                 let hex = run_id.strip_prefix("sha256:").unwrap_or(&run_id);
                 let receipt_path = format!("receipts/sha256_{}.json", hex);
-                let bytes = match std::fs::read(&receipt_path) {
-                    Ok(b) => b,
-                    Err(_) => {
+                let bytes_opt: Option<Vec<u8>> = std::fs::read(&receipt_path).ok().or_else(|| {
+                    if let Ok(base_url) = std::env::var("FARD_REGISTRY_URL") {
+                        let url = format!("{}/receipt/{}", base_url.trim_end_matches('/'), run_id);
+                        ureq::get(&url).call().ok()
+                            .and_then(|r| r.into_string().ok())
+                            .map(|s| s.into_bytes())
+                    } else { None }
+                });
+                let bytes = match bytes_opt {
+                    Some(b) => b,
+                    None => {
                         let mut em = BTreeMap::new();
                         em.insert("reason".to_string(), Val::Text(format!("receipt not found")));
                         em.insert("run_id".to_string(), Val::Text(run_id));
