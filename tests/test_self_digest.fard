@@ -1,17 +1,9 @@
 import("std/witness") as w
 import("std/str") as str
 
-// Test 1: self_digest returns a real sha256 (not pending)
-let digest = w.self_digest()
-let not_pending = digest != "sha256:pending"
-let has_prefix = str.slice(digest, 0, 7) == "sha256:"
-
-// Test 2: calling self_digest twice returns same value
+let digest  = w.self_digest()
 let digest2 = w.self_digest()
-let stable = digest == digest2
 
-assert(not_pending, "self_digest should not be pending")
-assert(has_prefix, "self_digest should have sha256: prefix")
-assert(stable, "self_digest should be stable within a run")
-
-{ digest: digest, not_pending: not_pending, stable: stable }
+test "self_digest is not pending"     { digest != "sha256:pending" }
+test "self_digest has sha256: prefix" { str.slice(digest, 0, 7) == "sha256:" }
+test "self_digest is stable in run"   { digest == digest2 }
