@@ -5123,14 +5123,25 @@ fn call_builtin(
             };
             let hex = run_id.strip_prefix("sha256:").unwrap_or(&run_id);
             let receipt_path = format!("receipts/sha256_{}.json", hex);
-            match std::fs::read(&receipt_path) {
-                Err(_) => {
+            // Try local first, then fall back to FARD_REGISTRY_URL if set
+            let receipt_bytes_opt: Option<Vec<u8>> = std::fs::read(&receipt_path).ok().or_else(|| {
+                if let Ok(base_url) = std::env::var("FARD_REGISTRY_URL") {
+                    let url = format!("{}/receipt/{}", base_url.trim_end_matches('/'), run_id);
+                    ureq::get(&url).call().ok()
+                        .and_then(|r| r.into_string().ok())
+                        .map(|s| s.into_bytes())
+                } else {
+                    None
+                }
+            });
+            match receipt_bytes_opt {
+                None => {
                     let mut m = BTreeMap::new();
                     m.insert("e".to_string(), Val::Text(format!("run_id not found: {}", run_id)));
                     m.insert("t".to_string(), Val::Text("err".to_string()));
                     Ok(Val::Record(m))
                 }
-                Ok(bytes) => {
+                Some(bytes) => {
                     match json_from_slice(&bytes) {
                         Err(e) => {
                             let mut m = BTreeMap::new();
