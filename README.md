@@ -1,4 +1,4 @@
-# FARD 1.0.0
+# FARD 2.0.0
 
 FARD is a pure, deterministic, content-addressed scripting language.
 Every program run produces a cryptographic digest committing to all
@@ -66,7 +66,7 @@ String interpolation:
 ```
 let name = "world"
 let n = 42
-"hello ${name}, answer is ${n}"   // → "hello world, answer is 42"
+"hello ${name}, answer is ${n}"   // -> "hello world, answer is 42"
 ```
 
 ### Functions
@@ -79,14 +79,14 @@ fn add(a, b) { a + b }
 fn double(n) { n * 2 }
 fn apply(f, x) { f(x) }
 
-apply(double, 21)   // → 42
+apply(double, 21)   // -> 42
 ```
 
 Anonymous functions (lambdas):
 
 ```
 let square = fn(x) { x * x }
-square(5)   // → 25
+square(5)   // -> 25
 ```
 
 Higher-order functions:
@@ -95,7 +95,7 @@ Higher-order functions:
 import("std/list") as list
 
 let nums = [1, 2, 3, 4, 5]
-let doubled = list.map(nums, fn(x) { x * 2 })       // [2, 4, 6, 8, 10]
+let doubled = list.map(nums, fn(x) { x * 2 })         // [2, 4, 6, 8, 10]
 let evens   = list.filter(nums, fn(x) { x % 2 == 0 }) // [2, 4]
 let sum     = list.fold(nums, 0, fn(acc, x) { acc + x }) // 15
 ```
@@ -108,8 +108,8 @@ fn make_adder(n) {
 }
 
 let add5 = make_adder(5)
-add5(10)   // → 15
-add5(20)   // → 25
+add5(10)   // -> 15
+add5(20)   // -> 25
 ```
 
 ### Named / Keyword Arguments
@@ -121,8 +121,8 @@ fn greet(name, greeting) {
   str.concat(greeting, str.concat(" ", name))
 }
 
-greet(name: "Alice", greeting: "Hello")   // → "Hello Alice"
-greet(greeting: "Hi", name: "Bob")        // → "Hi Bob"
+greet(name: "Alice", greeting: "Hello")   // -> "Hello Alice"
+greet(greeting: "Hi", name: "Bob")        // -> "Hi Bob"
 ```
 
 ### Let Bindings
@@ -154,9 +154,9 @@ fn clamp(x, lo, hi) {
   x
 }
 
-clamp(5, 0, 10)   // → 5
-clamp(-1, 0, 10)  // → 0
-clamp(99, 0, 10)  // → 10
+clamp(5, 0, 10)   // -> 5
+clamp(-1, 0, 10)  // -> 0
+clamp(99, 0, 10)  // -> 10
 ```
 
 ### Match
@@ -228,8 +228,8 @@ Records are structural. Field access uses dot notation:
 
 ```
 let p = { x: 3, y: 4 }
-p.x   // → 3
-p.y   // → 4
+p.x   // -> 3
+p.y   // -> 4
 ```
 
 Records can be passed to functions expecting specific fields:
@@ -240,7 +240,7 @@ fn distance(p) {
   math.sqrt(p.x * p.x + p.y * p.y)
 }
 
-distance({ x: 3, y: 4 })   // → 5.0
+distance({ x: 3, y: 4 })   // -> 5.0
 ```
 
 There is no static record type system. Field access on a missing field
@@ -275,8 +275,8 @@ Modules are records. All exported names are fields on the imported record.
 ```
 import("std/eval") as e
 
-e.eval("1 + 2 + 3")   // → 6
-e.eval("fn double(n) { n * 2 }\ndouble(21)")   // → 42
+e.eval("1 + 2 + 3")   // -> 6
+e.eval("fn double(n) { n * 2 }\ndouble(21)")   // -> 42
 ```
 
 ### AST Access
@@ -288,10 +288,10 @@ transform:
 import("std/ast") as ast
 
 let nodes = ast.parse("1 + 2")
-nodes[0].t    // → "bin"
-nodes[0].op   // → "+"
-nodes[0].l.v  // → 1
-nodes[0].r.v  // → 2
+nodes[0].t    // -> "bin"
+nodes[0].op   // -> "+"
+nodes[0].l.v  // -> 1
+nodes[0].r.v  // -> 2
 ```
 
 AST node types: `"int"`, `"float"`, `"bool"`, `"str"`, `"null"`,
@@ -316,14 +316,14 @@ let defmacro = fn(template, bindings) {
 
 // Generate a multiplier function at runtime
 let mul3 = defmacro("fn(x) { x * _N_ }", [["_N_", "3"]])
-mul3(7)   // → 21
+mul3(7)   // -> 21
 
 // Conditional macro
 defmacro("if _COND_ then _T_ else _F_", [
   ["_COND_", "true"],
   ["_T_", "42"],
   ["_F_", "0"]
-])  // → 42
+])  // -> 42
 ```
 
 -----
@@ -353,7 +353,7 @@ import("std/chan") as chan
 
 let c = chan.new()
 chan.send(c, 42)
-let v = chan.recv(c)   // → {t: "some", v: 42}
+let v = chan.recv(c)   // -> {t: "some", v: 42}
 ```
 
 ### Mutexes
@@ -371,12 +371,12 @@ mutex.with_lock(m, fn(n) { n + 1 })   // atomically increment
 import("std/list") as list
 
 list.par_map([1, 2, 3, 4, 5], fn(x) { x * x })
-// → [1, 4, 9, 16, 25]  (computed in parallel)
+// -> [1, 4, 9, 16, 25]  (computed in parallel)
 ```
 
 -----
 
-## Standard Library (24 modules)
+## Standard Library (29 modules)
 
 ### std/str
 
@@ -414,7 +414,7 @@ Arbitrary-precision integers backed by `num-bigint`:
 import("std/bigint") as big
 
 let n = big.pow(big.from_int(2), 64)
-big.to_str(n)   // → "18446744073709551616"
+big.to_str(n)   // -> "18446744073709551616"
 ```
 
 ### std/bits
@@ -438,29 +438,29 @@ Regular expressions:
 
 ### std/json
 
-`encode(val)` → text, `decode(text)` → val, `canonicalize(text)` → text
+`encode(val)` -> text, `decode(text)` -> val, `canonicalize(text)` -> text
 
 ### std/hash
 
-`sha256_bytes(bytes)` → digest record, `sha256_text(text)` → digest record
+`sha256_bytes(bytes)` -> digest record, `sha256_text(text)` -> digest record
 
 ### std/base64
 
-`encode(text)` → text, `decode(text)` → text
+`encode(text)` -> text, `decode(text)` -> text
 
 ### std/csv
 
-`parse(text)` → list of lists, `encode(rows)` → text
+`parse(text)` -> list of lists, `encode(rows)` -> text
 
 ### std/uuid
 
-`v4()` → 36-char UUID string, `validate(s)` → bool
+`v4()` -> 36-char UUID string, `validate(s)` -> bool
 
 ### std/datetime
 
-`now()` → unix timestamp int, `format(ts, fmt)` → text,
-`parse(text, fmt)` → int, `add(ts, unit, n)` → int,
-`diff(a, b)` → int, `field(ts, field)` → int
+`now()` -> unix timestamp int, `format(ts, fmt)` -> text,
+`parse(text, fmt)` -> int, `add(ts, unit, n)` -> int,
+`diff(a, b)` -> int, `field(ts, field)` -> int
 
 Units: `"seconds"`, `"minutes"`, `"hours"`, `"days"`
 Fields: `"year"`, `"month"`, `"day"`, `"hour"`, `"minute"`, `"second"`
@@ -471,37 +471,67 @@ Fields: `"year"`, `"month"`, `"day"`, `"hour"`, `"minute"`, `"second"`
 
 ### std/io
 
-`read_file(path)` → `{ok: text}`, `write_file(path, content)` → `{ok: null}`,
-`append_file(path, content)`, `read_lines(path)` → list,
-`read_stdin()` → text, `read_stdin_lines()` → list,
-`file_exists(path)` → bool, `delete_file(path)`, `list_dir(path)` → list,
-`make_dir(path)` → bool
+`read_file(path)` -> `{ok: text}`, `write_file(path, content)` -> `{ok: null}`,
+`append_file(path, content)`, `read_lines(path)` -> list,
+`read_stdin()` -> text, `read_stdin_lines()` -> list,
+`file_exists(path)` -> bool, `delete_file(path)`, `list_dir(path)` -> list,
+`make_dir(path)` -> bool
 
 ### std/http
 
-`get(url)`, `post(url, body)`, `request(rec)` → `{status, body, headers}`
+`get(url)`, `post(url, body)`, `request(rec)` -> `{status, body, headers}`
 
 ### std/promise
 
-`spawn(fn)` → promise handle, `await(handle)` → value
+`spawn(fn)` -> promise handle, `await(handle)` -> value
 
 ### std/chan
 
-`new()`, `send(c, v)` → bool, `recv(c)` → `{t:"some",v:x}` or null,
-`try_recv(c)`, `close(c)` → bool
+`new()`, `send(c, v)` -> bool, `recv(c)` -> `{t:"some",v:x}` or null,
+`try_recv(c)`, `close(c)` -> bool
 
 ### std/mutex
 
-`new(init)`, `lock(m)` → val, `unlock(m, val)` → bool,
-`with_lock(m, fn)` → result
+`new(init)`, `lock(m)` -> val, `unlock(m, val)` -> bool,
+`with_lock(m, fn)` -> result
 
 ### std/ast
 
-`parse(source_text)` → list of AST node records
+`parse(source_text)` -> list of AST node records
 
 ### std/eval
 
-`eval(source_text)` → value
+`eval(source_text)` -> value
+
+### std/compress
+
+`gzip_compress(text)`, `gzip_decompress(bytes)`,
+`zstd_compress(text)`, `zstd_decompress(bytes)`
+
+### std/crypto
+
+`hmac_sha256(key, msg)` -> hex text, `aes_encrypt(key, plaintext)` -> ciphertext,
+`aes_decrypt(key, ciphertext)` -> plaintext, `pbkdf2(password, salt, iters)` -> key
+
+### std/graph
+
+`new()`, `add_node(g, id, data)`, `add_edge(g, from, to, weight)`,
+`bfs(g, start)` -> list, `dfs(g, start)` -> list,
+`shortest_path(g, from, to)` -> `{path, cost}`, `topo_sort(g)` -> list
+
+### std/type
+
+`of(val)` -> `"int"` | `"float"` | `"bool"` | `"text"` | `"null"` | `"list"` | `"record"` | `"fn"`,
+`is_int(v)`, `is_text(v)`, `is_list(v)`, `is_record(v)`, `is_null(v)`
+
+### std/witness
+
+`verify(run_id)` -> `{t:"ok", v: receipt}` | `{t:"err"}`,
+`verify_chain(run_id)` -> `{t:"ok", depth: N}` | `{t:"err"}`,
+`self_digest()` -> `"sha256:..."` – content digest of the running program
+
+Both `verify` and `verify_chain` fall back to `FARD_REGISTRY_URL` when
+a receipt is not found locally.
 
 -----
 
@@ -516,11 +546,11 @@ fardrun run --program main.fard --out ./out
 
 Output directory contains:
 
-- `result.json` — `{"result": <value>}` on success
-- `error.json` — `{"code": "...", "message": "..."}` on failure
-- `trace.ndjson` — newline-delimited JSON execution trace
-- `module_graph.json` — import graph with content digests
-- `digests.json` — sha256 of every output file
+- `result.json` – `{"result": <value>}` on success
+- `error.json` – `{"code": "...", "message": "..."}` on failure
+- `trace.ndjson` – newline-delimited JSON execution trace
+- `module_graph.json` – import graph with content digests
+- `digests.json` – sha256 of every output file
 
 ### Test
 
@@ -536,9 +566,9 @@ test "gcd with 1"      { gcd(7, 1) == 1 }
 
 ```bash
 fardrun test --program math_test.fard
-#   ✓ gcd basic
-#   ✓ gcd commutative
-#   ✓ gcd with 1
+#   v gcd basic
+#   v gcd commutative
+#   v gcd with 1
 #   3 passed
 
 fardrun test --program math_test.fard --json   # structured JSON output
@@ -570,6 +600,79 @@ fardfmt --stdin              # read from stdin, write to stdout
 Formatting rules: 2-space indent inside `fn` bodies, one space around
 binary operators, `{ k: v }` record spacing, trailing whitespace removed,
 single trailing newline.
+
+### Type Check
+
+```bash
+fardcheck main.fard
+# ok -- 47 items checked, 0 errors
+```
+
+Hindley-Milner style best-effort type checker. Reports type errors without
+blocking execution. Dynamic values (imports, builtins) propagate as
+`Dynamic` without false positives. Exit code 0 if clean, 1 if errors.
+
+### Compile to WebAssembly
+
+```bash
+fardwasm main.fard --out main.wat
+# wrote main.wat
+# 3 function(s) exported: add, factorial, max
+```
+
+Compiles pure FARD functions (integers, arithmetic, booleans, let,
+if/then/else, recursion) to WebAssembly Text format. Assemble with
+any WAT toolchain:
+
+```bash
+wat2wasm main.wat -o main.wasm
+wasm-interp main.wasm -r factorial -a 'i64:10'
+# factorial(i64:10) => i64:3628800
+```
+
+Strings, imports, and closures emit `unreachable` traps – the WASM
+target covers the pure numeric subset.
+
+### Registry Server
+
+```bash
+fardregistry --port 7370 --seed receipts/
+# [fardregistry] seeded 19 receipts from receipts/
+# [fardregistry] listening on http://0.0.0.0:7370
+```
+
+Runs a global RunID registry HTTP server. Routes:
+
+|Method|Path             |Description           |
+|------|-----------------|----------------------|
+|GET   |/health          |Liveness check        |
+|GET   |/stats           |Receipt count and list|
+|GET   |/receipt/<run_id>|Fetch receipt JSON    |
+|GET   |/verify/<run_id> |Verify receipt chain  |
+|POST  |/publish         |Publish a receipt     |
+
+### Distributed Witness Verification
+
+Set `FARD_REGISTRY_URL` to enable cross-node receipt lookup:
+
+```bash
+export FARD_REGISTRY_URL=http://registry.example.com:7370
+fardrun run --program main.fard --out ./out
+```
+
+`w.verify` and `w.verify_chain` automatically fall back to the registry
+when a receipt is not found locally. Any node can prove a computation
+chain it did not itself execute.
+
+### Lockfile
+
+```bash
+fardlock gen-toml --manifest fard.toml --out fard.lock.json
+fardrun run --program main.fard --lockfile fard.lock.json --enforce-lockfile
+```
+
+Generates a lockfile pinning every imported package to a content digest.
+`--enforce-lockfile` verifies digests at load time and aborts on mismatch.
 
 ### Publish a package
 
@@ -604,7 +707,7 @@ All runtime errors write `out/error.json` and exit non-zero:
 
 |Code                |Meaning                                                   |
 |--------------------|----------------------------------------------------------|
-|`ERROR_PARSE`       |Syntax error — program could not be parsed                |
+|`ERROR_PARSE`       |Syntax error – program could not be parsed                |
 |`ERROR_RUNTIME`     |Runtime failure (index out of bounds, field missing, etc.)|
 |`ERROR_DIV_ZERO`    |Integer or float division by zero                         |
 |`ERROR_PAT_MISMATCH`|Pattern match failed (let binding destructure failed)     |
@@ -634,9 +737,9 @@ their values are auditable.
 
 ## Self-Verifying
 
-FARD v1.0.0 is self-verifying in three ways:
+FARD v2.0.0 is self-verifying in three ways:
 
-**The test suite runs in pure FARD.** 281 tests across 28 files:
+**The test suite runs in pure FARD.** 313 tests across 31 files:
 
 ```bash
 for f in tests/test_*.fard; do fardrun test --program "$f"; done
@@ -661,11 +764,11 @@ cat ANNOUNCEMENT.md
 ## Architecture
 
 ```
-Layer 5  Execution ABI v0        bundle → ENC(W*) on stdout
+Layer 5  Execution ABI v0        bundle -> ENC(W*) on stdout
 Layer 4  Registry Semantics v0   content-addressed witness storage
 Layer 3  Composition Semantics   executions link by verified RunID
-Layer 2  Artifact Semantics      same (program, input, deps) → same RunID
-Layer 1  Value Core v0           same value → same bytes → same hash
+Layer 2  Artifact Semantics      same (program, input, deps) -> same RunID
+Layer 1  Value Core v0           same value -> same bytes -> same hash
 ```
 
 Each layer depends only on the one below. The entire system reduces to
@@ -677,28 +780,41 @@ CID(bytes) = "sha256:" || hex(SHA256(bytes))
 
 -----
 
+## Binaries
+
+|Binary      |Purpose                                                  |
+|------------|---------------------------------------------------------|
+|fardrun     |Main runtime: run, test, repl, install, publish          |
+|fardlock    |Lockfile management: gen-toml, show-preimage             |
+|fardcheck   |HM-style type checker – best-effort, zero false positives|
+|fardwasm    |FARD to WAT/WASM compiler for pure numeric functions     |
+|fardregistry|Global RunID registry HTTP server                        |
+|fardfmt     |Canonical formatter                                      |
+
+-----
+
 ## Crates
 
-|Crate        |Purpose                                                             |
-|-------------|--------------------------------------------------------------------|
-|`valuecore`  |Value encoding, decoding, hashing (Layer 1)                         |
-|`witnesscore`|Witness construction and identity projection (Layer 2/3)            |
-|`abirunner`  |Bundle runner — pure function from bundle to witness bytes (Layer 5)|
-|`registry`   |Content-addressed storage by CID (Layer 4)                          |
-|`fardc`      |Compiler — .fard source to bundle                                   |
-|`fardlang`   |Parser, canonical printer, evaluator                                |
+|Crate      |Purpose                                                       |
+|-----------|--------------------------------------------------------------|
+|valuecore  |Value encoding, decoding, hashing (Layer 1)                   |
+|witnesscore|Witness construction and identity projection (Layer 2/3)      |
+|abirunner  |Bundle runner – pure function from bundle to witness (Layer 5)|
+|registry   |Content-addressed storage by CID (Layer 4)                    |
+|fardc      |Compiler – .fard source to bundle                             |
+|fardlang   |Parser, canonical printer, evaluator                          |
 
 -----
 
 ## Specifications
 
-|Document                          |Contents                                       |
-|----------------------------------|-----------------------------------------------|
-|`spec/fard_spec_stack_v0_final.md`|Trust stack specification (frozen)             |
-|`spec/fardlang_grammar_v0.5.txt`  |Surface language grammar                       |
-|`FARD_1.0_ROADMAP.md`             |Feature roadmap and design decisions           |
-|`SPEC.md`                         |Full stdlib surface spec (generated by FARD)   |
-|`ANNOUNCEMENT.md`                 |v1.0.0 release announcement (generated by FARD)|
+|Document                        |Contents                                       |
+|--------------------------------|-----------------------------------------------|
+|spec/fard_spec_stack_v0_final.md|Trust stack specification (frozen)             |
+|spec/fardlang_grammar_v0.5.txt  |Surface language grammar                       |
+|FARD_2.0_ROADMAP.md             |Feature roadmap and design decisions           |
+|SPEC.md                         |Full stdlib surface spec (generated by FARD)   |
+|ANNOUNCEMENT.md                 |v2.0.0 release announcement (generated by FARD)|
 
 -----
 
