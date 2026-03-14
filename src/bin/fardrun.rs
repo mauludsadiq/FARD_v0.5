@@ -2580,6 +2580,7 @@ enum Builtin {
     ResultAndThen,
     ResultUnwrapOk,
     ResultUnwrapErr,
+    ResultUnwrapOr,
     ResultIsOk,
     ResultIsErr,
     ResultMap,
@@ -3991,6 +3992,12 @@ fn call_builtin(
             Ok(e)
         }
 
+        Builtin::ResultUnwrapOr => {
+            if args.len() != 2 { bail!("ERROR_BADARG result.unwrap_or expects 2 args"); }
+            let r = args[0].clone();
+            let default = args[1].clone();
+            if result_is_ok(&r)? { result_unwrap_ok(&r) } else { Ok(default) }
+        }
         Builtin::ResultErr => {
             if args.len() != 1 {
                 bail!("ERROR_BADARG result.err expects 1 arg");
@@ -8488,6 +8495,8 @@ impl ModuleLoader {
                 m.insert("map".to_string(), Val::Builtin(Builtin::ResultMap));
                 m.insert("map_err".to_string(), Val::Builtin(Builtin::ResultMapErr));
                 m.insert("or_else".to_string(), Val::Builtin(Builtin::ResultOrElse));
+                m.insert("unwrap".to_string(), Val::Builtin(Builtin::ResultUnwrapOk));
+                m.insert("unwrap_or".to_string(), Val::Builtin(Builtin::ResultUnwrapOr));
                 Ok(m)
             }
             "std/grow" => {
