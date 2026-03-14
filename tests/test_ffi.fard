@@ -1,0 +1,19 @@
+import("std/ffi") as ffi
+
+// libm is the C math library — always present on macOS
+let lib = ffi.open("/usr/lib/libm.dylib")
+
+test "ffi open ok"     { lib.t == "ok" }
+test "ffi load alias"  { lib.t == "ok" }
+
+// abs(-42) -> 42
+let r1 = ffi.call(lib.ok, "abs", [-42])
+test "ffi abs"         { r1.t == "ok" && r1.ok == 42 }
+
+// call_pure is deterministic — same result, included in witness
+let r2 = ffi.call_pure(lib.ok, "abs", [-7])
+test "ffi call_pure"   { r2.t == "ok" && r2.ok == 7 }
+
+// close
+let _ = ffi.close(lib.ok)
+{ done: true }

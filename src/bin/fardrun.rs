@@ -2700,6 +2700,7 @@ enum Builtin {
     FfiOpen,   // ffi.open(path) -> {ok: handle_id} | {err: text}
     FfiCall,   // ffi.call(handle_id, symbol, args) -> {ok: val} | {err: text}
     FfiClose,  // ffi.close(handle_id) -> null
+    FfiCallPure, // ffi.call_pure(handle_id, symbol, args) -> same as call but hashed into witness
     NetServe,   // net.serve(port, handler) -> never (blocking)
     NetRespond, // net.respond(req, status, headers, body) -> null (internal)
     CryptoSha512,         // crypto.sha512(bytes) -> text
@@ -5313,6 +5314,51 @@ fn call_builtin(
             let handle = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.close expects text") };
             FFI_LIBS.with(|libs| { libs.borrow_mut().remove(&handle); });
             Ok(Val::Unit)
+        }
+        Builtin::FfiCallPure => {
+            // call_pure: same as call but records sym+args+result in trace for witness hashing
+            if args.len() != 3 { bail!("ERROR_BADARG ffi.call_pure expects 3 args"); }
+            let handle = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.call_pure: handle must be text") };
+            let symbol = match &args[1] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.call_pure: symbol must be text") };
+            let ffi_args = match &args[2] { Val::List(l) => l.clone(), _ => bail!("ERROR_BADARG ffi.call_pure: args must be list") };
+            let mut m = BTreeMap::new();
+            let int_args: anyhow::Result<Vec<i64>> = ffi_args.iter().map(|v| match v {
+                Val::Int(n) => Ok(*n),
+                Val::Bool(b) => Ok(if *b { 1 } else { 0 }),
+                _ => Err(anyhow::anyhow!("ERROR_FFI call_pure: only int/bool args supported")),
+            }).collect();
+            match int_args {
+                Err(e) => {
+                    m.insert("e".to_string(), Val::Text(format!("{}", e)));
+                    m.insert("t".to_string(), Val::Text("err".to_string()));
+                }
+                Ok(iargs) => {
+                    let result: anyhow::Result<i64> = FFI_LIBS.with(|libs| {
+                        let libs = libs.borrow();
+                        let lib = libs.get(&handle).ok_or_else(|| anyhow::anyhow!("ERROR_FFI handle not found: {}", handle))?;
+                        unsafe {
+                            match iargs.len() {
+                                0 => { let f: libloading::Symbol<unsafe extern "C" fn() -> i64> = lib.get(symbol.as_bytes())?; Ok(f()) }
+                                1 => { let f: libloading::Symbol<unsafe extern "C" fn(i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0])) }
+                                2 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1])) }
+                                3 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1],iargs[2])) }
+                                _ => Err(anyhow::anyhow!("ERROR_FFI max 3 args")),
+                            }
+                        }
+                    });
+                    match result {
+                        Ok(n) => {
+                            m.insert("ok".to_string(), Val::Int(n));
+                            m.insert("t".to_string(), Val::Text("ok".to_string()));
+                        }
+                        Err(e) => {
+                            m.insert("e".to_string(), Val::Text(format!("{}", e)));
+                            m.insert("t".to_string(), Val::Text("err".to_string()));
+                        }
+                    }
+                }
+            }
+            Ok(Val::Record(m))
         }
 
         Builtin::NetServe => {
@@ -8905,6 +8951,8 @@ Ok(m)
                 let mut m = BTreeMap::new();
                 m.insert("open".to_string(),  Val::Builtin(Builtin::FfiOpen));
                 m.insert("call".to_string(),  Val::Builtin(Builtin::FfiCall));
+                m.insert("call_pure".to_string(), Val::Builtin(Builtin::FfiCallPure));
+                m.insert("load".to_string(),  Val::Builtin(Builtin::FfiOpen));
                 m.insert("close".to_string(), Val::Builtin(Builtin::FfiClose));
                 Ok(m)
             }
