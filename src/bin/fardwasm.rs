@@ -632,13 +632,21 @@ fn main() {
 
     let path = match path {
         Some(p) => p,
-        None => { eprintln!("usage: fardwasm [--program] <file.fard> [--out <file.wat>]"); std::process::exit(1); }
+        None => { eprintln!("usage: fardwasm [--program] <file.fard> [--out <file.wat>] [--target wat|wasi]"); std::process::exit(1); }
     };
+
+    let target = args.windows(2)
+        .find(|w| w[0]=="--target")
+        .map(|w| w[1].clone())
+        .unwrap_or_else(|| "wat".to_string());
 
     let out_path = args.windows(2)
         .find(|w| w[0]=="--out")
         .map(|w| w[1].clone())
-        .unwrap_or_else(|| path.replace(".fard", ".wat"));
+        .unwrap_or_else(|| {
+            let ext = if target == "wasi" { ".wasm" } else { ".wat" };
+            path.replace(".fard", ext)
+        });
 
     let src = match std::fs::read_to_string(&path) {
         Ok(s) => s,
@@ -701,14 +709,39 @@ fn main() {
 
     let _ = write!(wat, ")\n");
 
-    match std::fs::write(&out_path, &wat) {
-        Ok(_) => {
-            println!("wrote {}", out_path);
-            println!("{} function(s) exported", exports.len());
-            if !exports.is_empty() {
-                println!("exports: {}", exports.join(", "));
-            }
+    if target == "wasi" {
+        // Assemble WAT to WASM using wat2wasm, then report
+        let tmp_wat = format!("{}.tmp.wat", out_path);
+        match std::fs::write(&tmp_wat, &wat) {
+            Ok(_) => {}
+            Err(e) => { eprintln!("error writing {}: {}", tmp_wat, e); std::process::exit(1); }
         }
-        Err(e) => { eprintln!("error writing {out_path}: {e}"); std::process::exit(1); }
+        let status = std::process::Command::new("wat2wasm")
+            .arg(&tmp_wat).arg("-o").arg(&out_path)
+            .status();
+        let _ = std::fs::remove_file(&tmp_wat);
+        match status {
+            Ok(s) if s.success() => {
+                println!("wrote {} (wasm)", out_path);
+                println!("{} function(s) exported", exports.len());
+                if !exports.is_empty() {
+                    println!("exports: {}", exports.join(", "));
+                }
+            }
+            Ok(_) => { eprintln!("wat2wasm failed"); std::process::exit(1); }
+            Err(e) => { eprintln!("wat2wasm not found: {e}
+Install with: brew install wabt"); std::process::exit(1); }
+        }
+    } else {
+        match std::fs::write(&out_path, &wat) {
+            Ok(_) => {
+                println!("wrote {}", out_path);
+                println!("{} function(s) exported", exports.len());
+                if !exports.is_empty() {
+                    println!("exports: {}", exports.join(", "));
+                }
+            }
+            Err(e) => { eprintln!("error writing {out_path}: {e}"); std::process::exit(1); }
+        }
     }
 }
