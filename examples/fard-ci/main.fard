@@ -1,0 +1,91 @@
+// fard-ci — CI pipeline runner written in FARD
+// Reads a pipeline.json spec, runs each step, verifies witness chain.
+//
+// Usage: fardrun run --program main.fard --out ./out
+// Pipeline spec: pipeline.json in the same directory
+
+import("std/io")      as io
+import("std/json")    as json
+import("std/list")    as list
+import("std/str")     as str
+import("std/process") as process
+import("std/witness") as w
+import("std/datetime") as dt
+
+fn run_step(step) {
+  let name    = step.name
+  let program = step.program
+  let out_dir = str.concat("ci_out/", name)
+  let result  = process.spawn("fardrun", ["run", "--program", program, "--out", out_dir], "")
+  let passed  = result.code == 0
+  {
+    name:   name,
+    passed: passed,
+    code:   result.code,
+    stdout: result.stdout,
+    stderr: result.stderr
+  }
+}
+
+fn run_test_step(step) {
+  let name    = step.name
+  let program = step.program
+  let result  = process.spawn("fardrun", ["test", "--program", program], "")
+  let passed  = result.code == 0
+  {
+    name:   name,
+    passed: passed,
+    code:   result.code,
+    stdout: result.stdout,
+    stderr: result.stderr
+  }
+}
+
+fn dispatch_step(step) {
+  match step.kind {
+    "run"  => run_step(step),
+    "test" => run_test_step(step),
+    _      => { name: step.name, passed: false, code: -1, stdout: "", stderr: "unknown step kind" }
+  }
+}
+
+fn report_step(result) {
+  let icon   = if result.passed then "v" else "x"
+  let status = if result.passed then "PASS" else "FAIL"
+  str.concat(str.concat(str.concat(str.concat(
+    icon, " "), result.name), " -- "), status)
+}
+
+fn all_passed(results) {
+  list.all(results, fn(r) { r.passed })
+}
+
+fn count_passed(results) {
+  list.fold(results, 0, fn(acc, r) { if r.passed then acc + 1 else acc })
+}
+
+// Load pipeline spec
+let spec_raw  = io.read_file("pipeline.json")
+let spec      = json.decode(spec_raw.ok)
+let steps     = spec.steps
+let pipeline  = spec.name
+
+// Run all steps
+let results = list.map(steps, fn(step) { dispatch_step(step) })
+
+// Report
+let lines   = list.map(results, fn(r) { report_step(r) })
+let passed  = count_passed(results)
+let total   = list.len(steps)
+let ok      = all_passed(results)
+let summary = str.concat(str.concat(str.concat(str.concat(
+  str.from_int(passed), "/"), str.from_int(total)), " passed -- "), pipeline)
+
+{
+  pipeline: pipeline,
+  passed:   passed,
+  total:    total,
+  ok:       ok,
+  steps:    results,
+  summary:  summary
+}

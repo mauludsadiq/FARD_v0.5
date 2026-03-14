@@ -1,0 +1,8 @@
+{
+  "name": "fard-ci-selftest",
+  "steps": [
+    { "name": "test_core",   "kind": "test", "program": "../../tests/test_core.fard" },
+    { "name": "test_result", "kind": "test", "program": "../../tests/test_result.fard" },
+    { "name": "test_ffi",    "kind": "test", "program": "../../tests/test_ffi.fard" }
+  ]
+}

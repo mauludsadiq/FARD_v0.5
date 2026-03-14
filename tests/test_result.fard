@@ -1,0 +1,17 @@
+import("std/result") as result
+
+let r1 = result.ok(42)
+let r2 = result.err("not found")
+
+test "is_ok true"       { result.is_ok(r1) == true }
+test "is_err true"      { result.is_err(r2) == true }
+test "unwrap ok"        { result.unwrap(r1) == 42 }
+test "unwrap_or ok"     { result.unwrap_or(r1, 0) == 42 }
+test "unwrap_or err"    { result.unwrap_or(r2, 0) == 0 }
+test "map ok"           { result.is_ok(result.map(r1, fn(x) { x * 2 })) == true }
+test "map err passthru" { result.is_err(result.map(r2, fn(x) { x * 2 })) == true }
+test "and_then ok"      { result.unwrap(result.and_then(r1, fn(x) { result.ok(x + 1) })) == 43 }
+test "and_then err"     { result.is_err(result.and_then(r2, fn(x) { result.ok(x) })) == true }
+test "or_else err"      { result.is_ok(result.or_else(r2, fn(e) { result.ok(0) })) == true }
+test "shape ok"         { r1.t == "ok" }
+test "shape err"        { r2.t == "err" }
