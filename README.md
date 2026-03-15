@@ -1,8 +1,12 @@
 # FARD
 
-A deterministic, content-addressed, cryptographically witnessed scripting language.
+FARD is a deterministic, content-addressed scripting language where every execution produces a cryptographic receipt.
 
-Every execution produces a SHA-256 receipt committing to source, inputs, imports, and full execution trace. Two runs of the same program on the same inputs always produce the same digest. Traceability is not a feature — it is an invariant of every execution.
+Each run emits a SHA-256 digest committing to the source code, imported modules, inputs, intermediate computation steps, and final result.
+
+Two executions of the same program on the same inputs produce the same digest.
+
+Traceability is not a feature — it is an invariant of execution.
 
 ```
 fard_run_digest=sha256:4dda9ce7d4dcfe7ddc5eda2f80d78bbf81c188e...
@@ -14,25 +18,27 @@ fard_run_digest=sha256:4dda9ce7d4dcfe7ddc5eda2f80d78bbf81c188e...
 
 ## What FARD Is
 
-FARD is a pure functional scripting language with:
+FARD is a deterministic scripting language with a functional core, controlled mutable state, and a content-addressed execution runtime.
 
+It provides:
+
+- cryptographic witness receipts on every run
 - 53 standard library modules
 - 242 built-in primitives
-- A complete 11-binary toolchain
-- Cryptographic witness receipts on every run
-- Native FFI via dynamic library loading
-- WASM compilation target
-- Language Server Protocol with VS Code extension
-- SQLite-backed global receipt registry
-- Content-addressed package manager
+- an 11-binary toolchain
+- native FFI via dynamic library loading
+- a WebAssembly compilation target
+- an LSP server with VS Code extension
+- a SQLite-backed receipt registry
+- a content-addressed package manager
 
-Programs written in FARD are not just correct — they are provably correct. Every result carries a chain of evidence linking it to the source, the inputs, and every computation step. That chain is verifiable by anyone, on any machine, at any time.
+FARD turns program execution itself into a cryptographic artifact.
+
+Programs written in FARD do not merely return values — they return values together with verifiable evidence of how those values were computed. Every receipt binds the result to the exact source, imports, inputs, and execution history that produced it. Any execution can therefore be independently verified on another machine.
 
 -----
 
 ## Install
-
-Download the pre-built binary for your platform, extract, and add to PATH:
 
 ```bash
 # macOS (Apple Silicon)
@@ -98,14 +104,11 @@ null            // Unit
 { x: 1, y: 2 }  // Record
 ```
 
-String interpolation and multiline strings:
+String interpolation:
 
 ```
 let name = "world"
 "hello ${name}"
-
-let msg = `line one
-line two`
 ```
 
 ### Functions
@@ -187,7 +190,7 @@ result.chain_hex  // sha256 of the full computation history
 
 ### Mutable Cells
 
-The one controlled escape from pure functional style:
+FARD has a functional core with a controlled mutable escape hatch via `std/cell`:
 
 ```
 import("std/cell") as cell
@@ -259,7 +262,7 @@ import("pkg:greet")  as greet
 **std/linalg** — Matrix and vector operations:
 `zeros`, `eye`, `dot`, `norm`, `vec_add`, `vec_sub`, `vec_scale`, `transpose`
 
-**std/rand** — `uuid_v4`
+**std/uuid** — `v4`, `validate`
 
 ### Text and Encoding
 
@@ -326,10 +329,6 @@ import("pkg:greet")  as greet
 
 **std/ast** — `parse(source_text)` — parse FARD source into AST node records
 
-### Identifiers
-
-**std/uuid** — `v4`, `validate`
-
 ### Tracing and Observability
 
 **std/trace** — `info`, `warn`, `error`, `span` — structured logging into the execution trace
@@ -360,7 +359,7 @@ import("pkg:greet")  as greet
 
 ## Package Manager
 
-FARD has a content-addressed package registry. Packages are versioned, sha256-verified, and cached locally.
+Packages are versioned, SHA-256 verified, and cached locally.
 
 Add dependencies to `fard.toml`:
 
@@ -597,7 +596,7 @@ fardregistry --port 7370 --db receipts.db --seed receipts/
 ```
 
 Routes: `GET /health`, `GET /stats`, `GET /receipt/<id>`, `GET /verify/<id>`,
-`GET /packages`, `GET /packages/<name>`, `POST /publish`, `POST /packages/publish`
+`GET /packages`, `GET /packages/<n>`, `POST /publish`, `POST /packages/publish`
 
 ### fardlock
 
@@ -650,7 +649,7 @@ Configure the Language Server path:
 |`fardfmt`     |Canonical formatter                                        |
 |`fardcheck`   |HM-style type checker                                      |
 |`fardwasm`    |FARD to WAT/WASM compiler                                  |
-|`fardregistry`|SQLite-backed HTTP receipt registry server                 |
+|`fardregistry`|SQLite-backed receipt registry server                      |
 |`fardlock`    |Lockfile generation and enforcement                        |
 |`fardbundle`  |Bundle build, verify, and run                              |
 |`fardverify`  |Trace, artifact, and bundle verification                   |
@@ -676,6 +675,8 @@ Configure the Language Server path:
 -----
 
 ## Examples
+
+The examples below show that FARD is not limited to witness generation — it already supports service hosting, CI automation, database-backed workflows, and proof-oriented systems.
 
 ### fard-fmt-server
 
@@ -733,7 +734,7 @@ Error: no member 'mpa' -- did you mean 'map'?
 Error: arity mismatch: expected 2 args, got 3
 ```
 
-Error format:
+Error output format:
 
 ```json
 {
@@ -759,11 +760,13 @@ Error format:
 
 ## Determinism
 
-Given identical source, imports, and inputs, the result, trace, and digest are always identical — across machines, OS versions, and time.
+Given identical source code, imports, and inputs, FARD guarantees identical results, identical execution traces, and identical execution digests.
 
-The only non-deterministic primitives are explicitly marked as oracle boundaries: `std/http`, `std/datetime.now`, `std/io.read_stdin`, `std/uuid.v4`, `std/ffi.call`. These are recorded in the trace so their values are auditable even when non-deterministic.
+This invariant holds across machines, operating systems, and time.
 
-`std/ffi.call_pure` declares an FFI call deterministic and includes its result in the witness hash chain.
+Operations that depend on external state are explicitly marked as oracle boundaries, including `std/http`, `std/datetime.now`, `std/io.read_stdin`, `std/uuid.v4`, and `std/ffi.call`. Their observed values are recorded in the execution trace so runs remain auditable even when interacting with the outside world.
+
+`std/ffi.call_pure` declares a foreign call deterministic and includes its result in the witness hash chain.
 
 -----
 
