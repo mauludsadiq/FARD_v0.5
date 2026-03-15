@@ -20,6 +20,17 @@ pub enum Command {
     Test(TestArgs),
     Publish(PublishArgs),
     Install(InstallArgs),
+    New(NewArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct NewArgs {
+    /// Project name
+    pub name: String,
+
+    /// Template: minimal, server, ci (default: minimal)
+    #[arg(long, default_value = "minimal")]
+    pub template: String,
 }
 
 #[derive(Args, Debug)]
@@ -76,7 +87,7 @@ pub struct InstallArgs {
 }
 
 impl Cli {
-    pub fn parse_compat() -> (RunArgs, bool, bool, Option<TestArgs>, Option<PublishArgs>, Option<InstallArgs>) {
+    pub fn parse_compat() -> (RunArgs, bool, bool, Option<TestArgs>, Option<PublishArgs>, Option<InstallArgs>, Option<NewArgs>) {
         use std::ffi::OsString;
         let mut argv: Vec<OsString> = std::env::args_os().collect();
         if argv.len() >= 2 {
@@ -111,7 +122,7 @@ impl Cli {
                 enforce_lockfile: false,
                     program_args: vec![],
             };
-            return (dummy, true, false, None, None, None);
+            return (dummy, true, false, None, None, None, None);
         }
 
         let want_repl = matches!(cli.cmd, Some(Command::Repl));
@@ -126,7 +137,7 @@ impl Cli {
                     enforce_lockfile: false,
                     program_args: vec![],
                 };
-                return (dummy, false, false, Some(t), None, None);
+                return (dummy, false, false, Some(t), None, None, None);
             }
             Some(Command::Publish(p)) => {
                 let dummy = RunArgs {
@@ -137,7 +148,7 @@ impl Cli {
                     enforce_lockfile: false,
                     program_args: vec![],
                 };
-                return (dummy, false, false, None, Some(p), None);
+                return (dummy, false, false, None, Some(p), None, None);
             }
             Some(Command::Install(i)) => {
                 let dummy = RunArgs {
@@ -148,7 +159,18 @@ impl Cli {
                     enforce_lockfile: false,
                     program_args: vec![],
                 };
-                return (dummy, false, false, None, None, Some(i));
+                return (dummy, false, false, None, None, Some(i), None);
+            }
+            Some(Command::New(n)) => {
+                let dummy = RunArgs {
+                    program: PathBuf::from("."),
+                    out: PathBuf::from("."),
+                    lockfile: None,
+                    registry: None,
+                    enforce_lockfile: false,
+                    program_args: vec![],
+                };
+                return (dummy, false, false, None, None, None, Some(n));
             }
             Some(Command::Repl) | None => {
                 if want_repl {
@@ -160,7 +182,7 @@ impl Cli {
                         enforce_lockfile: false,
                     program_args: vec![],
                     };
-                    return (dummy, false, true, None, None, None);
+                    return (dummy, false, true, None, None, None, None);
                 }
                 eprintln!("usage: fardrun run --program <file.fard> --out <dir>");
                 eprintln!("       fardrun test --program <file.fard>");
@@ -170,6 +192,6 @@ impl Cli {
             }
         };
 
-        (run, false, false, None, None, None)
+        (run, false, false, None, None, None, None)
     }
 }

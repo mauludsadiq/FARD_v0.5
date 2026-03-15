@@ -307,13 +307,57 @@ thread_local! {
     static FFI_LIBS: std::cell::RefCell<std::collections::HashMap<String, libloading::Library>> = std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
+fn cmd_new(args: fard_v0_5_language_gate::cli::fardrun_cli::NewArgs) -> Result<()> {
+    let name = &args.name;
+    let template = args.template.as_str();
+    if name.is_empty() || name.contains("/") || name.contains("\\") {
+        bail!("invalid project name: {}", name);
+    }
+    let dir = std::path::Path::new(name);
+    if dir.exists() { bail!("directory already exists: {}", name); }
+    fs::create_dir_all(dir)?;
+    fs::create_dir_all(dir.join(".vscode"))?;
+
+    fs::write(dir.join("fard.toml"), format!("name = \"{}\"
+version = \"2026-03-15\"
+entry = \"main.fard\"\n", name))?;
+
+    let main_src = match template {
+        "server" => format!("// {} -- HTTP server\nimport(\"std/net\") as net\nimport(\"std/json\") as json\n\nfn handle(req) {{\n  if req.path == \"/health\" then\n    {{ status: 200, body: \"ok\", headers: {{}} }}\n  else\n    {{ status: 404, body: \"not found\", headers: {{}} }}\n}}\n\nlet _ = net.serve(8080, fn(req) {{ handle(req) }})\nnull\n", name),
+        "ci" => format!("// {} -- CI runner\nimport(\"std/io\") as io\nimport(\"std/json\") as json\nimport(\"std/list\") as list\nimport(\"std/process\") as process\n\nfn run_step(step) {{\n  let r = process.spawn(\"fardrun\", [\"test\", \"--program\", step.program], \"\")\n  {{ name: step.name, passed: r.code == 0 }}\n}}\n\nlet spec = json.decode(io.read_file(\"pipeline.json\").ok)\nlet results = list.map(spec.steps, fn(s) {{ run_step(s) }})\n{{ total: list.len(results) }}\n", name),
+        _ => format!("// {} -- FARD program\n// Every run produces a SHA-256 receipt in out/\n\nimport(\"std/str\") as str\n\nfn greet(name) {{\n  str.concat(\"Hello, \", str.concat(name, \"!\"))\n}}\n\ngreet(\"world\")\n", name),
+    };
+    fs::write(dir.join("main.fard"), main_src)?;
+
+    let lsp = std::env::var("HOME").unwrap_or_else(|_| ".".into()) + "/bin/fard-lsp";
+    let vsc = format!("{{\n  \"fard.lspPath\": \"{}\",\n  \"[fard]\": {{\n    \"editor.formatOnSave\": false\n  }}\n}}\n", lsp);
+    fs::write(dir.join(".vscode").join("settings.json"), vsc)?;
+    fs::write(dir.join(".gitignore"), "out/\nreceipts/\n*.lock.json\n")?;
+    fs::write(dir.join("README.md"), format!("# {}\n\nA FARD project.\n\n## Run\n\n    fardrun run --program main.fard --out ./out\n    cat out/result.json\n", name))?;
+
+    println!("Created project: {}/", name);
+    println!("  {}/main.fard", name);
+    println!("  {}/fard.toml", name);
+    println!("  {}/.vscode/settings.json", name);
+    println!("");
+    println!("To run:");
+    println!("  cd {}", name);
+    println!("  fardrun run --program main.fard --out ./out");
+    Ok(())
+}
+
 fn main() -> Result<()> {
-    let (run, want_version, want_repl, test_args, publish_args, install_args) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
+    let (run, want_version, want_repl, test_args, publish_args, install_args, new_args) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
     if want_version {
         println!("fard_runtime_version={}", env!("CARGO_PKG_VERSION"));
         println!("trace_format_version=0.1.0");
         println!("stdlib_root_cid=sha256:dev");
         return Ok(());
+    }
+    // fardrun new <name> [--template minimal|server|ci]
+    if let Some(new_args) = new_args {
+        use fard_v0_5_language_gate::cli::fardrun_cli::NewArgs;
+        return cmd_new(new_args);
     }
     if want_repl {
         use std::io::{BufRead, Write};
