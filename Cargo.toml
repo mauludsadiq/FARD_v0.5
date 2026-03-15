@@ -27,6 +27,7 @@ tiny_http = "0.12"
 aes-gcm = "0.10"
 sha2 = "0.10"
 rusqlite = { version = "0.31", features = ["bundled"] }
+rustyline = "14"
 
 [dev-dependencies]
 pretty_assertions = "1"

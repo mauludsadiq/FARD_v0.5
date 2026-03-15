@@ -360,27 +360,43 @@ fn main() -> Result<()> {
         return cmd_new(new_args);
     }
     if want_repl {
-        use std::io::{BufRead, Write};
-        println!("FARD v{} REPL — :quit to exit", env!("CARGO_PKG_VERSION"));
-        let stdin = std::io::stdin();
+        use rustyline::error::ReadlineError;
+        use rustyline::{DefaultEditor, Result as RlResult};
+
+        println!("FARD v{} REPL", env!("CARGO_PKG_VERSION"));
+        println!("  :quit or Ctrl-D to exit");
+        println!("  :help for commands");
+        println!("  Up/Down arrow for history");
+        println!("");
+
+        let mut rl = DefaultEditor::new().expect("readline init failed");
+        let history_path = std::env::var("HOME")
+            .map(|h| format!("{}/.fard_history", h))
+            .unwrap_or_else(|_| "/tmp/.fard_history".to_string());
+        let _ = rl.load_history(&history_path);
+
         let mut env = Env::new();
         let mut loader = ModuleLoader::new(Path::new("."));
         let devnull = std::path::PathBuf::from("/dev/null");
         let mut tracer = Tracer::new(&devnull, &devnull).unwrap_or_else(|_| {
-            // fallback: use temp dir
             let t = std::env::temp_dir();
             Tracer::new(&t, &t.join("repl_trace.ndjson")).expect("tracer")
         });
+
         loop {
-            print!("fard> ");
-            std::io::stdout().flush().ok();
-            let mut line = String::new();
-            match stdin.lock().read_line(&mut line) {
-                Ok(0) => { println!(); break; } // EOF
-                Ok(_) => {}
+            let readline = rl.readline("fard> ");
+            let line = match readline {
+                Ok(l) => {
+                    if !l.trim().is_empty() {
+                        let _ = rl.add_history_entry(l.as_str());
+                    }
+                    l
+                }
+                Err(ReadlineError::Interrupted) => { println!("^C"); continue; }
+                Err(ReadlineError::Eof) => { println!(""); break; }
                 Err(_) => break,
-            }
-            let line = line.trim_end_matches('\n').trim_end_matches('\r');
+            };
+            let line = line.trim_end_matches(|c: char| c == '\n' || c == '\r');
             if line == ":quit" || line == ":q" { break; }
             if line.trim().is_empty() { continue; }
             let file = "<repl>".to_string();
@@ -405,6 +421,7 @@ fn main() -> Result<()> {
                 }
             }
         }
+        let _ = rl.save_history(&history_path);
         return Ok(());
     }
     // Test runner
