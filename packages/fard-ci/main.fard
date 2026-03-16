@@ -1,0 +1,215 @@
+// fard-ci@1.6.0 — CI pipeline primitives for FARD
+// Every step is a witnessed artifact with a cryptographic receipt.
+// Build pipelines where each step's result is provably correct.
+import("std/process") as process
+import("std/io")      as io
+import("std/str")     as str
+import("std/list")    as list
+import("std/rec")     as rec
+import("std/json")    as json
+import("std/time")    as time
+import("std/hash")    as hash
+
+// --- Step execution ---
+
+fn step(name, cmd, args) {
+  { name: name, cmd: cmd, args: args }
+}
+
+fn shell_step(name, script) {
+  step(name, "sh", ["-c", script])
+}
+
+fn run_step(s) {
+  let start  = time.now()
+  let result = process.spawn(s.cmd, s.args, "")
+  let end    = time.now()
+  {
+    name:     s.name,
+    ok:       result.code == 0,
+    code:     result.code,
+    stdout:   str.trim(result.stdout),
+    stderr:   str.trim(result.stderr),
+    duration: end - start,
+    cmd:      s.cmd
+  }
+}
+
+fn run_step_stdin(s, stdin) {
+  let start  = time.now()
+  let result = process.spawn(s.cmd, s.args, stdin)
+  let end    = time.now()
+  {
+    name:     s.name,
+    ok:       result.code == 0,
+    code:     result.code,
+    stdout:   str.trim(result.stdout),
+    stderr:   str.trim(result.stderr),
+    duration: end - start
+  }
+}
+
+// --- Pipeline ---
+
+fn pipeline(name, steps) {
+  { name: name, steps: steps }
+}
+
+fn apply_step(acc, s) {
+  let r = run_step(s)
+  if r.ok then { ok: true, steps: list.concat([acc.steps, [r]]), stopped_at: null }
+  else { ok: false, steps: list.concat([acc.steps, [r]]), stopped_at: r.name }
+}
+
+fn run_pipeline(p) {
+  let start   = time.now()
+  let results = list.fold(p.steps, { ok: true, steps: [], stopped_at: null }, fn(acc, s) {
+    if acc.ok == false then acc
+    else apply_step(acc, s)
+  })
+  let end = time.now()
+  {
+    name:       p.name,
+    ok:         results.ok,
+    steps:      results.steps,
+    stopped_at: results.stopped_at,
+    duration:   end - start,
+    passed:     list.len(list.filter(results.steps, fn(r) { r.ok })),
+    failed:     list.len(list.filter(results.steps, fn(r) { r.ok == false }))
+  }
+}
+
+// Run all steps regardless of failures
+fn run_pipeline_all(p) {
+  let start   = time.now()
+  let results = list.map(p.steps, fn(s) { run_step(s) })
+  let end     = time.now()
+  let passed  = list.filter(results, fn(r) { r.ok })
+  let failed  = list.filter(results, fn(r) { r.ok == false })
+  {
+    name:     p.name,
+    ok:       list.len(failed) == 0,
+    steps:    results,
+    duration: end - start,
+    passed:   list.len(passed),
+    failed:   list.len(failed)
+  }
+}
+
+// --- Common CI steps ---
+
+fn git_clone(repo, dir) {
+  shell_step("git-clone", str.concat(str.concat("git clone ", repo), str.concat(" ", dir)))
+}
+
+fn git_checkout(branch) {
+  shell_step("git-checkout", str.concat("git checkout ", branch))
+}
+
+fn git_status() {
+  step("git-status", "git", ["status", "--porcelain"])
+}
+
+fn git_log(n) {
+  step("git-log", "git", ["log", str.concat("--oneline -", str.from_int(n))])
+}
+
+fn make(target) {
+  step(str.concat("make-", target), "make", [target])
+}
+
+fn cargo_build()   { step("cargo-build",   "cargo", ["build"]) }
+fn cargo_test()    { step("cargo-test",    "cargo", ["test"]) }
+fn cargo_clippy()  { step("cargo-clippy",  "cargo", ["clippy"]) }
+fn cargo_fmt()     { step("cargo-fmt",     "cargo", ["fmt", "--check"]) }
+
+fn npm_install()   { step("npm-install",   "npm", ["install"]) }
+fn npm_build()     { step("npm-build",     "npm", ["run", "build"]) }
+fn npm_test()      { step("npm-test",      "npm", ["test"]) }
+
+fn fard_run(program) {
+  step(str.concat("fard-", program), "fardrun", ["run", "--program", program])
+}
+
+fn echo_step(name, msg) {
+  step(name, "echo", [msg])
+}
+
+fn mkdir_step(dir) {
+  step(str.concat("mkdir-", dir), "mkdir", ["-p", dir])
+}
+
+fn cp_step(src, dst) {
+  step(str.concat("cp-", src), "cp", ["-r", src, dst])
+}
+
+fn rm_step(path) {
+  step(str.concat("rm-", path), "rm", ["-rf", path])
+}
+
+// --- Artifact management ---
+
+fn write_artifact(path, content) {
+  let _ = io.write_file(path, content)
+  let digest = hash.sha256_text(content)
+  { path: path, digest: digest, size: str.len(content) }
+}
+
+fn read_artifact(path) {
+  let result = io.read_file(path)
+  if rec.has(result, "ok") then
+    { ok: true, content: result.ok, digest: hash.sha256_text(result.ok) }
+  else
+    { ok: false, content: null, digest: null }
+}
+
+// --- Pipeline report ---
+
+fn report(result) {
+  let status  = if result.ok then "PASS" else "FAIL"
+  let lines   = list.map(result.steps, fn(r) {
+    let icon = if r.ok then "v" else "x"
+    str.concat(str.concat(str.concat(icon, " "), r.name),
+      str.concat(" (", str.concat(str.from_int(r.duration), "s)")))
+  })
+  str.concat(str.concat(str.concat(str.concat(
+    status, " "), result.name),
+    str.concat(" — ", str.concat(str.from_int(result.passed), str.concat(" passed, ",
+    str.concat(str.from_int(result.failed), " failed\n"))))),
+    str.join(lines, "\n"))
+}
+
+fn save_report(result, path) {
+  let _ = io.write_file(path, json.encode(result))
+  path
+}
+
+{
+  step:             step,
+  shell_step:       shell_step,
+  run_step:         run_step,
+  pipeline:         pipeline,
+  run_pipeline:     run_pipeline,
+  run_pipeline_all: run_pipeline_all,
+  git_clone:        git_clone,
+  git_checkout:     git_checkout,
+  git_status:       git_status,
+  git_log:          git_log,
+  make:             make,
+  cargo_build:      cargo_build,
+  cargo_test:       cargo_test,
+  cargo_clippy:     cargo_clippy,
+  cargo_fmt:        cargo_fmt,
+  npm_install:      npm_install,
+  npm_build:        npm_build,
+  npm_test:         npm_test,
+  fard_run:         fard_run,
+  echo_step:        echo_step,
+  mkdir_step:       mkdir_step,
+  cp_step:          cp_step,
+  rm_step:          rm_step,
+  write_artifact:   write_artifact,
+  read_artifact:    read_artifact,
+  report:           report,
+  save_report:      save_report
+}
