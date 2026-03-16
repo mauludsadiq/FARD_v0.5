@@ -1,0 +1,78 @@
+// shell@1.6.0 — Safe shell command composition for FARD
+// Replacement for subprocess/shell scripts with witnessed execution
+import("std/process") as process
+import("std/str")     as str
+import("std/list")    as list
+import("std/rec")     as rec
+
+fn run(cmd, args) {
+  let result = process.spawn(cmd, args, "")
+  { ok: result.code == 0, code: result.code, stdout: str.trim(result.stdout), stderr: str.trim(result.stderr) }
+}
+
+fn run_stdin(cmd, args, stdin) {
+  let result = process.spawn(cmd, args, stdin)
+  { ok: result.code == 0, code: result.code, stdout: str.trim(result.stdout), stderr: str.trim(result.stderr) }
+}
+
+fn must(cmd, args) {
+  let result = run(cmd, args)
+  if result.ok then result
+  else { ok: false, code: result.code, stdout: result.stdout, stderr: result.stderr,
+         error: str.concat(str.concat(cmd, " failed: "), result.stderr) }
+}
+
+fn capture(cmd, args) {
+  let result = run(cmd, args)
+  if result.ok then result.stdout else ""
+}
+
+fn sh(script) {
+  run("sh", ["-c", script])
+}
+
+fn sh_capture(script) {
+  capture("sh", ["-c", script])
+}
+
+fn which(cmd) {
+  let result = run("which", [cmd])
+  if result.ok then { found: true, path: result.stdout }
+  else { found: false, path: null }
+}
+
+fn exists(path) {
+  let result = run("test", ["-e", path])
+  result.ok
+}
+
+fn mkdir_p(path) {
+  run("mkdir", ["-p", path])
+}
+
+fn cp(src, dst) {
+  run("cp", ["-r", src, dst])
+}
+
+fn rm_rf(path) {
+  run("rm", ["-rf", path])
+}
+
+fn ls(path) {
+  let result = run("ls", [path])
+  if result.ok then str.split_lines(result.stdout)
+  else []
+}
+
+fn git(args) {
+  run("git", args)
+}
+
+fn git_capture(args) {
+  capture("git", args)
+}
+
+{ run: run, run_stdin: run_stdin, must: must, capture: capture,
+  sh: sh, sh_capture: sh_capture, which: which, exists: exists,
+  mkdir_p: mkdir_p, cp: cp, rm_rf: rm_rf, ls: ls,
+  git: git, git_capture: git_capture }

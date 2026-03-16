@@ -1,0 +1,80 @@
+// semver@1.6.0 — Semantic versioning for FARD
+import("std/str")  as str
+import("std/int")  as int
+import("std/list") as list
+import("std/rec")  as rec
+
+fn parse(v) {
+  let cleaned = if str.starts_with(v, "v") then str.slice(v, 1, str.len(v)) else v
+  let parts   = str.split(cleaned, ".")
+  let major   = if list.len(parts) > 0 then int.parse(list.get(parts, 0)).v else 0
+  let minor   = if list.len(parts) > 1 then int.parse(list.get(parts, 1)).v else 0
+  let patch_str = if list.len(parts) > 2 then list.get(parts, 2) else "0"
+  let patch_parts = str.split(patch_str, "-")
+  let patch   = int.parse(list.get(patch_parts, 0))
+  let pre     = if list.len(patch_parts) > 1 then list.get(patch_parts, 1) else null
+  { major: major, minor: minor, patch: patch, pre: pre, raw: v }
+}
+
+fn to_str(sv) {
+  let base = str.concat(str.concat(str.concat(str.concat(str.from_int(sv.major), "."), str.from_int(sv.minor)), "."), str.from_int(sv.patch))
+  if sv.pre != null then str.concat(str.concat(base, "-"), sv.pre) else base
+}
+
+fn compare(a, b) {
+  let av = parse(a)
+  let bv = parse(b)
+  if av.major != bv.major then av.major - bv.major
+  else if av.minor != bv.minor then av.minor - bv.minor
+  else av.patch - bv.patch
+}
+
+fn gt(a, b)  { compare(a, b) > 0 }
+fn lt(a, b)  { compare(a, b) < 0 }
+fn eq(a, b)  { compare(a, b) == 0 }
+fn gte(a, b) { compare(a, b) >= 0 }
+fn lte(a, b) { compare(a, b) <= 0 }
+
+fn satisfies(version, constraint) {
+  let op  = str.slice(constraint, 0, 1)
+  let ver = str.trim(str.slice(constraint, 1, str.len(constraint)))
+  if op == "^" then
+    let v = parse(version)
+    let c = parse(ver)
+    v.major == c.major && gte(version, ver)
+  else if op == "~" then
+    let v = parse(version)
+    let c = parse(ver)
+    v.major == c.major && v.minor == c.minor && gte(version, ver)
+  else if op == ">" then gt(version, ver)
+  else if op == "<" then lt(version, ver)
+  else eq(version, ver)
+}
+
+fn sort(versions) {
+  list.sort_by(versions, fn(a, b) { compare(a, b) })
+}
+
+fn latest(versions) {
+  let sorted = sort(versions)
+  list.get(sorted, list.len(sorted) - 1)
+}
+
+fn bump_major(v) {
+  let sv = parse(v)
+  to_str({ major: sv.major + 1, minor: 0, patch: 0, pre: null, raw: v })
+}
+
+fn bump_minor(v) {
+  let sv = parse(v)
+  to_str({ major: sv.major, minor: sv.minor + 1, patch: 0, pre: null, raw: v })
+}
+
+fn bump_patch(v) {
+  let sv = parse(v)
+  to_str({ major: sv.major, minor: sv.minor, patch: sv.patch + 1, pre: null, raw: v })
+}
+
+{ parse: parse, to_str: to_str, compare: compare, gt: gt, lt: lt, eq: eq,
+  gte: gte, lte: lte, satisfies: satisfies, sort: sort, latest: latest,
+  bump_major: bump_major, bump_minor: bump_minor, bump_patch: bump_patch }

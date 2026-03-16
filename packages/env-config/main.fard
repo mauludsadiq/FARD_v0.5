@@ -1,0 +1,76 @@
+// env-config@1.6.0 — Structured configuration from environment and files
+import("std/env")  as env
+import("std/int")  as int
+import("std/str")  as str
+import("std/rec")  as rec
+import("std/list") as list
+import("std/io")   as io
+import("std/type") as type
+
+fn get_env(key, default) {
+  let val = env.get(key)
+  if val == null then default else val
+}
+
+fn require_env(key) {
+  let val = env.get(key)
+  if val == null then
+    { ok: false, error: str.concat("required env var not set: ", key), value: null }
+  else
+    { ok: true, error: null, value: val }
+}
+
+fn get_int(key, default) {
+  let val = env.get(key)
+  if val == null then default
+  else int.parse(val).v
+}
+
+fn get_bool(key, default) {
+  let val = env.get(key)
+  if val == null then default
+  else val == "true" || val == "1" || val == "yes"
+}
+
+fn from_env(schema) {
+  let keys   = rec.keys(schema)
+  let result = list.fold(keys, { ok: true, errors: [], config: {} }, fn(acc, key) {
+    let spec     = rec.get(schema, key)
+    let required = if rec.has(spec, "required") then rec.get(spec, "required") else false
+    let default  = if rec.has(spec, "default")  then rec.get(spec, "default")  else null
+    let env_key  = if rec.has(spec, "env")      then rec.get(spec, "env")      else str.upper(key)
+    let val      = env.get(env_key)
+    if val == null && required then
+      { ok: false, errors: list.concat([acc.errors, [str.concat("missing required: ", env_key)]]), config: acc.config }
+    else
+      let final_val = if val == null then default else val
+      { ok: acc.ok, errors: acc.errors, config: rec.set(acc.config, key, final_val) }
+  })
+  result
+}
+
+fn parse_dotenv(src) {
+  let lines = str.split_lines(src)
+  list.fold(lines, {}, fn(acc, line) {
+    let trimmed = str.trim(line)
+    if str.len(trimmed) == 0 then acc
+    else if str.starts_with(trimmed, "#") then acc
+    else if str.contains(trimmed, "=") then
+      let parts = str.split(trimmed, "=")
+      let key   = str.trim(list.get(parts, 0))
+      let val   = str.trim(str.join(list.drop(parts, 1), "="))
+      let clean = if str.starts_with(val, "\"") then str.slice(val, 1, str.len(val) - 1) else val
+      rec.set(acc, key, clean)
+    else acc
+  })
+}
+
+fn load_dotenv(path) {
+  let result = io.read_file(path)
+  if rec.has(result, "ok") then { ok: true, config: parse_dotenv(result.ok) }
+  else { ok: false, config: {} }
+}
+
+{ get_env: get_env, require_env: require_env, get_int: get_int,
+  get_bool: get_bool, from_env: from_env, parse_dotenv: parse_dotenv,
+  load_dotenv: load_dotenv }

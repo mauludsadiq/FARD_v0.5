@@ -1,0 +1,50 @@
+// glob@1.6.0 — File glob matching for FARD
+import("std/str")  as str
+import("std/list") as list
+import("std/io")   as io
+
+fn match_pattern(pattern, text) {
+  if pattern == "*" then true
+  else if str.contains(pattern, "*") then
+    let parts = str.split(pattern, "*")
+    let prefix = list.get(parts, 0)
+    let suffix = if list.len(parts) > 1 then list.get(parts, list.len(parts) - 1) else ""
+    let starts = if str.len(prefix) == 0 then true else str.starts_with(text, prefix)
+    let ends   = if str.len(suffix) == 0 then true else str.ends_with(text, suffix)
+    starts && ends
+  else pattern == text
+}
+
+fn matches(pattern, path) {
+  let filename = list.get(str.split(path, "/"), list.len(str.split(path, "/")) - 1)
+  if str.contains(pattern, "/") then match_pattern(pattern, path)
+  else match_pattern(pattern, filename)
+}
+
+fn glob(dir, pattern) {
+  let entries = io.list_dir(dir)
+  if rec.has(entries, "err") then []
+  else list.filter(entries.ok, fn(f) { matches(pattern, f) })
+}
+
+fn glob_recursive(dir, pattern) {
+  let entries = io.list_dir(dir)
+  if rec.has(entries, "err") then []
+  else
+    list.flat_map(entries.ok, fn(f) {
+      let full = str.concat(str.concat(dir, "/"), f)
+      if matches(pattern, f) then [full]
+      else
+        let subdir = io.list_dir(full)
+        if rec.has(subdir, "ok") then glob_recursive(full, pattern)
+        else []
+    })
+}
+
+fn ext(pattern) { str.concat("*.", pattern) }
+fn fard_files(dir) { glob(dir, "*.fard") }
+fn json_files(dir) { glob(dir, "*.json") }
+fn toml_files(dir) { glob(dir, "*.toml") }
+
+{ matches: matches, glob: glob, glob_recursive: glob_recursive,
+  ext: ext, fard_files: fard_files, json_files: json_files, toml_files: toml_files }
