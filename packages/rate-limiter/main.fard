@@ -1,0 +1,108 @@
+// rate-limiter@1.6.0 — Token bucket rate limiter for FARD
+// State is a record — pass it through like any other value.
+// Every allow/deny decision is a witnessed artifact.
+import("std/time") as time
+import("std/rec")  as rec
+import("std/str")  as str
+
+// Create a new token bucket rate limiter
+// rate = tokens per second
+// burst = max tokens (bucket capacity)
+fn new(rate, burst) {
+  {
+    rate:       rate,
+    burst:      burst,
+    tokens:     burst,
+    last_refill: time.now()
+  }
+}
+
+// Refill tokens based on elapsed time
+fn refill(limiter) {
+  let now      = time.now()
+  let elapsed  = now - limiter.last_refill
+  let new_tokens = limiter.tokens + (elapsed * limiter.rate)
+  let capped   = if new_tokens > limiter.burst then limiter.burst else new_tokens
+  rec.set(rec.set(limiter, "tokens", capped), "last_refill", now)
+}
+
+// Try to consume n tokens — returns {ok, limiter}
+fn consume(limiter, n) {
+  let refilled = refill(limiter)
+  if refilled.tokens >= n then
+    { ok: true, limiter: rec.set(refilled, "tokens", refilled.tokens - n) }
+  else
+    { ok: false, limiter: refilled }
+}
+
+// Try to consume 1 token
+fn allow(limiter) {
+  consume(limiter, 1)
+}
+
+// Check if n tokens available without consuming
+fn peek_available(limiter) {
+  let refilled = refill(limiter)
+  refilled.tokens
+}
+
+// Time in seconds until n tokens are available
+fn wait_time(limiter, n) {
+  let refilled  = refill(limiter)
+  let deficit   = n - refilled.tokens
+  if deficit <= 0 then 0
+  else deficit / limiter.rate
+}
+
+// Reset limiter to full capacity
+fn reset(limiter) {
+  rec.set(rec.set(limiter, "tokens", limiter.burst), "last_refill", time.now())
+}
+
+// Per-key rate limiter — map of key -> limiter
+fn new_map(rate, burst) {
+  { rate: rate, burst: burst, limiters: {} }
+}
+
+fn get_or_create(lmap, key) {
+  if rec.has(lmap.limiters, key) then rec.get(lmap.limiters, key)
+  else new(lmap.rate, lmap.burst)
+}
+
+fn allow_key(lmap, key) {
+  let limiter = get_or_create(lmap, key)
+  let result  = allow(limiter)
+  let new_limiters = rec.set(lmap.limiters, key, result.limiter)
+  { ok: result.ok, lmap: rec.set(lmap, "limiters", new_limiters) }
+}
+
+fn consume_key(lmap, key, n) {
+  let limiter = get_or_create(lmap, key)
+  let result  = consume(limiter, n)
+  let new_limiters = rec.set(lmap.limiters, key, result.limiter)
+  { ok: result.ok, lmap: rec.set(lmap, "limiters", new_limiters) }
+}
+
+fn reset_key(lmap, key) {
+  let new_limiters = rec.set(lmap.limiters, key, new(lmap.rate, lmap.burst))
+  rec.set(lmap, "limiters", new_limiters)
+}
+
+fn tokens_for_key(lmap, key) {
+  if rec.has(lmap.limiters, key) then peek_available(rec.get(lmap.limiters, key))
+  else lmap.burst
+}
+
+{
+  new:            new,
+  allow:          allow,
+  consume:        consume,
+  peek_available: peek_available,
+  wait_time:      wait_time,
+  reset:          reset,
+  new_map:        new_map,
+  allow_key:      allow_key,
+  consume_key:    consume_key,
+  reset_key:      reset_key,
+  tokens_for_key: tokens_for_key
+}
