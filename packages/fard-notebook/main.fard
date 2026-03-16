@@ -1,0 +1,180 @@
+// fard-notebook@1.6.0 — Literate programming for FARD
+// A notebook is a Markdown document with embedded FARD code cells.
+// Each cell can be extracted, executed, and its receipt attached.
+// Format: code cells delimited by ```fard ... ```
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+import("std/json") as json
+import("std/io")   as io
+import("std/hash") as hash
+import("std/time") as time
+
+// --- Notebook format ---
+// A notebook is a record:
+// { title, cells, metadata }
+// Each cell is:
+// { id, kind, source, output, receipt }
+// kind: "code" | "markdown"
+
+fn new(title) {
+  { title: title, cells: [], metadata: { created: time.now() } }
+}
+
+fn md_cell(source) {
+  { id: null, kind: "markdown", source: source, output: null, receipt: null }
+}
+
+fn code_cell(source) {
+  { id: null, kind: "code", source: source, output: null, receipt: null }
+}
+
+fn add_cell(nb, cell) {
+  let id       = str.from_int(list.len(nb.cells))
+  let new_cell = rec.set(cell, "id", id)
+  rec.set(nb, "cells", list.concat([nb.cells, [new_cell]]))
+}
+
+fn add_md(nb, source)   { add_cell(nb, md_cell(source)) }
+fn add_code(nb, source) { add_cell(nb, code_cell(source)) }
+
+// --- Parsing ---
+
+fn is_fard_fence(line) {
+  str.trim(line) == "```fard" || str.trim(line) == "~~~fard"
+}
+
+fn is_close_fence(line) {
+  str.trim(line) == "```" || str.trim(line) == "~~~"
+}
+
+fn close_code_cell(s) {
+  let src  = str.join(s.buf, "\n")
+  let cell = { id: str.from_int(list.len(s.cells)), kind: "code", source: src, output: null, receipt: null }
+  { i: s.i + 1, cells: list.concat([s.cells, [cell]]), in_code: false, buf: [] }
+}
+
+fn parse_step(s, lines) {
+  let line = list.get(lines, s.i)
+  if s.in_code == false && is_fard_fence(line) then
+    { i: s.i + 1, cells: s.cells, in_code: true, buf: [] }
+  else if s.in_code && is_close_fence(line) then close_code_cell(s)
+  else if s.in_code then
+    { i: s.i + 1, cells: s.cells, in_code: true, buf: list.concat([s.buf, [line]]) }
+  else
+    { i: s.i + 1, cells: s.cells, in_code: false, buf: s.buf }
+}
+
+fn parse_cells(lines) {
+  let result = while { i: 0, cells: [], in_code: false, buf: [] }
+    fn(s) { s.i < list.len(lines) }
+    fn(s) { parse_step(s, lines) }
+  result.value.cells
+}
+
+fn parse(src) {
+  let lines = str.split_lines(src)
+  let title_line = list.find(lines, fn(l) { str.starts_with(l, "# ") })
+  let title = if rec.has(title_line, "some") then str.slice(title_line.some, 2, str.len(title_line.some)) else "Untitled"
+  let cells = parse_cells(lines)
+  { title: title, cells: cells, metadata: { created: time.now() } }
+}
+
+// --- Rendering ---
+
+fn render_cell_html(cell) {
+  if cell.kind == "markdown" then
+    str.concat("<div class=\"md-cell\">", str.concat(cell.source, "</div>"))
+  else
+    let output_html = if cell.output != null then
+      str.concat("<div class=\"output\">", str.concat(json.encode(cell.output), "</div>"))
+    else ""
+    str.concat(
+      str.concat("<div class=\"code-cell\"><pre><code>", str.concat(cell.source, "</code></pre>")),
+      str.concat(output_html, "</div>"))
+}
+
+fn to_html(nb) {
+  let cells_html = str.join(list.map(nb.cells, fn(c) { render_cell_html(c) }), "\n")
+  str.concat(str.concat(str.concat(str.concat(
+    "<!DOCTYPE html><html><head><title>", nb.title),
+    "</title></head><body><h1>"),
+    str.concat(nb.title, str.concat("</h1>\n", str.concat(cells_html, "\n</body></html>"))))
+}
+
+// --- Export ---
+
+fn to_json(nb) {
+  json.encode(nb)
+}
+
+fn save(nb, path) {
+  let _ = io.write_file(path, to_json(nb))
+  { ok: true, path: path, digest: hash.sha256_text(to_json(nb)) }
+}
+
+fn load(path) {
+  let result = io.read_file(path)
+  if rec.has(result, "ok") then
+    { ok: true, notebook: json.decode(result.ok) }
+  else
+    { ok: false, notebook: null }
+}
+
+fn save_html(nb, path) {
+  let html = to_html(nb)
+  let _    = io.write_file(path, html)
+  { ok: true, path: path }
+}
+
+// --- Cell utilities ---
+
+fn get_cell(nb, id) {
+  let found = list.find(nb.cells, fn(c) { c.id == id })
+  if rec.has(found, "some") then found.some else null
+}
+
+fn code_cells(nb) {
+  list.filter(nb.cells, fn(c) { c.kind == "code" })
+}
+
+fn md_cells(nb) {
+  list.filter(nb.cells, fn(c) { c.kind == "markdown" })
+}
+
+fn cell_count(nb)      { list.len(nb.cells) }
+fn code_cell_count(nb) { list.len(code_cells(nb)) }
+
+fn set_output(nb, cell_id, output, receipt) {
+  let new_cells = list.map(nb.cells, fn(c) {
+    if c.id == cell_id then rec.set(rec.set(c, "output", output), "receipt", receipt)
+    else c
+  })
+  rec.set(nb, "cells", new_cells)
+}
+
+fn extract_sources(nb) {
+  list.map(code_cells(nb), fn(c) { c.source })
+}
+
+{
+  new:              new,
+  md_cell:          md_cell,
+  code_cell:        code_cell,
+  add_cell:         add_cell,
+  add_md:           add_md,
+  add_code:         add_code,
+  parse:            parse,
+  to_html:          to_html,
+  to_json:          to_json,
+  save:             save,
+  load:             load,
+  save_html:        save_html,
+  get_cell:         get_cell,
+  code_cells:       code_cells,
+  md_cells:         md_cells,
+  cell_count:       cell_count,
+  code_cell_count:  code_cell_count,
+  set_output:       set_output,
+  extract_sources:  extract_sources
+}
