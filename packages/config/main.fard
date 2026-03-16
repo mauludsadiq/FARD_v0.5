@@ -1,0 +1,116 @@
+// config@1.6.0 — Layered configuration for FARD
+// Priority: overrides > env > file > defaults
+import("std/env")  as env
+import("std/io")   as io
+import("std/str")  as str
+import("std/rec")  as rec
+import("std/list") as list
+import("std/json") as json
+import("std/int")  as int
+
+fn parse_kv(trimmed) {
+  let parts = str.split(trimmed, "=")
+  let key   = str.trim(list.get(parts, 0))
+  let raw   = str.trim(str.join(list.drop(parts, 1), "="))
+  let val   = if str.starts_with(raw, "\"") then str.slice(raw, 1, str.len(raw) - 1) else raw
+  { key: key, val: val }
+}
+
+fn apply_kv(acc, trimmed) {
+  let kv = parse_kv(trimmed)
+  rec.set(acc, kv.key, kv.val)
+}
+
+fn parse_dotenv_line(acc, line) {
+  let trimmed = str.trim(line)
+  if str.len(trimmed) == 0 then acc
+  else if str.starts_with(trimmed, "#") then acc
+  else if str.contains(trimmed, "=") then apply_kv(acc, trimmed)
+  else acc
+}
+
+fn parse_dotenv(src) {
+  list.fold(str.split_lines(src), {}, fn(acc, line) {
+    parse_dotenv_line(acc, line)
+  })
+}
+
+fn from_dotenv(path) {
+  let result = io.read_file(path)
+  if rec.has(result, "ok") then { ok: true, config: parse_dotenv(result.ok) }
+  else { ok: false, config: {} }
+}
+
+fn from_json_file(path) {
+  let result = io.read_file(path)
+  if rec.has(result, "ok") then { ok: true, config: json.decode(result.ok) }
+  else { ok: false, config: {} }
+}
+
+fn from_env(schema) {
+  let keys = rec.keys(schema)
+  list.fold(keys, { ok: true, config: {}, missing: [] }, fn(acc, key) {
+    let spec     = rec.get(schema, key)
+    let env_key  = if rec.has(spec, "env") then rec.get(spec, "env") else str.upper(key)
+    let required = if rec.has(spec, "required") then rec.get(spec, "required") else false
+    let default  = if rec.has(spec, "default") then rec.get(spec, "default") else null
+    let val      = env.get(env_key)
+    if val == null && required then
+      { ok: false, config: acc.config, missing: list.concat([acc.missing, [env_key]]) }
+    else
+      let final_val = if val == null then default else val
+      { ok: acc.ok, config: rec.set(acc.config, key, final_val), missing: acc.missing }
+  })
+}
+
+fn merge(a, b) {
+  list.fold(rec.keys(b), a, fn(acc, k) {
+    if rec.get(b, k) == null then acc
+    else rec.set(acc, k, rec.get(b, k))
+  })
+}
+
+fn layered(defaults, file_config, env_config, overrides) {
+  merge(merge(merge(defaults, file_config), env_config), overrides)
+}
+
+fn get_str(cfg, key, default) {
+  if rec.has(cfg, key) then rec.get(cfg, key) else default
+}
+
+fn get_int_val(cfg, key, default) {
+  if rec.has(cfg, key) == false then default
+  else int.parse(rec.get(cfg, key)).v
+}
+
+fn get_bool(cfg, key, default) {
+  if rec.has(cfg, key) == false then default
+  else
+    let v = rec.get(cfg, key)
+    v == true || v == "true" || v == "1" || v == "yes"
+}
+
+fn validate(config, schema) {
+  let errors = list.flat_map(rec.keys(schema), fn(key) {
+    let spec = rec.get(schema, key)
+    let required = if rec.has(spec, "required") then rec.get(spec, "required") else false
+    if required && rec.has(config, key) == false then
+      [str.concat("missing required: ", key)]
+    else []
+  })
+  if list.len(errors) == 0 then { ok: true, errors: [] }
+  else { ok: false, errors: errors }
+}
+
+{
+  parse_dotenv:   parse_dotenv,
+  from_dotenv:    from_dotenv,
+  from_json_file: from_json_file,
+  from_env:       from_env,
+  merge:          merge,
+  layered:        layered,
+  get_str:        get_str,
+  get_int:        get_int_val,
+  get_bool:       get_bool,
+  validate:       validate
+}

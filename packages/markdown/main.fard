@@ -1,0 +1,100 @@
+// markdown@1.6.0 — Markdown to HTML rendering for FARD
+import("std/str")  as str
+import("std/list") as list
+
+fn count_hashes(line) {
+  let chars  = str.chars(line)
+  let result = while { i: 0, chars: chars, done: false }
+    fn(s) { s.done == false && s.i < list.len(s.chars) }
+    fn(s) {
+      let c = list.get(s.chars, s.i)
+      if c == "#" then { i: s.i + 1, chars: s.chars, done: false }
+      else { i: s.i, chars: s.chars, done: true }
+    }
+  result.value.i
+}
+
+fn escape_html(s) {
+  str.replace(str.replace(str.replace(s, "&", "&amp;"), "<", "&lt;"), ">", "&gt;")
+}
+
+fn render_heading(line) {
+  let n   = count_hashes(line)
+  let txt = str.trim(str.slice(line, n, str.len(line)))
+  let tag = str.concat("h", str.from_int(n))
+  str.concat("<", str.concat(tag, str.concat(">", str.concat(escape_html(txt), str.concat("</", str.concat(tag, ">"))))))
+}
+
+fn inline_code(s) {
+  if str.contains(s, "`") then
+    let parts = str.split(s, "`")
+    list.fold(list.range(0, list.len(parts)), "", fn(acc, i) {
+      let part = list.get(parts, i)
+      if i % 2 == 1 then str.concat(acc, str.concat("<code>", str.concat(escape_html(part), "</code>")))
+      else str.concat(acc, escape_html(part))
+    })
+  else escape_html(s)
+}
+
+fn apply_bold(s) {
+  if str.contains(s, "**") then
+    let parts = str.split(s, "**")
+    list.fold(list.range(0, list.len(parts)), "", fn(acc, i) {
+      let part = list.get(parts, i)
+      if i % 2 == 1 then str.concat(acc, str.concat("<strong>", str.concat(part, "</strong>")))
+      else str.concat(acc, part)
+    })
+  else s
+}
+
+fn render_para(t) {
+  str.concat("<p>", str.concat(apply_bold(inline_code(t)), "</p>"))
+}
+
+fn render_line(line) {
+  let t = str.trim(line)
+  if str.len(t) == 0 then ""
+  else if str.starts_with(t, "######") then render_heading(t)
+  else if str.starts_with(t, "#####")  then render_heading(t)
+  else if str.starts_with(t, "####")   then render_heading(t)
+  else if str.starts_with(t, "###")    then render_heading(t)
+  else if str.starts_with(t, "##")     then render_heading(t)
+  else if str.starts_with(t, "#")      then render_heading(t)
+  else if str.starts_with(t, "---") || str.starts_with(t, "***") then "<hr>"
+  else if str.starts_with(t, "> ")     then str.concat("<blockquote>", str.concat(escape_html(str.slice(t, 2, str.len(t))), "</blockquote>"))
+  else if str.starts_with(t, "- ") || str.starts_with(t, "* ") then str.concat("<li>", str.concat(escape_html(str.slice(t, 2, str.len(t))), "</li>"))
+  else render_para(t)
+}
+
+fn wrap_lists(lines) {
+  let result = list.fold(lines, { in_list: false, out: [] }, fn(acc, line) {
+    let is_item = str.starts_with(line, "<li>")
+    if is_item && acc.in_list == false then
+      { in_list: true, out: list.concat([acc.out, ["<ul>", line]]) }
+    else if is_item == false && acc.in_list && str.len(line) > 0 then
+      { in_list: false, out: list.concat([acc.out, ["</ul>", line]]) }
+    else
+      { in_list: acc.in_list, out: list.concat([acc.out, [line]]) }
+  })
+  if result.in_list then list.concat([result.out, ["</ul>"]])
+  else result.out
+}
+
+fn to_html(src) {
+  let rendered = list.filter(list.map(str.split_lines(src), fn(l) { render_line(l) }), fn(l) { str.len(l) > 0 })
+  str.join(wrap_lists(rendered), "\n")
+}
+
+fn strip(src) {
+  let lines = str.map(str.split_lines(src), fn(line) {
+    let t = str.trim(line)
+    if str.starts_with(t, "#") then str.trim(str.slice(t, count_hashes(t), str.len(t)))
+    else if str.starts_with(t, "> ") then str.trim(str.slice(t, 2, str.len(t)))
+    else if str.starts_with(t, "- ") || str.starts_with(t, "* ") then str.trim(str.slice(t, 2, str.len(t)))
+    else t
+  })
+  str.join(list.filter(lines, fn(l) { str.len(l) > 0 }), "\n")
+}
+
+{ to_html: to_html, strip: strip, render_line: render_line,
+  escape_html: escape_html, inline_code: inline_code }
