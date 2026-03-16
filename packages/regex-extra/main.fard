@@ -1,0 +1,208 @@
+// regex-extra@1.6.0 — Pattern matching utilities for FARD
+// Pure FARD implementation — no native regex engine
+// Supports: glob patterns, string predicates, common validators
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+
+// --- Glob pattern matching ---
+// Supports: * (any chars), ? (one char), [abc] (char class), prefix/suffix
+
+fn match_glob(pattern, text) {
+  if str.len(pattern) == 0 then str.len(text) == 0
+  else if pattern == "*" then true
+  else if str.starts_with(pattern, "*") then
+    match_star(str.slice(pattern, 1, str.len(pattern)), text)
+  else if str.starts_with(pattern, "?") then
+    if str.len(text) == 0 then false
+    else match_glob(str.slice(pattern, 1, str.len(pattern)), str.slice(text, 1, str.len(text)))
+  else if str.len(text) == 0 then false
+  else if str.slice(pattern, 0, 1) == str.slice(text, 0, 1) then
+    match_glob(str.slice(pattern, 1, str.len(pattern)), str.slice(text, 1, str.len(text)))
+  else false
+}
+
+fn match_star(rest_pattern, text) {
+  if match_glob(rest_pattern, text) then true
+  else if str.len(text) == 0 then false
+  else match_star(rest_pattern, str.slice(text, 1, str.len(text)))
+}
+
+// --- String predicates ---
+
+fn is_alpha(s) {
+  let chars = str.chars(s)
+  if list.len(chars) == 0 then false
+  else list.all(chars, fn(c) {
+    str.contains("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", c)
+  })
+}
+
+fn is_digit(s) {
+  let chars = str.chars(s)
+  if list.len(chars) == 0 then false
+  else list.all(chars, fn(c) { str.contains("0123456789", c) })
+}
+
+fn is_alphanumeric(s) {
+  let chars = str.chars(s)
+  if list.len(chars) == 0 then false
+  else list.all(chars, fn(c) {
+    str.contains("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", c)
+  })
+}
+
+fn is_hex(s) {
+  let chars = str.chars(s)
+  if list.len(chars) == 0 then false
+  else list.all(chars, fn(c) {
+    str.contains("0123456789abcdefABCDEF", c)
+  })
+}
+
+fn is_whitespace(s) {
+  let chars = str.chars(s)
+  if list.len(chars) == 0 then false
+  else list.all(chars, fn(c) { c == " " || c == "\t" || c == "\n" })
+}
+
+fn is_lowercase(s) {
+  let chars = str.chars(s)
+  if list.len(chars) == 0 then false
+  else list.all(chars, fn(c) {
+    str.contains("abcdefghijklmnopqrstuvwxyz", c)
+  })
+}
+
+fn is_uppercase(s) {
+  let chars = str.chars(s)
+  if list.len(chars) == 0 then false
+  else list.all(chars, fn(c) {
+    str.contains("ABCDEFGHIJKLMNOPQRSTUVWXYZ", c)
+  })
+}
+
+// --- Common validators ---
+
+fn check_email_parts(parts) {
+  let local  = list.get(parts, 0)
+  let domain = list.get(parts, 1)
+  str.len(local) > 0 && str.contains(domain, ".") && str.len(domain) > 2
+}
+
+fn is_email(s) {
+  if str.contains(s, "@") == false then false
+  else check_email_parts(str.split(s, "@"))
+}
+
+fn is_url(s) {
+  str.starts_with(s, "http://") || str.starts_with(s, "https://")
+}
+
+fn is_uuid(s) {
+  str.len(s) == 36 &&
+  str.slice(s, 8, 9) == "-" &&
+  str.slice(s, 13, 14) == "-" &&
+  str.slice(s, 18, 19) == "-" &&
+  str.slice(s, 23, 24) == "-"
+}
+
+fn is_ip(s) {
+  let parts = str.split(s, ".")
+  if list.len(parts) != 4 then false
+  else list.all(parts, fn(p) {
+    if is_digit(p) == false then false
+    else
+      let n = str.len(p)
+      n >= 1 && n <= 3
+  })
+}
+
+fn is_semver(s) {
+  let parts = str.split(s, ".")
+  if list.len(parts) < 2 then false
+  else list.all(parts, fn(p) { is_digit(p) && str.len(p) > 0 })
+}
+
+fn is_slug(s) {
+  let chars = str.chars(s)
+  if list.len(chars) == 0 then false
+  else list.all(chars, fn(c) {
+    str.contains("abcdefghijklmnopqrstuvwxyz0123456789-", c)
+  })
+}
+
+fn is_json(s) {
+  let t = str.trim(s)
+  (str.starts_with(t, "{") && str.ends_with(t, "}")) ||
+  (str.starts_with(t, "[") && str.ends_with(t, "]")) ||
+  (str.starts_with(t, "\"") && str.ends_with(t, "\""))
+}
+
+// --- Find/extract ---
+
+fn find_all_between(s, open, close) {
+  let parts = str.split(s, open)
+  let found = list.flat_map(list.drop(parts, 1), fn(p) {
+    if str.contains(p, close) then
+      let end = str.index_of(p, close)
+      [str.slice(p, 0, end)]
+    else []
+  })
+  found
+}
+
+fn count_occurrences(s, needle) {
+  let parts = str.split(s, needle)
+  list.len(parts) - 1
+}
+
+fn replace_all(s, from, to) {
+  str.replace(s, from, to)
+}
+
+fn split_on_any(s, delimiters) {
+  list.fold(delimiters, [s], fn(acc, delim) {
+    list.flat_map(acc, fn(part) { str.split(part, delim) })
+  })
+}
+
+fn trim_chars(s, chars_to_trim) {
+  let char_list = str.chars(chars_to_trim)
+  let s_chars   = str.chars(s)
+  let start = list.fold(list.range(0, list.len(s_chars)), 0, fn(acc, i) {
+    if acc == i && list.any(char_list, fn(c) { c == list.get(s_chars, i) }) then i + 1
+    else acc
+  })
+  let end_result = while { i: list.len(s_chars) - 1, done: false }
+    fn(st) { st.done == false && st.i >= start }
+    fn(st) {
+      let c = list.get(s_chars, st.i)
+      if list.any(char_list, fn(tc) { tc == c }) then { i: st.i - 1, done: false }
+      else { i: st.i, done: true }
+    }
+  str.slice(s, start, end_result.value.i + 1)
+}
+
+{
+  match_glob:         match_glob,
+  is_alpha:           is_alpha,
+  is_digit:           is_digit,
+  is_alphanumeric:    is_alphanumeric,
+  is_hex:             is_hex,
+  is_whitespace:      is_whitespace,
+  is_lowercase:       is_lowercase,
+  is_uppercase:       is_uppercase,
+  is_email:           is_email,
+  is_url:             is_url,
+  is_uuid:            is_uuid,
+  is_ip:              is_ip,
+  is_semver:          is_semver,
+  is_slug:            is_slug,
+  is_json:            is_json,
+  find_all_between:   find_all_between,
+  count_occurrences:  count_occurrences,
+  replace_all:        replace_all,
+  split_on_any:       split_on_any,
+  trim_chars:         trim_chars
+}
