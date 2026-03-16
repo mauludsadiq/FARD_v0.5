@@ -1,0 +1,82 @@
+// uuid@1.6.0 — UUID generation and utilities for FARD
+// Built on std/uuid which provides cryptographically random v4 UUIDs
+import("std/uuid") as uuid
+import("std/str")  as str
+import("std/list") as list
+import("std/hash") as hash
+
+// Generate a random UUID v4
+fn v4() { uuid.v4() }
+
+// Nil UUID
+fn nil() { "00000000-0000-0000-0000-000000000000" }
+
+// Validate a UUID string
+fn is_valid(s) { uuid.validate(s) }
+
+// Check if a UUID is the nil UUID
+fn is_nil(s) { s == nil() }
+
+// Strip hyphens from UUID
+fn to_hex(s) { str.replace(s, "-", "") }
+
+// Add hyphens to a 32-char hex string
+fn from_hex(hex) {
+  let s = str.lower(hex)
+  if str.len(s) != 32 then null
+  else
+    str.concat(str.concat(str.concat(str.concat(
+      str.slice(s, 0, 8), "-"),
+      str.concat(str.slice(s, 8, 12), "-")),
+      str.concat(str.slice(s, 12, 16), "-")),
+      str.concat(str.slice(s, 16, 20), "-"),
+      str.slice(s, 20, 32))
+}
+
+// Extract version number from UUID
+fn version(s) {
+  if is_valid(s) == false then null
+  else
+    let v = str.slice(s, 14, 15)
+    if v == "4" then 4
+    else if v == "1" then 1
+    else if v == "3" then 3
+    else if v == "5" then 5
+    else 0
+}
+
+// Generate n unique UUIDs
+fn batch(n) {
+  import("std/list") as list
+  list.map(list.range(0, n), fn(_) { uuid.v4() })
+}
+
+// Generate a short ID (first 8 chars of UUID hex, no hyphens)
+fn short_id() {
+  let u = uuid.v4()
+  str.slice(str.replace(u, "-", ""), 0, 8)
+}
+
+// Generate a UUID and return with timestamp
+fn stamped() {
+  import("std/time") as time
+  { id: uuid.v4(), ts: time.now() }
+}
+
+// Compare two UUIDs for equality (case-insensitive)
+fn eq(a, b) {
+  str.lower(a) == str.lower(b)
+}
+
+{
+  v4:       v4,
+  nil:      nil,
+  is_valid: is_valid,
+  is_nil:   is_nil,
+  to_hex:   to_hex,
+  version:  version,
+  batch:    batch,
+  short_id: short_id,
+  stamped:  stamped,
+  eq:       eq
+}
