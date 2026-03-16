@@ -1,0 +1,124 @@
+// logger@1.6.0 — Structured logging with levels and witnessed entries for FARD
+import("std/time")  as time
+import("std/json")  as json
+import("std/str")   as str
+import("std/io")    as io
+import("std/rec")   as rec
+import("std/list")  as list
+import("std/trace") as trace
+
+let TRACE = 0
+let DEBUG = 1
+let INFO  = 2
+let WARN  = 3
+let ERROR = 4
+let FATAL = 5
+
+fn level_name(level) {
+  if level == 0 then "TRACE"
+  else if level == 1 then "DEBUG"
+  else if level == 2 then "INFO"
+  else if level == 3 then "WARN"
+  else if level == 4 then "ERROR"
+  else "FATAL"
+}
+
+fn level_from_name(name) {
+  let n = str.upper(name)
+  if n == "TRACE" then 0
+  else if n == "DEBUG" then 1
+  else if n == "INFO"  then 2
+  else if n == "WARN"  then 3
+  else if n == "ERROR" then 4
+  else 2
+}
+
+fn new(name, min_level, output) {
+  { name: name, min_level: min_level, output: output }
+}
+
+fn new_stdout(name)        { new(name, INFO, "stdout") }
+fn new_file(name, path)    { new(name, INFO, path) }
+fn new_both(name, path)    { new(name, INFO, str.concat("both:", path)) }
+fn with_level(logger, lvl) { rec.set(logger, "min_level", lvl) }
+fn with_debug(logger)      { with_level(logger, DEBUG) }
+fn with_trace(logger)      { with_level(logger, TRACE) }
+fn child(logger, name)     { new(str.concat(str.concat(logger.name, "."), name), logger.min_level, logger.output) }
+
+fn make_entry(logger, level, msg, fields) {
+  { ts: time.now(), level: level_name(level), logger: logger.name, msg: msg, fields: fields }
+}
+
+fn write_to_file(path, line) {
+  io.append_file(path, str.concat(line, "\n"))
+}
+
+fn write_stdout(line) {
+  trace.info(line)
+}
+
+fn write_and_return(logger, e) {
+  let line   = json.encode(e)
+  let output = logger.output
+  let _ = if output == "stdout" then write_stdout(line)
+          else if str.starts_with(output, "both:") then
+            let path = str.slice(output, 5, str.len(output))
+            let _ = write_stdout(line)
+            write_to_file(path, line)
+          else write_to_file(output, line)
+  e
+}
+
+fn log(logger, level, msg, fields) {
+  if level >= logger.min_level then
+    write_and_return(logger, make_entry(logger, level, msg, fields))
+  else null
+}
+
+fn log_trace(logger, msg) { log(logger, TRACE, msg, {}) }
+fn log_debug(logger, msg) { log(logger, DEBUG, msg, {}) }
+fn log_info(logger, msg)  { log(logger, INFO,  msg, {}) }
+fn log_warn(logger, msg)  { log(logger, WARN,  msg, {}) }
+fn log_error(logger, msg) { log(logger, ERROR, msg, {}) }
+fn log_fatal(logger, msg) { log(logger, FATAL, msg, {}) }
+
+fn info_with(logger, msg, fields)  { log(logger, INFO,  msg, fields) }
+fn warn_with(logger, msg, fields)  { log(logger, WARN,  msg, fields) }
+fn error_with(logger, msg, fields) { log(logger, ERROR, msg, fields) }
+fn debug_with(logger, msg, fields) { log(logger, DEBUG, msg, fields) }
+
+fn format_text(e) {
+  let keys = if rec.has(e, "fields") then rec.keys(e.fields) else []
+  let field_str = if list.len(keys) == 0 then ""
+    else str.concat(" ", str.join(list.map(keys, fn(k) {
+      str.concat(str.concat(k, "="), json.encode(rec.get(e.fields, k)))
+    }), " "))
+  str.concat(str.concat(str.concat(str.concat(str.concat(
+    str.from_int(e.ts), " "),
+    e.level), " ["),
+    str.concat(e.logger, str.concat("] ", str.concat(e.msg, field_str)))))
+}
+
+{
+  TRACE: TRACE, DEBUG: DEBUG, INFO: INFO, WARN: WARN, ERROR: ERROR, FATAL: FATAL,
+  new:          new,
+  new_stdout:   new_stdout,
+  new_file:     new_file,
+  new_both:     new_both,
+  with_level:   with_level,
+  with_debug:   with_debug,
+  with_trace:   with_trace,
+  child:        child,
+  log:          log,
+  trace:        log_trace,
+  debug:        log_debug,
+  info:         log_info,
+  warn:         log_warn,
+  error:        log_error,
+  fatal:        log_fatal,
+  info_with:    info_with,
+  warn_with:    warn_with,
+  error_with:   error_with,
+  debug_with:   debug_with,
+  format_text:  format_text
+}
