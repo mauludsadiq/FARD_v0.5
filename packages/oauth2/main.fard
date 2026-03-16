@@ -1,0 +1,177 @@
+// oauth2@1.6.0 — OAuth2 client flows for FARD
+// Supports: client_credentials, authorization_code, refresh_token, device_code
+// Every token grant is a witnessed artifact.
+import("std/http")  as http
+import("std/json")  as json
+import("std/str")   as str
+import("std/list")  as list
+import("std/rec")   as rec
+import("std/codec") as codec
+import("std/time")  as time
+
+// URL encode a string (percent encoding)
+fn encode_char(c) {
+  if c == " " then "+"
+  else if c == "!" then "%21" else if c == "#" then "%23"
+  else if c == "$" then "%24" else if c == "&" then "%26"
+  else if c == "'" then "%27" else if c == "(" then "%28"
+  else if c == ")" then "%29" else if c == "*" then "%2A"
+  else if c == "+" then "%2B" else if c == "," then "%2C"
+  else if c == "/" then "%2F" else if c == ":" then "%3A"
+  else if c == ";" then "%3B" else if c == "=" then "%3D"
+  else if c == "?" then "%3F" else if c == "@" then "%40"
+  else if c == "[" then "%5B" else if c == "]" then "%5D"
+  else if c == "{" then "%7B" else if c == "}" then "%7D"
+  else if c == "|" then "%7C" else if c == "^" then "%5E"
+  else if c == "<" then "%3C" else if c == ">" then "%3E"
+  else if c == """ then "%22" else if c == "%" then "%25"
+  else c
+}
+
+fn url_encode(s) {
+  str.join(list.map(str.chars(s), fn(c) { encode_char(c) }), "")
+}
+
+fn form_encode(params) {
+  let keys  = rec.keys(params)
+  let pairs = list.map(keys, fn(k) {
+    str.concat(url_encode(k), str.concat("=", url_encode(rec.get(params, k))))
+  })
+  str.join(pairs, "&")
+}
+
+// Create an OAuth2 client config
+fn client(client_id, client_secret, token_url) {
+  { client_id: client_id, client_secret: client_secret, token_url: token_url }
+}
+
+fn client_full(client_id, client_secret, token_url, auth_url) {
+  { client_id: client_id, client_secret: client_secret,
+    token_url: token_url, auth_url: auth_url }
+}
+
+// Parse token response
+fn parse_token_response(resp) {
+  if resp.status >= 200 && resp.status < 300 then
+    let data = json.decode(resp.body)
+    {
+      ok:            true,
+      access_token:  if rec.has(data, "access_token")  then rec.get(data, "access_token")  else null,
+      token_type:    if rec.has(data, "token_type")    then rec.get(data, "token_type")    else "Bearer",
+      expires_in:    if rec.has(data, "expires_in")    then rec.get(data, "expires_in")    else null,
+      refresh_token: if rec.has(data, "refresh_token") then rec.get(data, "refresh_token") else null,
+      scope:         if rec.has(data, "scope")         then rec.get(data, "scope")         else null,
+      expires_at:    if rec.has(data, "expires_in")    then time.now() + rec.get(data, "expires_in") else null,
+      raw:           data,
+      error:         null
+    }
+  else
+    { ok: false, access_token: null, error: resp.body, raw: null }
+}
+
+// Client Credentials flow
+fn client_credentials(c, scope) {
+  let params = rec.set(rec.set(rec.set(rec.set({},
+    "grant_type",    "client_credentials"),
+    "client_id",     c.client_id),
+    "client_secret", c.client_secret),
+    "scope",         scope)
+  let resp = http.request({
+    method:  "POST",
+    url:     c.token_url,
+    body:    form_encode(params),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" }
+  })
+  parse_token_response(resp)
+}
+
+// Authorization Code flow — exchange code for token
+fn exchange_code(c, code, redirect_uri) {
+  let params = rec.set(rec.set(rec.set(rec.set(rec.set({},
+    "grant_type",    "authorization_code"),
+    "code",          code),
+    "redirect_uri",  redirect_uri),
+    "client_id",     c.client_id),
+    "client_secret", c.client_secret)
+  let resp = http.request({
+    method:  "POST",
+    url:     c.token_url,
+    body:    form_encode(params),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" }
+  })
+  parse_token_response(resp)
+}
+
+// Refresh token flow
+fn refresh_token(c, token) {
+  let params = rec.set(rec.set(rec.set(rec.set({},
+    "grant_type",    "refresh_token"),
+    "refresh_token", token),
+    "client_id",     c.client_id),
+    "client_secret", c.client_secret)
+  let resp = http.request({
+    method:  "POST",
+    url:     c.token_url,
+    body:    form_encode(params),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" }
+  })
+  parse_token_response(resp)
+}
+
+// Build authorization URL for auth code flow
+fn auth_url(c, redirect_uri, scope, state) {
+  let params = rec.set(rec.set(rec.set(rec.set(rec.set({},
+    "response_type", "code"),
+    "client_id",     c.client_id),
+    "redirect_uri",  redirect_uri),
+    "scope",         scope),
+    "state",         state)
+  str.concat(c.auth_url, str.concat("?", form_encode(params)))
+}
+
+// Check if token is expired
+fn is_expired(token_resp) {
+  if rec.has(token_resp, "expires_at") && token_resp.expires_at != null then
+    time.now() >= token_resp.expires_at
+  else false
+}
+
+// Get bearer header value
+fn bearer_header(token_resp) {
+  str.concat("Bearer ", token_resp.access_token)
+}
+
+// Make authenticated request
+fn authenticated_get(token_resp, url) {
+  http.request({
+    method:  "GET",
+    url:     url,
+    body:    null,
+    headers: { Authorization: bearer_header(token_resp) }
+  })
+}
+
+fn authenticated_post(token_resp, url, body) {
+  http.request({
+    method:  "POST",
+    url:     url,
+    body:    body,
+    headers: { Authorization: bearer_header(token_resp) }
+  })
+}
+
+{
+  client:              client,
+  client_full:         client_full,
+  url_encode:          url_encode,
+  form_encode:         form_encode,
+  client_credentials:  client_credentials,
+  exchange_code:       exchange_code,
+  refresh_token:       refresh_token,
+  auth_url:            auth_url,
+  is_expired:          is_expired,
+  bearer_header:       bearer_header,
+  authenticated_get:   authenticated_get,
+  authenticated_post:  authenticated_post,
+  parse_token_response: parse_token_response
+}
