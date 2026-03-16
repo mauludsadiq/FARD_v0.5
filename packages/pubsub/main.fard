@@ -1,0 +1,122 @@
+// pubsub@1.6.0 — Publish/subscribe messaging for FARD
+// Two modes:
+// 1. In-memory sync pubsub — state passed through as a record
+// 2. Async pubsub — backed by std/chan for concurrent subscribers
+import("std/list")    as list
+import("std/rec")     as rec
+import("std/str")     as str
+import("std/chan")    as chan
+import("std/promise") as promise
+
+// --- Sync in-memory pubsub ---
+// State is a record — pass through like any other value
+// Useful for event systems, plugin architectures, test doubles
+
+fn new() {
+  { subscribers: {}, history: [] }
+}
+
+fn subscribe(bus, topic, handler_id, handler) {
+  let topic_subs = if rec.has(bus.subscribers, topic)
+    then rec.get(bus.subscribers, topic)
+    else {}
+  let new_subs = rec.set(topic_subs, handler_id, handler)
+  rec.set(bus, "subscribers", rec.set(bus.subscribers, topic, new_subs))
+}
+
+fn unsubscribe(bus, topic, handler_id) {
+  if rec.has(bus.subscribers, topic) == false then bus
+  else
+    let topic_subs = rec.get(bus.subscribers, topic)
+    let new_subs   = rec.remove(topic_subs, handler_id)
+    rec.set(bus, "subscribers", rec.set(bus.subscribers, topic, new_subs))
+}
+
+fn fire_handlers(bus, topic, message) {
+  let topic_subs  = rec.get(bus.subscribers, topic)
+  let handler_ids = rec.keys(topic_subs)
+  let _ = list.map(handler_ids, fn(id) { rec.get(topic_subs, id)(message) })
+  bus
+}
+
+fn do_publish(bus, topic, message) {
+  let entry    = { topic: topic, message: message }
+  let new_hist = list.concat([bus.history, [entry]])
+  let new_bus  = rec.set(bus, "history", new_hist)
+  if rec.has(bus.subscribers, topic) == false then new_bus
+  else fire_handlers(new_bus, topic, message)
+}
+
+fn publish(bus, topic, message) {
+  do_publish(bus, topic, message)
+}
+
+fn publish_all(bus, topic, messages) {
+  list.fold(messages, bus, fn(acc, msg) { do_publish(acc, topic, msg) })
+}
+
+fn history(bus) { bus.history }
+
+fn history_for(bus, topic) {
+  list.filter(bus.history, fn(e) { e.topic == topic })
+}
+
+fn subscriber_count(bus, topic) {
+  if rec.has(bus.subscribers, topic) == false then 0
+  else list.len(rec.keys(rec.get(bus.subscribers, topic)))
+}
+
+fn clear_history(bus) { rec.set(bus, "history", []) }
+
+// --- Async pubsub via channels ---
+// Each topic gets a channel, subscribers read from it concurrently
+
+fn new_async() {
+  { channels: {} }
+}
+
+fn get_or_create_chan(abus, topic) {
+  if rec.has(abus.channels, topic) then rec.get(abus.channels, topic)
+  else chan.new()
+}
+
+fn async_subscribe(abus, topic, handler) {
+  let ch      = get_or_create_chan(abus, topic)
+  let new_bus = rec.set(abus, "channels", rec.set(abus.channels, topic, ch))
+  let _       = promise.spawn(fn() {
+    let result = while { done: false }
+      fn(s) { s.done == false }
+      fn(s) {
+        let msg = chan.try_recv(ch)
+        if rec.has(msg, "some") then
+          let _ = handler(msg.some)
+          { done: false }
+        else { done: false }
+      }
+    result
+  })
+  new_bus
+}
+
+fn async_publish(abus, topic, message) {
+  if rec.has(abus.channels, topic) == false then abus
+  else
+    let ch = rec.get(abus.channels, topic)
+    let _  = chan.send(ch, message)
+    abus
+}
+
+{
+  new:              new,
+  subscribe:        subscribe,
+  unsubscribe:      unsubscribe,
+  publish:          publish,
+  publish_all:      publish_all,
+  history:          history,
+  history_for:      history_for,
+  subscriber_count: subscriber_count,
+  clear_history:    clear_history,
+  new_async:        new_async,
+  async_subscribe:  async_subscribe,
+  async_publish:    async_publish
+}
