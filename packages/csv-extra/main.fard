@@ -1,0 +1,95 @@
+// csv-extra@1.6.0 — Enhanced CSV processing for FARD
+import("std/csv")  as csv
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+import("std/type") as type
+
+fn infer_type(v) {
+  let trimmed = str.trim(v)
+  if trimmed == "true"  then true
+  else if trimmed == "false" then false
+  else if trimmed == "" then null
+  else trimmed
+}
+
+fn row_to_record(headers, row) {
+  list.fold(list.range(0, list.len(headers)), {}, fn(acc, i) {
+    let key = list.get(headers, i)
+    let val = if i < list.len(row) then infer_type(list.get(row, i)) else null
+    rec.set(acc, key, val)
+  })
+}
+
+fn parse_with_headers(src) {
+  let rows    = csv.parse(src)
+  let headers = list.get(rows, 0)
+  let data    = list.drop(rows, 1)
+  list.map(data, fn(row) { row_to_record(headers, row) })
+}
+
+fn select_columns(rows, columns) {
+  list.map(rows, fn(row) {
+    list.fold(columns, {}, fn(acc, col) {
+      rec.set(acc, col, if rec.has(row, col) then rec.get(row, col) else null)
+    })
+  })
+}
+
+fn filter_rows(rows, pred) { list.filter(rows, pred) }
+fn map_rows(rows, f)       { list.map(rows, f) }
+
+fn get_key_str(v) {
+  let t = type.of(v)
+  if t == "text" then v
+  else if t == "int" then str.from_int(v)
+  else "null"
+}
+
+fn group_by_column(rows, col) {
+  list.fold(rows, {}, fn(acc, row) {
+    let key      = if rec.has(row, col) then get_key_str(rec.get(row, col)) else "null"
+    let existing = if rec.has(acc, key) then rec.get(acc, key) else []
+    rec.set(acc, key, list.concat([existing, [row]]))
+  })
+}
+
+fn val_to_csv_str(v) {
+  let t = type.of(v)
+  if t == "text"  then v
+  else if t == "int"   then str.from_int(v)
+  else if t == "float" then str.from_float(v)
+  else if t == "bool"  then if v then "true" else "false"
+  else ""
+}
+
+fn row_to_csv(headers, row) {
+  str.join(list.map(headers, fn(h) {
+    val_to_csv_str(if rec.has(row, h) then rec.get(row, h) else "")
+  }), ",")
+}
+
+fn to_csv(rows) {
+  if list.len(rows) == 0 then ""
+  else
+    let headers   = rec.keys(list.get(rows, 0))
+    let data_rows = list.map(rows, fn(row) { row_to_csv(headers, row) })
+    str.join(list.concat([[str.join(headers, ",")], data_rows]), "\n")
+}
+
+fn column(rows, name) {
+  list.map(rows, fn(row) { if rec.has(row, name) then rec.get(row, name) else null })
+}
+
+fn count(rows) { list.len(rows) }
+
+{
+  parse_with_headers: parse_with_headers,
+  select_columns:     select_columns,
+  filter_rows:        filter_rows,
+  map_rows:           map_rows,
+  group_by_column:    group_by_column,
+  to_csv:             to_csv,
+  column:             column,
+  count:              count
+}

@@ -1,0 +1,47 @@
+// json-schema@1.6.0 — JSON schema validation for FARD
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+import("std/type") as type
+
+fn validate_type(v, expected) {
+  let t = type.of(v)
+  if expected == "string"  then t == "text"
+  else if expected == "number"  then t == "int" || t == "float"
+  else if expected == "integer" then t == "int"
+  else if expected == "boolean" then t == "bool"
+  else if expected == "array"   then t == "list"
+  else if expected == "object"  then t == "record"
+  else if expected == "null"    then t == "null"
+  else true
+}
+
+fn check_field_type(data, name, field_schema) {
+  let v  = rec.get(data, name)
+  let et = if rec.has(field_schema, "type") then rec.get(field_schema, "type") else "any"
+  if validate_type(v, et) then { ok: true, error: null }
+  else { ok: false, error: str.concat(name, str.concat(" expected type ", et)) }
+}
+
+fn check_field(data, name, field_schema) {
+  let required  = if rec.has(field_schema, "required") then rec.get(field_schema, "required") else false
+  let has_field = rec.has(data, name)
+  if required && has_field == false then
+    { ok: false, error: str.concat("missing required field: ", name) }
+  else if has_field == false then { ok: true, error: null }
+  else check_field_type(data, name, field_schema)
+}
+
+fn validate(data, schema) {
+  let field_names = rec.get(schema, "field_names")
+  let fields      = rec.get(schema, "fields")
+  let results     = list.map(field_names, fn(n) { check_field(data, n, rec.get(fields, n)) })
+  let errors      = list.filter(results, fn(r) { r.ok == false })
+  if list.len(errors) == 0 then { ok: true, errors: [] }
+  else { ok: false, errors: list.map(errors, fn(e) { e.error }) }
+}
+
+fn schema(field_names, fields) { { field_names: field_names, fields: fields } }
+fn field(type_name, required)  { { type: type_name, required: required } }
+
+{ validate: validate, schema: schema, field: field }

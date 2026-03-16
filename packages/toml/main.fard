@@ -1,0 +1,108 @@
+// toml@1.6.0 — TOML parsing and generation for FARD
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+import("std/type") as type
+
+fn trim_comment(line) {
+  str.trim(list.get(str.split(line, "#"), 0))
+}
+
+fn parse_string(v) {
+  str.slice(v, 1, str.len(v) - 1)
+}
+
+fn parse_scalar(raw) {
+  let v = str.trim(raw)
+  if str.starts_with(v, "\"") then parse_string(v)
+  else if v == "true"  then true
+  else if v == "false" then false
+  else v
+}
+
+fn parse_array_inner(inner) {
+  let parts = str.split(inner, ",")
+  list.map(parts, fn(p) { parse_scalar(str.trim(p)) })
+}
+
+fn parse_array(raw) {
+  parse_array_inner(str.trim(str.slice(raw, 1, str.len(raw) - 1)))
+}
+
+fn parse_raw_value(raw) {
+  if str.starts_with(raw, "[") then parse_array(raw)
+  else parse_scalar(raw)
+}
+
+fn join_tail(parts) {
+  str.join(list.drop(parts, 1), "=")
+}
+
+fn split_kv(cleaned) {
+  let parts = str.split(cleaned, "=")
+  let key   = str.trim(list.get(parts, 0))
+  let raw   = str.trim(join_tail(parts))
+  { t: "kv", key: key, v: parse_raw_value(raw) }
+}
+
+fn parse_section(cleaned) {
+  { t: "section", v: str.slice(cleaned, 1, str.len(cleaned) - 1) }
+}
+
+fn classify_line(cleaned) {
+  if str.starts_with(cleaned, "[") then parse_section(cleaned)
+  else if str.contains(cleaned, "=") then split_kv(cleaned)
+  else null
+}
+
+fn parse_line(line) {
+  let cleaned = trim_comment(line)
+  if str.len(cleaned) == 0 then null
+  else classify_line(cleaned)
+}
+
+fn make_full_key(section, key) {
+  if section == "" then key
+  else str.concat(str.concat(section, "."), key)
+}
+
+fn apply_entry(acc, entry) {
+  let full_key = make_full_key(acc.section, entry.key)
+  { section: acc.section, result: rec.set(acc.result, full_key, entry.v) }
+}
+
+fn apply_line(acc, item) {
+  if item == null then acc
+  else if item.t == "section" then { section: item.v, result: acc.result }
+  else apply_entry(acc, item)
+}
+
+fn parse(src) {
+  let lines = str.split_lines(src)
+  let items = list.map(lines, fn(l) { parse_line(l) })
+  let final = list.fold(items, { section: "", result: {} }, fn(acc, item) {
+    apply_line(acc, item)
+  })
+  final.result
+}
+
+fn encode_value(v) {
+  let t = type.of(v)
+  if t == "text"  then str.concat("\"", str.concat(v, "\""))
+  else if t == "bool"  then if v then "true" else "false"
+  else if t == "int"   then str.from_int(v)
+  else if t == "float" then str.from_float(v)
+  else "\"\""
+}
+
+fn encode_pair(k, data) {
+  str.concat(str.concat(k, " = "), encode_value(rec.get(data, k)))
+}
+
+fn encode(data) {
+  let keys  = rec.keys(data)
+  let lines = list.map(keys, fn(k) { encode_pair(k, data) })
+  str.join(lines, "\n")
+}
+
+{ parse: parse, encode: encode }

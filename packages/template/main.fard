@@ -1,0 +1,67 @@
+// template@1.6.0 — String templating for FARD (Jinja2-inspired)
+// Supports: {{ var }} interpolation, render_list for repeated blocks
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+import("std/type") as type
+
+fn get_var(ctx, name) {
+  let key = str.trim(name)
+  if rec.has(ctx, key) then rec.get(ctx, key)
+  else str.concat("{{", str.concat(key, "}}"))
+}
+
+fn val_to_str(v) {
+  let t = type.of(v)
+  if t == "text"  then v
+  else if t == "int"   then str.from_int(v)
+  else if t == "float" then str.from_float(v)
+  else if t == "bool"  then if v then "true" else "false"
+  else ""
+}
+
+fn extract_inner(seg) {
+  str.slice(seg, 2, str.index_of(seg, "}}"))
+}
+
+fn extract_after(seg) {
+  str.slice(seg, str.index_of(seg, "}}") + 2, str.len(seg))
+}
+
+fn render_expr_seg(ctx, seg) {
+  str.concat(val_to_str(get_var(ctx, extract_inner(seg))), extract_after(seg))
+}
+
+fn render_segment(ctx, seg) {
+  if str.starts_with(seg, "{{") && str.contains(seg, "}}") then
+    render_expr_seg(ctx, seg)
+  else seg
+}
+
+fn make_expr_seg(p) {
+  let idx  = str.index_of(p, "}}")
+  let expr = str.slice(p, 0, idx)
+  let rest = str.slice(p, idx + 2, str.len(p))
+  [str.concat("{{", str.concat(expr, "}}")), rest]
+}
+
+fn split_tmpl(tmpl) {
+  let parts = str.split(tmpl, "{{")
+  list.flat_map(parts, fn(p) {
+    if str.contains(p, "}}") then make_expr_seg(p)
+    else [p]
+  })
+}
+
+fn render(tmpl, ctx) {
+  str.join(list.map(split_tmpl(tmpl), fn(seg) { render_segment(ctx, seg) }), "")
+}
+
+fn render_list(tmpl, items, var_name) {
+  let rendered = list.map(items, fn(item) {
+    render(tmpl, rec.set({}, var_name, item))
+  })
+  str.join(rendered, "")
+}
+
+{ render: render, render_list: render_list }

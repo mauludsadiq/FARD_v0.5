@@ -1,0 +1,54 @@
+// diff@1.6.0 — Text diffing for FARD
+import("std/str")  as str
+import("std/list") as list
+
+fn append_hunk(lst, item) {
+  list.concat([lst, [item]])
+}
+
+fn append2_hunks(lst, a, b) {
+  list.concat([lst, [a, b]])
+}
+
+fn do_diff_step(acc, a_lines, b_lines) {
+  let al = list.get(a_lines, acc.i)
+  let bl = list.get(b_lines, acc.j)
+  if al == bl then
+    { i: acc.i + 1, j: acc.j + 1,
+      result: append_hunk(acc.result, { op: " ", line: al }) }
+  else
+    { i: acc.i + 1, j: acc.j + 1,
+      result: append2_hunks(acc.result, { op: "-", line: al }, { op: "+", line: bl }) }
+}
+
+fn diff_lines(a, b) {
+  let a_lines = str.split_lines(a)
+  let b_lines = str.split_lines(b)
+  let m       = list.len(a_lines)
+  let n       = list.len(b_lines)
+  let hunks   = list.fold(list.range(0, m + n), { i: 0, j: 0, result: [] }, fn(acc, _) {
+    if acc.i >= m && acc.j >= n then acc
+    else if acc.i >= m then
+      { i: acc.i, j: acc.j + 1,
+        result: append_hunk(acc.result, { op: "+", line: list.get(b_lines, acc.j) }) }
+    else if acc.j >= n then
+      { i: acc.i + 1, j: acc.j,
+        result: append_hunk(acc.result, { op: "-", line: list.get(a_lines, acc.i) }) }
+    else do_diff_step(acc, a_lines, b_lines)
+  })
+  hunks.result
+}
+
+fn format_diff(hunks) {
+  str.join(list.map(hunks, fn(h) { str.concat(h.op, str.concat(" ", h.line)) }), "\n")
+}
+
+fn changed_count(hunks) {
+  list.fold(hunks, 0, fn(acc, h) {
+    if h.op == "+" || h.op == "-" then acc + 1 else acc
+  })
+}
+
+fn is_equal(a, b) { a == b }
+
+{ diff_lines: diff_lines, format_diff: format_diff, changed_count: changed_count, is_equal: is_equal }
