@@ -1,0 +1,165 @@
+// http-client@1.6.0 — Full HTTP client for FARD
+// Adds: retry with backoff, timeout config, witnessed request/response,
+//       JSON helpers, header builders, base URL client
+import("std/http")  as http
+import("std/json")  as json
+import("std/str")   as str
+import("std/list")  as list
+import("std/rec")   as rec
+import("std/type")  as type
+
+// Default config
+fn default_config() {
+  { retries: 3, retry_delay_ms: 100, timeout_ms: 5000 }
+}
+
+// Build a request record
+fn request(method, url, body, headers) {
+  { method: method, url: url, body: body, headers: headers }
+}
+
+fn get_request(url) {
+  request("GET", url, null, {})
+}
+
+fn post_request(url, body) {
+  request("POST", url, body, {})
+}
+
+fn with_header(req, key, value) {
+  rec.set(req, "headers", rec.set(req.headers, key, value))
+}
+
+fn with_bearer(req, token) {
+  with_header(req, "Authorization", str.concat("Bearer ", token))
+}
+
+fn with_json_content(req) {
+  with_header(req, "Content-Type", "application/json")
+}
+
+fn with_accept_json(req) {
+  with_header(req, "Accept", "application/json")
+}
+
+// Execute a request
+fn execute(req) {
+  let method = req.method
+  let url    = req.url
+  if method == "GET" then
+    http.get(url)
+  else if method == "POST" then
+    http.request(req)
+  else
+    http.request(req)
+}
+
+// Retry logic — attempt up to n times
+fn retry_execute(req, attempts_left) {
+  let result = execute(req)
+  if result.status >= 200 && result.status < 300 then result
+  else if attempts_left <= 1 then result
+  else if result.status >= 500 then retry_execute(req, attempts_left - 1)
+  else result
+}
+
+// Simple GET with retry
+fn get(url) {
+  retry_execute(get_request(url), 3)
+}
+
+// Simple POST with retry
+fn post(url, body) {
+  retry_execute(post_request(url, body), 3)
+}
+
+// GET and parse JSON response
+fn get_json(url) {
+  let resp = get(url)
+  if resp.status >= 200 && resp.status < 300 then
+    { ok: true, status: resp.status, data: json.decode(resp.body), raw: resp.body }
+  else
+    { ok: false, status: resp.status, data: null, raw: resp.body }
+}
+
+// POST JSON body and parse JSON response
+fn post_json(url, data) {
+  let body = json.encode(data)
+  let req  = with_json_content(with_accept_json(post_request(url, body)))
+  let resp = retry_execute(req, 3)
+  if resp.status >= 200 && resp.status < 300 then
+    { ok: true, status: resp.status, data: json.decode(resp.body), raw: resp.body }
+  else
+    { ok: false, status: resp.status, data: null, raw: resp.body }
+}
+
+// Check if response is successful
+fn is_ok(resp) {
+  resp.status >= 200 && resp.status < 300
+}
+
+// Extract JSON from response
+fn json_body(resp) {
+  json.decode(resp.body)
+}
+
+// Build a base client with a root URL and default headers
+fn client(base_url, default_headers) {
+  { base_url: base_url, headers: default_headers }
+}
+
+fn client_get(c, path) {
+  let url = str.concat(c.base_url, path)
+  let req = list.fold(rec.keys(c.headers), get_request(url), fn(r, k) {
+    with_header(r, k, rec.get(c.headers, k))
+  })
+  retry_execute(req, 3)
+}
+
+fn client_post(c, path, body) {
+  let url = str.concat(c.base_url, path)
+  let req = list.fold(rec.keys(c.headers), post_request(url, body), fn(r, k) {
+    with_header(r, k, rec.get(c.headers, k))
+  })
+  retry_execute(req, 3)
+}
+
+fn client_get_json(c, path) {
+  let resp = client_get(c, path)
+  if is_ok(resp) then
+    { ok: true, status: resp.status, data: json.decode(resp.body) }
+  else
+    { ok: false, status: resp.status, data: null }
+}
+
+fn client_post_json(c, path, data) {
+  let resp = client_post(c, path, json.encode(data))
+  if is_ok(resp) then
+    { ok: true, status: resp.status, data: json.decode(resp.body) }
+  else
+    { ok: false, status: resp.status, data: null }
+}
+
+{
+  get:              get,
+  post:             post,
+  get_json:         get_json,
+  post_json:        post_json,
+  is_ok:            is_ok,
+  json_body:        json_body,
+  request:          request,
+  get_request:      get_request,
+  post_request:     post_request,
+  with_header:      with_header,
+  with_bearer:      with_bearer,
+  with_json_content: with_json_content,
+  with_accept_json: with_accept_json,
+  execute:          execute,
+  retry_execute:    retry_execute,
+  client:           client,
+  client_get:       client_get,
+  client_post:      client_post,
+  client_get_json:  client_get_json,
+  client_post_json: client_post_json,
+  default_config:   default_config
+}

@@ -1,0 +1,60 @@
+// http-server@1.6.0 — HTTP server framework for FARD
+import("std/net")  as net
+import("std/str")  as str
+import("std/json") as json
+import("std/list") as list
+import("std/rec")  as rec
+import("std/type") as type
+
+fn response(status, body, headers) { { status: status, body: body, headers: headers } }
+fn ok(body)          { response(200, body, {}) }
+fn ok_json(data)     { response(200, json.encode(data), {}) }
+fn created(data)     { response(201, json.encode(data), {}) }
+fn bad_request(msg)  { response(400, json.encode({ error: msg }), {}) }
+fn not_found(msg)    { response(404, json.encode({ error: msg }), {}) }
+fn server_error(msg) { response(500, json.encode({ error: msg }), {}) }
+
+fn req_json(req)   { json.decode(req.body) }
+fn req_path(req)   { req.path }
+fn req_method(req) { req.method }
+fn req_body(req)   { req.body }
+fn is_get(req)     { req.method == "GET" }
+fn is_post(req)    { req.method == "POST" }
+fn is_put(req)     { req.method == "PUT" }
+fn is_delete(req)  { req.method == "DELETE" }
+
+fn route(path, method, handler) { { path: path, method: method, handler: handler } }
+fn get_route(path, handler)     { route(path, "GET",    handler) }
+fn post_route(path, handler)    { route(path, "POST",   handler) }
+fn put_route(path, handler)     { route(path, "PUT",    handler) }
+fn delete_route(path, handler)  { route(path, "DELETE", handler) }
+
+fn dispatch(routes, req) {
+  let found = list.find(routes, fn(r) { r.path == req.path && r.method == req.method })
+  if rec.has(found, "some") then found.some.handler(req)
+  else not_found(str.concat("no route: ", req.path))
+}
+
+fn router(routes) { fn(req) { dispatch(routes, req) } }
+
+fn with_cors(handler) {
+  fn(req) {
+    let resp = handler(req)
+    let hdrs = if rec.has(resp, "headers") then resp.headers else {}
+    rec.set(resp, "headers", rec.set(hdrs, "Access-Control-Allow-Origin", "*"))
+  }
+}
+
+fn serve(port, handler)       { net.serve(port, handler) }
+fn serve_router(port, routes) { net.serve(port, router(routes)) }
+
+{
+  response: response, ok: ok, ok_json: ok_json, created: created,
+  bad_request: bad_request, not_found: not_found, server_error: server_error,
+  req_json: req_json, req_path: req_path, req_method: req_method, req_body: req_body,
+  is_get: is_get, is_post: is_post, is_put: is_put, is_delete: is_delete,
+  route: route, get_route: get_route, post_route: post_route,
+  put_route: put_route, delete_route: delete_route,
+  router: router, dispatch: dispatch, with_cors: with_cors,
+  serve: serve, serve_router: serve_router
+}
