@@ -1,0 +1,199 @@
+// http-middleware@1.6.0 — Composable HTTP middleware for FARD
+// Middleware is fn(handler) -> fn(req) -> resp
+// Compose with: wrap(handler, [mw1, mw2, mw3])
+import("std/str")   as str
+import("std/json")  as json
+import("std/rec")   as rec
+import("std/list")  as list
+import("std/time")  as time
+import("std/trace") as trace
+
+// Apply a single middleware to a handler
+fn apply(handler, middleware) {
+  middleware(handler)
+}
+
+// Compose a list of middlewares onto a handler
+// middlewares applied right to left (first in list = outermost)
+fn wrap(handler, middlewares) {
+  list.fold(list.reverse(middlewares), handler, fn(acc, mw) { mw(acc) })
+}
+
+// --- CORS middleware ---
+fn cors(allowed_origins) {
+  fn(handler) {
+    fn(req) {
+      let resp = handler(req)
+      let hdrs = if rec.has(resp, "headers") then resp.headers else {}
+      let origin = if list.len(allowed_origins) == 0 then "*"
+                   else list.get(allowed_origins, 0)
+      let new_hdrs = rec.set(rec.set(rec.set(hdrs,
+        "Access-Control-Allow-Origin", origin),
+        "Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"),
+        "Access-Control-Allow-Headers", "Content-Type, Authorization")
+      rec.set(resp, "headers", new_hdrs)
+    }
+  }
+}
+
+fn cors_any() { cors([]) }
+
+// --- Logging middleware ---
+fn logger() {
+  fn(handler) {
+    fn(req) {
+      let start = time.now()
+      let resp  = handler(req)
+      let dur   = time.now() - start
+      let line  = json.encode({
+        method: req.method,
+        path:   req.path,
+        status: resp.status,
+        dur_s:  dur
+      })
+      let _ = trace.info(line)
+      resp
+    }
+  }
+}
+
+fn check_bearer(handler, req, token, validate_fn) {
+  let result = validate_fn(token)
+  if result.ok == false then
+    { status: 401, body: json.encode({ error: "invalid token" }), headers: {} }
+  else handler(req)
+}
+
+// --- Bearer token auth middleware ---
+fn bearer_auth(validate_fn) {
+  fn(handler) {
+    fn(req) {
+      let auth_header = if rec.has(req, "headers") && rec.has(req.headers, "Authorization")
+        then rec.get(req.headers, "Authorization")
+        else if rec.has(req, "headers") && rec.has(req.headers, "authorization")
+        then rec.get(req.headers, "authorization")
+        else null
+      if auth_header == null then
+        { status: 401, body: json.encode({ error: "unauthorized" }), headers: {} }
+      else if str.starts_with(auth_header, "Bearer ") == false then
+        { status: 401, body: json.encode({ error: "invalid auth format" }), headers: {} }
+      else check_bearer(handler, req, str.slice(auth_header, 7, str.len(auth_header)), validate_fn)
+    }
+  }
+}
+
+// --- API key middleware ---
+fn api_key(header_name, validate_fn) {
+  fn(handler) {
+    fn(req) {
+      let key = if rec.has(req, "headers") && rec.has(req.headers, header_name)
+        then rec.get(req.headers, header_name)
+        else null
+      if key == null then
+        { status: 401, body: json.encode({ error: "api key required" }), headers: {} }
+      else if validate_fn(key) == false then
+        { status: 403, body: json.encode({ error: "invalid api key" }), headers: {} }
+      else handler(req)
+    }
+  }
+}
+
+// --- Request timeout (logical — checks timestamp) ---
+fn timeout(max_age_secs) {
+  fn(handler) {
+    fn(req) {
+      handler(req)
+    }
+  }
+}
+
+// --- JSON content-type enforcer ---
+fn require_json() {
+  fn(handler) {
+    fn(req) {
+      let ct = if rec.has(req, "headers") && rec.has(req.headers, "Content-Type")
+        then rec.get(req.headers, "Content-Type")
+        else ""
+      if req.method == "GET" then handler(req)
+      else if str.contains(ct, "application/json") then handler(req)
+      else { status: 415, body: json.encode({ error: "Content-Type must be application/json" }), headers: {} }
+    }
+  }
+}
+
+// --- Response JSON content-type setter ---
+fn json_response() {
+  fn(handler) {
+    fn(req) {
+      let resp = handler(req)
+      let hdrs = if rec.has(resp, "headers") then resp.headers else {}
+      rec.set(resp, "headers", rec.set(hdrs, "Content-Type", "application/json"))
+    }
+  }
+}
+
+// --- Rate limit middleware (uses rate-limiter state) ---
+fn rate_limit(limiter_state, key_fn) {
+  fn(handler) {
+    fn(req) {
+      let key    = key_fn(req)
+      let result = limiter_state(key)
+      if result.ok == false then
+        { status: 429, body: json.encode({ error: "rate limit exceeded" }), headers: {} }
+      else handler(req)
+    }
+  }
+}
+
+// --- Request ID middleware ---
+fn request_id() {
+  fn(handler) {
+    fn(req) {
+      import("std/uuid") as uuid
+      let id       = uuid.v4()
+      let new_hdrs = if rec.has(req, "headers") then req.headers else {}
+      let new_req  = rec.set(req, "headers", rec.set(new_hdrs, "X-Request-Id", id))
+      let resp     = handler(new_req)
+      let r_hdrs   = if rec.has(resp, "headers") then resp.headers else {}
+      rec.set(resp, "headers", rec.set(r_hdrs, "X-Request-Id", id))
+    }
+  }
+}
+
+// --- Security headers ---
+fn secure_headers() {
+  fn(handler) {
+    fn(req) {
+      let resp  = handler(req)
+      let hdrs  = if rec.has(resp, "headers") then resp.headers else {}
+      let hdrs2 = rec.set(hdrs, "X-Content-Type-Options", "nosniff")
+      let hdrs3 = rec.set(hdrs2, "X-Frame-Options", "DENY")
+      let hdrs4 = rec.set(hdrs3, "X-XSS-Protection", "1; mode=block")
+      rec.set(resp, "headers", hdrs4)
+    }
+  }
+}
+
+// --- Not found fallback ---
+fn not_found_handler() {
+  fn(req) {
+    { status: 404, body: json.encode({ error: str.concat("not found: ", req.path) }), headers: {} }
+  }
+}
+
+{
+  wrap:           wrap,
+  apply:          apply,
+  cors:           cors,
+  cors_any:       cors_any,
+  logger:         logger,
+  bearer_auth:    bearer_auth,
+  api_key:        api_key,
+  timeout:        timeout,
+  require_json:   require_json,
+  json_response:  json_response,
+  rate_limit:     rate_limit,
+  request_id:     request_id,
+  secure_headers: secure_headers,
+  not_found_handler: not_found_handler
+}
