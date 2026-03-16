@@ -1,0 +1,126 @@
+// cache@1.6.0 — In-memory TTL cache for FARD
+// Cache state is a record — pass it through your program like any other value.
+// TTL is in seconds. Expired entries are evicted lazily on access.
+import("std/time") as time
+import("std/rec")  as rec
+import("std/list") as list
+
+fn new(default_ttl_secs) {
+  { entries: {}, default_ttl: default_ttl_secs, hits: 0, misses: 0 }
+}
+
+fn make_entry(value, expires_at) { { value: value, expires_at: expires_at } }
+fn is_expired(entry) { time.now() > entry.expires_at }
+
+fn set_ttl(cache, key, value, ttl) {
+  rec.set(cache, "entries", rec.set(cache.entries, key, make_entry(value, time.now() + ttl)))
+}
+
+fn set(cache, key, value)          { set_ttl(cache, key, value, cache.default_ttl) }
+fn set_permanent(cache, key, value){ set_ttl(cache, key, value, 999999999) }
+
+fn hit_result(cache, value) {
+  { ok: true, value: value, hit: true, cache: rec.set(cache, "hits", cache.hits + 1) }
+}
+
+fn miss_result(cache) {
+  { ok: false, value: null, hit: false, cache: rec.set(cache, "misses", cache.misses + 1) }
+}
+
+fn expired_result(cache, key) {
+  { ok: false, value: null, hit: false,
+    cache: rec.set(rec.set(cache, "entries", rec.remove(cache.entries, key)), "misses", cache.misses + 1) }
+}
+
+fn check_entry(cache, key) {
+  let entry = rec.get(cache.entries, key)
+  if is_expired(entry) then expired_result(cache, key)
+  else hit_result(cache, entry.value)
+}
+
+fn get(cache, key) {
+  if rec.has(cache.entries, key) == false then miss_result(cache)
+  else check_entry(cache, key)
+}
+
+fn compute_and_cache(cache, key, value) {
+  { ok: true, value: value, hit: false, cache: set(cache, key, value) }
+}
+
+fn compute_and_cache_ttl(cache, key, value, ttl) {
+  { ok: true, value: value, hit: false, cache: set_ttl(cache, key, value, ttl) }
+}
+
+fn get_or_set(cache, key, f) {
+  let result = get(cache, key)
+  if result.ok then result
+  else compute_and_cache(result.cache, key, f(null))
+}
+
+fn get_or_set_ttl(cache, key, f, ttl) {
+  let result = get(cache, key)
+  if result.ok then result
+  else compute_and_cache_ttl(result.cache, key, f(null), ttl)
+}
+
+fn delete(cache, key) {
+  rec.set(cache, "entries", rec.remove(cache.entries, key))
+}
+
+fn has(cache, key) {
+  if rec.has(cache.entries, key) == false then false
+  else is_expired(rec.get(cache.entries, key)) == false
+}
+
+fn size(cache) {
+  list.len(list.filter(rec.keys(cache.entries), fn(k) {
+    is_expired(rec.get(cache.entries, k)) == false
+  }))
+}
+
+fn evict_expired(cache) {
+  let live = list.filter(rec.keys(cache.entries), fn(k) {
+    is_expired(rec.get(cache.entries, k)) == false
+  })
+  let new_entries = list.fold(live, {}, fn(acc, k) {
+    rec.set(acc, k, rec.get(cache.entries, k))
+  })
+  rec.set(cache, "entries", new_entries)
+}
+
+fn clear(cache) { rec.set(cache, "entries", {}) }
+
+fn stats(cache) {
+  let total = cache.hits + cache.misses
+  {
+    hits:     cache.hits,
+    misses:   cache.misses,
+    total:    total,
+    hit_rate: if total > 0 then (cache.hits * 100) / total else 0,
+    size:     size(cache)
+  }
+}
+
+fn ttl_remaining(cache, key) {
+  if rec.has(cache.entries, key) == false then 0
+  else
+    let remaining = rec.get(cache.entries, key).expires_at - time.now()
+    if remaining < 0 then 0 else remaining
+}
+
+{
+  new:              new,
+  set:              set,
+  set_ttl:          set_ttl,
+  set_permanent:    set_permanent,
+  get:              get,
+  get_or_set:       get_or_set,
+  get_or_set_ttl:   get_or_set_ttl,
+  delete:           delete,
+  has:              has,
+  size:             size,
+  evict_expired:    evict_expired,
+  clear:            clear,
+  stats:            stats,
+  ttl_remaining:    ttl_remaining
+}
