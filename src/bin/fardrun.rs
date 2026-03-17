@@ -1217,6 +1217,22 @@ impl Tracer {
         Ok(())
     }
 
+    fn child_spawn(&mut self, spawn_id: &str) -> Result<()> {
+        let mut m = Map::new();
+        m.insert("t".to_string(), J::Str("child_spawn".to_string()));
+        m.insert("spawn_id".to_string(), J::Str(spawn_id.to_string()));
+        self.emit_event(J::Object(m))
+    }
+
+    fn child_receipt(&mut self, spawn_id: &str, run_digest: &str, result_digest: &str) -> Result<()> {
+        let mut m = Map::new();
+        m.insert("t".to_string(), J::Str("child_receipt".to_string()));
+        m.insert("spawn_id".to_string(), J::Str(spawn_id.to_string()));
+        m.insert("run_digest".to_string(), J::Str(run_digest.to_string()));
+        m.insert("result_digest".to_string(), J::Str(result_digest.to_string()));
+        self.emit_event(J::Object(m))
+    }
+
     fn artifact_in(&mut self, path: &str, cid: &str) -> Result<()> {
         // legacy import_artifact: treat path as the stable name
         self.artifact_cids.insert(path.to_string(), cid.to_string());
@@ -2788,7 +2804,7 @@ enum Val {
     Chan(Arc<Mutex<std::collections::VecDeque<Val>>>, Arc<Mutex<bool>>),
     Mtx(Arc<Mutex<Val>>),
     Big(Box<BigInt>),
-    Promise(Arc<Mutex<Option<Result<Val, String>>>>),
+    Promise(Arc<Mutex<Option<Result<Val, String>>>>, String, PathBuf),  // slot, spawn_id, trace_path
     /// VM-compiled function — executed by the bytecode VM, not the tree-walker
     VmFunc(usize),  // index into a Vec<CompiledFn> held by the VM
 }
@@ -3961,16 +3977,8 @@ fn call(f: Val, args: Vec<Val>, tracer: &mut Tracer, loader: &mut ModuleLoader) 
         match cur_f {
             Val::Builtin(b) => return call_builtin(b, cur_args, tracer, loader),
             Val::VmFunc(fn_idx) => {
-                // Use VM_FNS without cloning — borrow for the duration of this call
-                return VM_FNS.with(|cell| {
-                    let fns = cell.borrow();
-                    // SAFETY: we hold the borrow for the duration of vm_exec_fn
-                    // No other thread modifies VM_FNS during execution (single-threaded eval)
-                    let fns_ptr: *const Vec<VmCompiledFn> = &*fns;
-                    drop(fns);
-                    let fns_ref = unsafe { &*fns_ptr };
-                    vm_exec_fn(fns_ref, fn_idx, cur_args, tracer, loader)
-                });
+                let fns = VM_FNS.with(|cell| cell.borrow().clone());
+                return vm_exec_fn(&fns, fn_idx, cur_args, tracer, loader);
             }
             Val::Func(fun) => {
                 if fun.params.len() != cur_args.len() {
@@ -4031,6 +4039,7 @@ fn eval_tco(expr: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut Module
             }
             match fv {
                 Val::Func(_) => Ok(TcoResult::TailCall(fv, av)),
+                Val::VmFunc(_) => Ok(TcoResult::Done(call(fv, av, tracer, loader)?)),
                 Val::Builtin(b) => Ok(TcoResult::Done(call_builtin(b, av, tracer, loader)?)),
                 Val::BoundMethod(receiver, func) => {
                     let mut full_args = vec![*receiver];
@@ -8158,35 +8167,72 @@ fn call_builtin(
         Builtin::PromiseSpawn => match args.as_slice() {
             [f] => {
                 let fv = f.clone();
+                let spawn_id = format!("spawn_{}", uuid::Uuid::new_v4());
+                let tmp = std::env::temp_dir();
+                let trace_path = tmp.join(format!("promise_trace_{}.ndjson", &spawn_id));
+                let trace_path2 = trace_path.clone();
                 let slot: Arc<Mutex<Option<Result<Val, String>>>> = Arc::new(Mutex::new(None));
                 let slot2 = slot.clone();
+                let child_vm_fns = VM_FNS.with(|cell| cell.borrow().clone());
+                let child_self_slots = VM_SELF_SLOTS.with(|cell| cell.borrow().clone());
+                tracer.child_spawn(&spawn_id)?;
                 std::thread::spawn(move || {
-                    let tmp = std::env::temp_dir();
-                    let trace_path = tmp.join(format!("promise_trace_{}.ndjson", uuid::Uuid::new_v4()));
-                    let trace_file = fs::File::create(&trace_path).unwrap();
-                    let mut tracer = Tracer {
+                    VM_FNS.with(|cell| { *cell.borrow_mut() = child_vm_fns; });
+                    VM_SELF_SLOTS.with(|cell| { *cell.borrow_mut() = child_self_slots; });
+                    let trace_file = fs::File::create(&trace_path2).unwrap_or_else(|_| {
+                        fs::File::create(std::env::temp_dir().join("fallback_trace.ndjson")).unwrap()
+                    });
+                    let mut child_tracer = Tracer {
                         first_event: true,
                         artifact_cids: std::collections::BTreeMap::new(),
                         w: trace_file,
                         out_dir: tmp.clone(),
                     };
                     let mut loader = ModuleLoader::new(&tmp);
-                    let result = call(fv, vec![], &mut tracer, &mut loader)
+                    let result = call(fv, vec![], &mut child_tracer, &mut loader)
                         .map_err(|e| e.to_string());
-                    let _ = fs::remove_file(&trace_path);
                     *slot2.lock().unwrap() = Some(result);
                 });
-                Ok(Val::Promise(slot))
+                Ok(Val::Promise(slot, spawn_id, trace_path))
             }
             _ => bail!("promise.spawn expects a function"),
         }
         Builtin::PromiseAwait => match args.as_slice() {
-            [Val::Promise(slot)] => {
+            [Val::Promise(slot, spawn_id, trace_path)] => {
+                let spawn_id = spawn_id.clone();
+                let trace_path = trace_path.clone();
                 loop {
                     let done = slot.lock().unwrap().is_some();
                     if done {
                         let result = slot.lock().unwrap().take().unwrap();
-                        return result.map_err(|e| anyhow::anyhow!("{}", e));
+                        let val = result.map_err(|e| anyhow::anyhow!("{}", e))?;
+                        // Read child trace and compute its digest
+                        let run_digest = if trace_path.exists() {
+                            let trace_bytes = fs::read(&trace_path).unwrap_or_default();
+                            let digest = format!("sha256:{}", hex_lower(&{
+                                let mut h = NativeSha256::new();
+                                h.update(&trace_bytes);
+                                h.finalize()
+                            }));
+                            let _ = fs::remove_file(&trace_path);
+                            digest
+                        } else {
+                            "sha256:no-trace".to_string()
+                        };
+                        // Compute result digest
+                        let result_digest = if let Some(j) = val.to_json() {
+                            let s = json_to_string(&j);
+                            format!("sha256:{}", hex_lower(&{
+                                let mut h = NativeSha256::new();
+                                h.update(s.as_bytes());
+                                h.finalize()
+                            }))
+                        } else {
+                            "sha256:no-result".to_string()
+                        };
+                        // Record child receipt in parent trace
+                        tracer.child_receipt(&spawn_id, &run_digest, &result_digest)?;
+                        return Ok(val);
                     }
                     std::thread::sleep(std::time::Duration::from_millis(1));
                 }
