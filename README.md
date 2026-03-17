@@ -30,7 +30,7 @@ It provides:
 - a WebAssembly compilation target
 - an LSP server with VS Code extension
 - a SQLite-backed receipt registry
-- a content-addressed package manager
+- a content-addressed package manager with 50 packages
 
 FARD turns program execution itself into a cryptographic artifact.
 
@@ -272,11 +272,11 @@ import("pkg:greet")  as greet
 
 **std/base64** — `encode`, `decode`
 
-**std/codec** — `base64url_encode`, `base64url_decode`, `hex_encode`, `hex_decode`
+**std/codec** — `base64url_encode`, `base64url_decode`, `base64url_encode_hex`, `hex_encode`, `hex_decode`
 
 **std/csv** — `parse`, `encode`
 
-**std/bytes** — raw byte manipulation
+**std/bytes** — `concat`, `len`, `get`, `of_list`, `to_list`, `of_str`, `to_str`
 
 ### Cryptography and Hashing
 
@@ -392,6 +392,61 @@ fardrun publish --package ./my-pkg --token <github-token>
 ```
 
 Registry: `https://github.com/mauludsadiq/FARD/releases/latest/download/registry.json`
+
+### Available Packages (50)
+
+|Package                |Category      |Description                                     |
+|-----------------------|--------------|------------------------------------------------|
+|`greet@1.6.0`          |Example       |Greeting utilities                              |
+|`toml@1.6.0`           |Data/Text     |TOML parsing and generation                     |
+|`yaml@1.6.0`           |Data/Text     |YAML parsing and generation                     |
+|`template@1.6.0`       |Data/Text     |Jinja2-style string templating                  |
+|`json-schema@1.6.0`    |Data/Text     |JSON schema validation                          |
+|`csv-extra@1.6.0`      |Data/Text     |Enhanced CSV with headers, filtering, grouping  |
+|`diff@1.6.0`           |Data/Text     |Text diffing                                    |
+|`xml@1.6.0`            |Data/Text     |XML parsing and generation                      |
+|`markdown@1.6.0`       |Data/Text     |Markdown to HTML rendering                      |
+|`http-client@1.6.0`    |HTTP          |HTTP client with retry and JSON helpers         |
+|`http-server@1.6.0`    |HTTP          |HTTP server framework with routing              |
+|`http-middleware@1.6.0`|HTTP          |CORS, auth, logging, rate-limit middleware      |
+|`jwt@1.6.0`            |Auth          |JWT encode/decode/verify (HS256)                |
+|`hmac-sign@1.6.0`      |Auth          |HMAC-SHA256 request and webhook signing         |
+|`oauth2@1.6.0`         |Auth          |OAuth2 client flows                             |
+|`kv@1.6.0`             |Storage       |Persistent key-value store                      |
+|`sqlite@1.6.0`         |Storage       |SQLite client via FFI                           |
+|`s3@1.6.0`             |Storage       |S3-compatible object storage client             |
+|`fard-test@1.6.0`      |Dev Tools     |Assertion library with rich output              |
+|`fard-bench@1.6.0`     |Dev Tools     |Microbenchmarking with witnessed results        |
+|`fard-mock@1.6.0`      |Dev Tools     |Mock HTTP server for testing                    |
+|`fard-lint@1.6.0`      |Dev Tools     |Custom lint rules                               |
+|`fard-check@1.6.0`     |Dev Tools     |Runtime type and schema validation              |
+|`semver@1.6.0`         |Build/CI      |Semantic versioning                             |
+|`glob@1.6.0`           |Build/CI      |File glob matching                              |
+|`shell@1.6.0`          |Build/CI      |Safe shell command composition                  |
+|`env-config@1.6.0`     |Build/CI      |Structured config from environment and files    |
+|`fard-ci@1.6.0`        |Build/CI      |CI pipeline primitives with witnessed steps     |
+|`stats@1.6.0`          |Data Science  |Descriptive statistics                          |
+|`table@1.6.0`          |Data Science  |In-memory tabular data (DataFrame-style)        |
+|`parse@1.6.0`          |Data Science  |Parser combinators                              |
+|`stream@1.6.0`         |Data Science  |Lazy sequences without full materialization     |
+|`csv-stream@1.6.0`     |Data Science  |Streaming CSV for large files                   |
+|`async@1.6.0`          |Async         |par_map, all, race, retry, with_timeout         |
+|`websocket@1.6.0`      |Protocols     |WebSocket frame encoding and utilities          |
+|`smtp@1.6.0`           |Protocols     |Email composition and SMTP client               |
+|`logger@1.6.0`         |Infrastructure|Structured logging with levels and child loggers|
+|`cache@1.6.0`          |Infrastructure|In-memory TTL cache                             |
+|`config@1.6.0`         |Infrastructure|Layered configuration (env → file → defaults)   |
+|`queue@1.6.0`          |Infrastructure|Persistent FIFO queue                           |
+|`pubsub@1.6.0`         |Infrastructure|Publish/subscribe event bus                     |
+|`rate-limiter@1.6.0`   |Infrastructure|Token bucket rate limiter                       |
+|`uuid@1.6.0`           |Utilities     |UUID generation and utilities                   |
+|`base64@1.6.0`         |Utilities     |Base64 encode/decode/url                        |
+|`crypto-extra@1.6.0`   |Utilities     |SHA-256, HMAC, key derivation, password hashing |
+|`regex-extra@1.6.0`    |Utilities     |Glob matching, validators, is_email/url/uuid/ip |
+|`fard-fmt-extra@1.6.0` |Utilities     |Number, byte, duration, table formatting        |
+|`fard-deploy@1.6.0`    |Deployment    |SSH, rsync, Docker, systemd, health checks      |
+|`fard-watch@1.6.0`     |Deployment    |Poll-based file watching                        |
+|`fard-notebook@1.6.0`  |Literate      |Literate programming with HTML export           |
 
 -----
 
