@@ -59,6 +59,9 @@ pub struct RunArgs {
     #[arg(long, default_value_t = false)]
     pub enforce_lockfile: bool,
 
+    #[arg(long, default_value_t = false)]
+    pub no_trace: bool,
+
     /// Program arguments passed after --
     #[arg(last = true)]
     pub program_args: Vec<String>,
@@ -120,6 +123,7 @@ impl Cli {
                 lockfile: None,
                 registry: None,
                 enforce_lockfile: false,
+                    no_trace: false,
                     program_args: vec![],
             };
             return (dummy, true, false, None, None, None, None);
@@ -135,6 +139,7 @@ impl Cli {
                     lockfile: None,
                     registry: None,
                     enforce_lockfile: false,
+                    no_trace: false,
                     program_args: vec![],
                 };
                 return (dummy, false, false, Some(t), None, None, None);
@@ -146,6 +151,7 @@ impl Cli {
                     lockfile: None,
                     registry: None,
                     enforce_lockfile: false,
+                    no_trace: false,
                     program_args: vec![],
                 };
                 return (dummy, false, false, None, Some(p), None, None);
@@ -157,6 +163,7 @@ impl Cli {
                     lockfile: None,
                     registry: None,
                     enforce_lockfile: false,
+                    no_trace: false,
                     program_args: vec![],
                 };
                 return (dummy, false, false, None, None, Some(i), None);
@@ -168,6 +175,7 @@ impl Cli {
                     lockfile: None,
                     registry: None,
                     enforce_lockfile: false,
+                    no_trace: false,
                     program_args: vec![],
                 };
                 return (dummy, false, false, None, None, None, Some(n));
@@ -180,6 +188,7 @@ impl Cli {
                         lockfile: None,
                         registry: None,
                         enforce_lockfile: false,
+                    no_trace: false,
                     program_args: vec![],
                     };
                     return (dummy, false, true, None, None, None, None);

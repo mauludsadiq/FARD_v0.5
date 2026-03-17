@@ -243,11 +243,16 @@ fn write_m5_digests(
     stdlib_root_digest: &str,
     ok: bool,
     self_digest_subst: Option<&str>,
+    no_trace: bool,
 ) -> Result<()> {
     let trace_path = out_dir.join("trace.ndjson");
     let modg_path = out_dir.join("module_graph.json");
 
-    let trace_h = format!("sha256:{}", sha256_file_hex(&trace_path)?);
+    let trace_h = if no_trace {
+        "sha256:no-trace".to_string()
+    } else {
+        format!("sha256:{}", sha256_file_hex(&trace_path)?)
+    };
     let modg_h = format!("sha256:{}", sha256_file_hex(&modg_path)?);
 
     let (leaf_name, leaf_path) = if ok {
@@ -757,7 +762,9 @@ fn main() -> Result<()> {
     fs::create_dir_all(&out_dir).ok();
     let trace_path = out_dir.join("trace.ndjson");
     let result_path = out_dir.join("result.json");
-    let mut tracer = Tracer::new(&out_dir, &trace_path)?;
+    let devnull_trace = std::env::temp_dir().join("fard_null_trace.ndjson");
+    let effective_trace = if run.no_trace { &devnull_trace } else { &trace_path };
+    let mut tracer = Tracer::new(&out_dir, effective_trace)?;
     let mut loader = ModuleLoader::new(program.parent().unwrap_or(Path::new(".")));
     // Load fard.toml from program directory for pkg dep resolution
     let fard_toml_path = program.parent().unwrap_or(Path::new(".")).join("fard.toml");
@@ -962,6 +969,7 @@ fn main() -> Result<()> {
                     &stdlib_root_digest,
                     false,
                     None,
+                    run.no_trace,
                 )?;
             }
             bail!(msg);
@@ -991,6 +999,7 @@ fn main() -> Result<()> {
                 &stdlib_root_digest,
                 true,
                 _fp_subst,
+                run.no_trace,
             )?;
             // Fixed-point check for w.self_digest()
             if let Ok(dig_bytes) = fs::read(out_dir.join("digests.json")) {
