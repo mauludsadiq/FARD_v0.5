@@ -1,145 +1,154 @@
-// async@1.6.0 — Non-blocking async utilities for FARD
-// Built on std/promise and std/chan
+// async@1.6.0 — High-level async primitives for FARD
+// Built on std/promise and std/chan.
+// Note: promise results are not connected to the main witness chain.
+// Use async for parallelism; use sequential FARD for witnessed computation.
+
 import("std/promise") as promise
 import("std/chan")    as chan
 import("std/list")   as list
-import("std/time")   as time
 import("std/rec")    as rec
+import("std/type")   as type
 
-// Run all tasks concurrently, return list of results in order
-fn all(fns) {
-  let promises = list.map(fns, fn(f) { promise.spawn(f) })
+// ── Promise combinators ───────────────────────────────────────────────────────
+
+fn spawn(f)     { promise.spawn(f) }
+fn await(p)     { promise.await(p) }
+
+fn all(promises) {
   list.map(promises, fn(p) { promise.await(p) })
 }
 
-// Run all tasks concurrently, return first result that completes
-fn race(fns) {
-  let result_chan = chan.new()
-  let promises = list.map(fns, fn(f) {
-    promise.spawn(fn() {
-      let r = f(null)
-      chan.send(result_chan, r)
-      r
-    })
-  })
-  let result = chan.recv(result_chan)
-  if rec.has(result, "some") then result.some else null
-}
-
-// Parallel map with all goroutines at once
-fn par_map(xs, f) {
+fn map_parallel(xs, f) {
   let promises = list.map(xs, fn(x) { promise.spawn(fn() { f(x) }) })
-  list.map(promises, fn(p) { promise.await(p) })
+  all(promises)
 }
 
-// Parallel map with bounded concurrency (pool size n)
-fn par_map_n(xs, f, n) {
+fn run_chunk(chunk, f) {
+  let ps = list.map(chunk, fn(x) { promise.spawn(fn() { f(x) }) })
+  list.map(ps, fn(p) { promise.await(p) })
+}
+fn map_parallel_n(xs, f, n) {
   let chunks = list.chunk(xs, n)
-  list.flat_map(chunks, fn(chunk) {
-    let promises = list.map(chunk, fn(x) { promise.spawn(fn() { f(x) }) })
-    list.map(promises, fn(p) { promise.await(p) })
+  list.flat_map(list.map(chunks, fn(chunk) { run_chunk(chunk, f) }), fn(r) { r })
+}
+
+fn race_worker(p, ch) {
+  promise.spawn(fn() { chan.send(ch, promise.await(p)) })
+}
+fn race_recv(ch) {
+  let result = chan.recv(ch)
+  result.v
+}
+fn race(promises) {
+  let ch = chan.new()
+  list.map(promises, fn(p) { race_worker(p, ch) }) |
+  race_recv(ch)
+}
+
+fn timeout_worker(p, ch) {
+  promise.spawn(fn() { chan.send(ch, { ok: true, value: promise.await(p) }) })
+}
+fn timeout_recv(ch, fallback) {
+  let got = chan.recv(ch)
+  if rec.has(got, "v") then got.v
+  else { ok: false, value: fallback }
+}
+fn timeout(f, fallback) {
+  let p = promise.spawn(f)
+  let ch = chan.new()
+  timeout_worker(p, ch) |
+  timeout_recv(ch, fallback)
+}
+
+// ── Channel helpers ───────────────────────────────────────────────────────────
+
+fn new_chan()           { chan.new() }
+fn send(ch, val)       { chan.send(ch, val) }
+fn recv(ch) {
+  let r = chan.recv(ch)
+  if rec.has(r, "v") then r.v else null
+}
+fn try_recv(ch) {
+  let r = chan.try_recv(ch)
+  if r == null then null else r.v
+}
+fn close(ch)           { chan.close(ch) }
+
+fn drain_step(s) {
+  let r = chan.try_recv(s.ch)
+  if r == null then null
+  else { value: r.v, seed: s }
+}
+fn drain(ch) {
+  list.unfold({ ch: ch, done: false }, 1000000, fn(s) {
+    if s.done then null
+    else drain_step(s)
   })
 }
 
-// Run f, retry up to max_attempts times with delay_ms between attempts
-fn retry(f, max_attempts, delay_ms) {
-  let result = while { attempt: 0, done: false, value: null, error: null }
-    fn(s) { s.done == false && s.attempt < max_attempts }
-    fn(s) {
-      let r = f(s.attempt)
-      if rec.has(r, "ok") && rec.get(r, "ok") == true then
-        { attempt: s.attempt + 1, done: true, value: r, error: null }
-      else if s.attempt + 1 >= max_attempts then
-        { attempt: s.attempt + 1, done: true, value: null, error: r }
-      else
-        let _ = time.sleep_ms(delay_ms)
-        { attempt: s.attempt + 1, done: false, value: null, error: r }
-    }
-  if result.value.value != null then result.value.value
-  else { ok: false, error: result.value.error }
-}
+// ── Worker pool ───────────────────────────────────────────────────────────────
 
-// Run f with exponential backoff retry
-fn retry_backoff(f, max_attempts) {
-  let result = while { attempt: 0, done: false, value: null, delay: 100 }
-    fn(s) { s.done == false && s.attempt < max_attempts }
-    fn(s) {
-      let r = f(s.attempt)
-      if rec.has(r, "ok") && rec.get(r, "ok") == true then
-        { attempt: s.attempt + 1, done: true, value: r, delay: s.delay }
-      else
-        let _ = time.sleep_ms(s.delay)
-        { attempt: s.attempt + 1, done: false, value: null, delay: s.delay * 2 }
-    }
-  if result.value.value != null then result.value.value
-  else { ok: false, error: "max retries exceeded" }
-}
-
-// Spawn f and return result or timeout_val after timeout_ms
-fn with_timeout(f, timeout_ms, timeout_val) {
-  let result_chan = chan.new()
-  let _ = promise.spawn(fn() {
-    let r = f(null)
-    chan.send(result_chan, { ok: true, value: r })
-    r
+fn pool_start_workers(work_ch, result_ch, worker_fn, n) {
+  list.map(list.range(0, n), fn(_) {
+    promise.spawn(fn() { pool_worker(work_ch, result_ch, worker_fn) })
   })
-  let _ = promise.spawn(fn() {
-    time.sleep_ms(timeout_ms)
-    chan.send(result_chan, { ok: false, value: timeout_val })
-    null
-  })
-  let result = chan.recv(result_chan)
-  if rec.has(result, "some") then result.some.value else timeout_val
+}
+fn pool(worker_fn, n_workers) {
+  let work_ch   = chan.new()
+  let result_ch = chan.new()
+  pool_start_workers(work_ch, result_ch, worker_fn, n_workers) |
+  { work: work_ch, results: result_ch, workers: n_workers }
 }
 
-// Run tasks sequentially, stop on first error
-fn sequence(fns) {
-  list.fold(fns, { ok: true, results: [], error: null }, fn(acc, f) {
-    if acc.ok == false then acc
-    else
-      let r = f(null)
-      if rec.has(r, "ok") && rec.get(r, "ok") == false then
-        { ok: false, results: acc.results, error: r }
-      else
-        { ok: true, results: list.concat([acc.results, [r]]), error: null }
+fn pool_do_work(work_ch, result_ch, worker_fn, item) {
+  let r = worker_fn(item.v)
+  chan.send(result_ch, r) |
+  pool_worker(work_ch, result_ch, worker_fn)
+}
+fn pool_worker(work_ch, result_ch, worker_fn) {
+  let item = chan.recv(work_ch)
+  if item == null then null
+  else pool_do_work(work_ch, result_ch, worker_fn, item)
+}
+
+fn pool_submit(p, item) { chan.send(p.work, item) }
+fn pool_recv(p) {
+  let r = chan.recv(p.results)
+  if rec.has(r, "v") then r.v else null
+}
+fn pool_close(p)        { chan.close(p.work) }
+
+// ── Pipeline ──────────────────────────────────────────────────────────────────
+
+fn pipeline(stages, input) {
+  list.fold(stages, input, fn(acc, stage) { stage(acc) })
+}
+
+fn pipeline_parallel(stages, inputs) {
+  list.fold(stages, inputs, fn(acc, stage) {
+    map_parallel(acc, stage)
   })
 }
 
-// Run tasks in parallel, collect successes and failures separately
-fn settle(fns) {
-  let results = all(fns)
-  let fulfilled = list.filter(results, fn(r) { rec.has(r, "ok") && rec.get(r, "ok") == true })
-  let rejected  = list.filter(results, fn(r) { rec.has(r, "ok") && rec.get(r, "ok") == false })
-  { fulfilled: fulfilled, rejected: rejected, total: list.len(results) }
+// ── Retry ─────────────────────────────────────────────────────────────────────
+
+fn retry(f, max_attempts) {
+  retry_loop(f, max_attempts, 0)
 }
 
-// Delay execution by ms milliseconds
-fn sleep(ms) {
-  time.sleep_ms(ms)
-  null
+fn retry_loop(f, max_attempts, attempt) {
+  if attempt >= max_attempts then { ok: false, error: "max retries exceeded" }
+  else retry_attempt(f, max_attempts, attempt, f())
+}
+fn retry_attempt(f, max_attempts, attempt, result) {
+  if rec.has(result, "ok") && result.ok == false then retry_loop(f, max_attempts, attempt + 1)
+  else result
 }
 
-// Spawn a background task (fire and forget)
-fn spawn(f) {
-  promise.spawn(f)
-}
-
-// Await a promise
-fn await(p) {
-  promise.await(p)
-}
-
-{
-  all:           all,
-  race:          race,
-  par_map:       par_map,
-  par_map_n:     par_map_n,
-  retry:         retry,
-  retry_backoff: retry_backoff,
-  with_timeout:  with_timeout,
-  sequence:      sequence,
-  settle:        settle,
-  sleep:         sleep,
-  spawn:         spawn,
-  await:         await
+export {
+  spawn, await, all, map_parallel, map_parallel_n, race, timeout,
+  new_chan, send, recv, try_recv, close, drain,
+  pool, pool_submit, pool_recv, pool_close,
+  pipeline, pipeline_parallel,
+  retry
 }
