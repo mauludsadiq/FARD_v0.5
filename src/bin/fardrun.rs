@@ -2129,9 +2129,22 @@ impl Parser {
                 let name = self.expect_ident()?;
                 self.expect_sym("(")?;
                 let mut params: Vec<(Pat, Option<Type>)> = Vec::new();
+                let mut defaults: Vec<(String, Expr)> = Vec::new();
                 if !self.eat_sym(")") {
                     loop {
                         let p = self.parse_pat()?;
+                        // Check for default value: param = expr
+                        let param_name = if let Pat::Bind(ref n) = p { Some(n.clone()) } else { None };
+                        if let Some(pname) = param_name {
+                            if self.eat_sym("=") {
+                                let default_expr = self.parse_expr()?;
+                                defaults.push((pname, default_expr));
+                                params.push((p, None));
+                                if self.eat_sym(")") { break; }
+                                self.expect_sym(",")?;
+                                continue;
+                            }
+                        }
                         let ann = if self.eat_sym(":") {
                             Some(self.parse_type()?)
                         } else {
@@ -2150,8 +2163,46 @@ impl Parser {
                     None
                 };
                 self.expect_sym("{")?;
-                let body = self.parse_fn_block_body()?;
-                items.push(Item::Fn(name, params, ret, body));
+                let mut body = self.parse_fn_block_body()?;
+                // Desugar default args: prepend let bindings for defaulted params
+                // fn f(a, b = expr) { body } ->
+                // fn f(a, b) { body }  (full arity, used directly)
+                // fn f__d(a) { f(a, expr) }  (short-arity helper, name__d suffix removed params count)
+                if !defaults.is_empty() {
+                    // Desugar default args by wrapping body with null-sentinel defaults.
+                    // fn f(a, b = expr) { body }
+                    // becomes: fn f(a, b) { let b = if b == null then expr else b in body }
+                    // Callers use null explicitly for defaults: f(1, null) or f(1) via short helper.
+                    let n_defaults = defaults.len();
+                    let n_required = params.len() - n_defaults;
+                    // Wrap body: for each default param, prepend: let param = if param == null then default else param
+                    let mut wrapped = body;
+                    for (pname, dexpr) in defaults.iter().rev() {
+                        let check = Expr::If(
+                            Box::new(Expr::Bin("==".to_string(),
+                                Box::new(Expr::Var(pname.clone())),
+                                Box::new(Expr::Null))),
+                            Box::new(dexpr.clone()),
+                            Box::new(Expr::Var(pname.clone())),
+                        );
+                        wrapped = Expr::Let(pname.clone(), Box::new(check), Box::new(wrapped));
+                    }
+                    // Emit full-arity fn with wrapped body (accepts null for defaults)
+                    items.push(Item::Fn(name.clone(), params.clone(), ret, wrapped));
+                    // Emit short-arity helper that passes null for defaulted params
+                    let required_params: Vec<(Pat, Option<Type>)> = params[..n_required].to_vec();
+                    let mut call_args: Vec<Expr> = required_params.iter().map(|(p, _)| {
+                        if let Pat::Bind(n) = p { Expr::Var(n.clone()) } else { Expr::Null }
+                    }).collect();
+                    for _ in &defaults {
+                        call_args.push(Expr::Null);
+                    }
+                    let call_body = Expr::Call(Box::new(Expr::Var(name.clone())), call_args);
+                    let helper_name = format!("{}__d{}", name, n_required);
+                    items.push(Item::Fn(helper_name, required_params, None, call_body));
+                } else {
+                    items.push(Item::Fn(name, params, ret, body));
+                }
                 continue;
             }
             if matches!(self.peek(), Tok::Kw(s) if s == "let") {
@@ -2332,6 +2383,19 @@ impl Parser {
             let cond = self.parse_expr()?;
             let body = self.parse_expr()?;
             return Ok(Expr::While(Box::new(init), Box::new(cond), Box::new(body)));
+        }
+        // `for pat in xs do body` — desugar to list.map(xs, fn(pat) { body })
+        if self.eat_kw("for") {
+            let pat = self.parse_pat()?;
+            self.expect_kw("in")?;
+            let xs = self.parse_expr()?;
+            self.expect_kw("do")?;
+            let body = self.parse_expr()?;
+            // Desugar: list.map(xs, fn(pat) { body })
+            let list_var = Expr::Var("list".to_string());
+            let map_fn = Expr::Get(Box::new(list_var), "map".to_string());
+            let lambda = Expr::Fn(vec![pat], Box::new(body));
+            return Ok(Expr::Call(Box::new(map_fn), vec![xs, lambda]));
         }
         if self.eat_kw("return") {
             let e = self.parse_expr()?;
@@ -2604,8 +2668,32 @@ impl Parser {
             Tok::Sym(s) if s == "[" => {
                 let mut xs = Vec::new();
                 if !self.eat_sym("]") {
+                    let first = self.parse_expr()?;
+                    // Check for list comprehension: [expr for pat in xs] or [expr for pat in xs if cond]
+                    if self.eat_kw("for") {
+                        let pat = self.parse_pat()?;
+                        self.expect_kw("in")?;
+                        let iter = self.parse_expr()?;
+                        // Optional `if cond`
+                        let filtered = if self.eat_kw("if") {
+                            let cond = self.parse_expr()?;
+                            // list.filter(iter, fn(pat) { cond })
+                            let list_var = Expr::Var("list".to_string());
+                            let filter_fn = Expr::Get(Box::new(list_var), "filter".to_string());
+                            let cond_lambda = Expr::Fn(vec![pat.clone()], Box::new(cond));
+                            Expr::Call(Box::new(filter_fn), vec![iter, cond_lambda])
+                        } else {
+                            iter
+                        };
+                        self.expect_sym("]")?;
+                        // list.map(filtered, fn(pat) { first })
+                        let list_var2 = Expr::Var("list".to_string());
+                        let map_fn = Expr::Get(Box::new(list_var2), "map".to_string());
+                        let map_lambda = Expr::Fn(vec![pat], Box::new(first));
+                        return Ok(Expr::Call(Box::new(map_fn), vec![filtered, map_lambda]));
+                    }
+                    xs.push(first);
                     loop {
-                        xs.push(self.parse_expr()?);
                         if self.eat_sym("]") {
                             break;
                         }
@@ -2613,6 +2701,7 @@ impl Parser {
                         if self.eat_sym("]") {
                             break;
                         }
+                        xs.push(self.parse_expr()?);
                     }
                 }
                 Ok(Expr::List(xs))
