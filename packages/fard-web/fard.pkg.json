@@ -1,0 +1,6 @@
+{
+  "schema": "fard.pkg.v0_1",
+  "name": "fard-web",
+  "version": "1.6.0",
+  "entrypoints": { "main": "main.fard" }
+}

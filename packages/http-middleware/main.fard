@@ -7,6 +7,7 @@ import("std/rec")   as rec
 import("std/list")  as list
 import("std/time")  as time
 import("std/trace") as trace
+import("std/uuid")  as uuid
 
 // Apply a single middleware to a handler
 fn apply(handler, middleware) {
@@ -149,7 +150,6 @@ fn rate_limit(limiter_state, key_fn) {
 fn request_id() {
   fn(handler) {
     fn(req) {
-      import("std/uuid") as uuid
       let id       = uuid.v4()
       let new_hdrs = if rec.has(req, "headers") then req.headers else {}
       let new_req  = rec.set(req, "headers", rec.set(new_hdrs, "X-Request-Id", id))

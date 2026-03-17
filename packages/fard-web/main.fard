@@ -1,0 +1,303 @@
+// fard-web@1.6.0 — Full web framework for FARD
+// Builds on http-server and http-middleware with:
+//   - Path parameter matching (/users/:id)
+//   - Grouped routers with prefix
+//   - Request validation
+//   - OpenAPI spec generation
+//   - Centralized error handling
+
+import("std/str")   as str
+import("std/list")  as list
+import("std/rec")   as rec
+import("std/json")  as json
+import("std/type")  as type
+import("std/net")   as net
+import("std/uuid")  as uuid
+
+// ── Response helpers ──────────────────────────────────────────────────────────
+
+fn res(status, body, headers) { { status: status, body: body, headers: headers } }
+fn ok(data)          { res(200, json.encode(data), { "Content-Type": "application/json" }) }
+fn created(data)     { res(201, json.encode(data), { "Content-Type": "application/json" }) }
+fn no_content()      { res(204, "", {}) }
+fn bad_request(msg)  { res(400, json.encode({ error: msg }), { "Content-Type": "application/json" }) }
+fn unauthorized(msg) { res(401, json.encode({ error: msg }), { "Content-Type": "application/json" }) }
+fn forbidden(msg)    { res(403, json.encode({ error: msg }), { "Content-Type": "application/json" }) }
+fn not_found(msg)    { res(404, json.encode({ error: msg }), { "Content-Type": "application/json" }) }
+fn method_not_allowed() { res(405, json.encode({ error: "method not allowed" }), {}) }
+fn conflict(msg)     { res(409, json.encode({ error: msg }), { "Content-Type": "application/json" }) }
+fn server_error(msg) { res(500, json.encode({ error: msg }), { "Content-Type": "application/json" }) }
+
+fn text_ok(body)     { res(200, body, { "Content-Type": "text/plain" }) }
+fn html_ok(body)     { res(200, body, { "Content-Type": "text/html" }) }
+fn redirect(url)     { res(302, "", { "Location": url }) }
+
+// ── Request helpers ───────────────────────────────────────────────────────────
+
+fn req_json(req)         { json.decode(req.body) }
+fn req_path(req)         { req.path }
+fn req_method(req)       { req.method }
+fn req_body(req)         { req.body }
+fn req_header(req, name) { if rec.has(req.headers, name) then rec.get(req.headers, name) else null }
+fn req_param(req, name)  { if rec.has(req, "params") && rec.has(req.params, name) then rec.get(req.params, name) else null }
+fn req_query(req, name)  { if rec.has(req, "query") && rec.has(req.query, name) then rec.get(req.query, name) else null }
+fn is_get(req)           { req.method == "GET" }
+fn is_post(req)          { req.method == "POST" }
+fn is_put(req)           { req.method == "PUT" }
+fn is_delete(req)        { req.method == "DELETE" }
+fn is_patch(req)         { req.method == "PATCH" }
+
+// ── Path parameter matching ───────────────────────────────────────────────────
+
+fn path_segments(path) {
+  list.filter(str.split(path, "/"), fn(s) { !(s == "") })
+}
+
+fn match_segments(pattern_segs, path_segs) {
+  if list.len(pattern_segs) != list.len(path_segs) then { ok: false, params: {} }
+  else
+    list.fold(list.range(0, list.len(pattern_segs)), { ok: true, params: {} }, fn(acc, i) {
+      match_seg_step(acc, list.get(pattern_segs, i), list.get(path_segs, i))
+    })
+}
+
+fn param_name(pseg) { str.slice(pseg, 1, str.len(pseg)) }
+fn match_seg_step(acc, pseg, rseg) {
+  if acc.ok == false then acc
+  else if str.starts_with(pseg, ":") then { ok: true, params: rec.set(acc.params, param_name(pseg), rseg) }
+  else if pseg == rseg then acc
+  else { ok: false, params: {} }
+}
+
+fn match_path(pattern, path) {
+  match_segments(path_segments(pattern), path_segments(path))
+}
+
+// ── Route definition ──────────────────────────────────────────────────────────
+
+fn route(method, pattern, handler) {
+  { method: method, pattern: pattern, handler: handler, meta: {} }
+}
+
+fn route_meta(method, pattern, handler, meta) {
+  { method: method, pattern: pattern, handler: handler, meta: meta }
+}
+
+fn get(pattern, handler)    { route("GET",    pattern, handler) }
+fn post(pattern, handler)   { route("POST",   pattern, handler) }
+fn put(pattern, handler)    { route("PUT",    pattern, handler) }
+fn delete(pattern, handler) { route("DELETE", pattern, handler) }
+fn patch(pattern, handler)  { route("PATCH",  pattern, handler) }
+fn options(pattern, handler){ route("OPTIONS",pattern, handler) }
+
+// ── Router ────────────────────────────────────────────────────────────────────
+
+fn find_route(routes, req) {
+  list.find(routes, fn(r) {
+    let m = match_path(r.pattern, req.path)
+    r.method == req.method && m.ok
+  })
+}
+
+fn dispatch_found(r, req) {
+  let m = match_path(r.pattern, req.path)
+  r.handler(rec.set(req, "params", m.params))
+}
+fn dispatch(routes, req) {
+  let found = find_route(routes, req)
+  if rec.has(found, "some") then dispatch_found(found.some, req)
+  else if has_path_match(routes, req) then method_not_allowed()
+  else not_found(str.concat("no route: ", req.path))
+}
+
+fn has_path_match(routes, req) {
+  rec.has(list.find(routes, fn(r) {
+    let m = match_path(r.pattern, req.path)
+    m.ok
+  }), "some")
+}
+
+fn router(routes) { fn(req) { dispatch(routes, req) } }
+
+// ── Route prefix grouping ─────────────────────────────────────────────────────
+
+fn prefix(pfx, routes) {
+  list.map(routes, fn(r) {
+    rec.set(r, "pattern", str.concat(pfx, r.pattern))
+  })
+}
+
+fn merge(routes_a, routes_b) {
+  list.concat([routes_a, routes_b])
+}
+
+// ── Middleware ────────────────────────────────────────────────────────────────
+
+fn wrap(handler, middlewares) {
+  list.fold(list.reverse(middlewares), handler, fn(acc, mw) { mw(acc) })
+}
+
+fn cors_mw() {
+  fn(handler) {
+    fn(req) {
+      let resp = handler(req)
+      let hdrs = if rec.has(resp, "headers") then resp.headers else {}
+      let hdrs2 = rec.set(hdrs, "Access-Control-Allow-Origin", "*")
+      let hdrs3 = rec.set(hdrs2, "Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
+      rec.set(resp, "headers", rec.set(hdrs3, "Access-Control-Allow-Headers", "Content-Type, Authorization"))
+    }
+  }
+}
+
+fn json_mw() {
+  fn(handler) {
+    fn(req) {
+      let resp = handler(req)
+      let hdrs = if rec.has(resp, "headers") then resp.headers else {}
+      rec.set(resp, "headers", rec.set(hdrs, "Content-Type", "application/json"))
+    }
+  }
+}
+
+fn request_id_mw() {
+  fn(handler) {
+    fn(req) {
+      let id = uuid.v4()
+      let rh = if rec.has(req, "headers") then req.headers else {}
+      let enriched = rec.set(req, "headers", rec.set(rh, "X-Request-Id", id))
+      let resp = handler(enriched)
+      let ph = if rec.has(resp, "headers") then resp.headers else {}
+      rec.set(resp, "headers", rec.set(ph, "X-Request-Id", id))
+    }
+  }
+}
+
+fn check_token(handler, req, auth, validate_fn) {
+  let token = str.slice(auth, 7, str.len(auth))
+  let result = validate_fn(token)
+  if result.ok == false then unauthorized("invalid token")
+  else handler(req)
+}
+fn bearer_auth_mw(validate_fn) {
+  fn(handler) {
+    fn(req) {
+      let auth = req_header(req, "Authorization")
+      if auth == null then unauthorized("missing authorization header")
+      else if !(str.starts_with(auth, "Bearer ")) then unauthorized("invalid auth format")
+      else check_token(handler, req, auth, validate_fn)
+    }
+  }
+}
+
+fn secure_headers_mw() {
+  fn(handler) {
+    fn(req) {
+      let resp = handler(req)
+      let h = if rec.has(resp, "headers") then resp.headers else {}
+      let h2 = rec.set(h,  "X-Content-Type-Options", "nosniff")
+      let h3 = rec.set(h2, "X-Frame-Options", "DENY")
+      rec.set(resp, "headers", rec.set(h3, "X-XSS-Protection", "1; mode=block"))
+    }
+  }
+}
+
+// ── Validation ────────────────────────────────────────────────────────────────
+
+fn require_fields(data, fields) {
+  let missing = list.filter(fields, fn(f) { !(rec.has(data, f)) })
+  if list.len(missing) == 0 then { ok: true }
+  else { ok: false, error: str.concat("missing fields: ", str.join(missing, ", ")) }
+}
+
+fn type_mismatch(data, schema, k) {
+  let expected = rec.get(schema, k)
+  let actual = type.of(rec.get(data, k))
+  !(actual == expected)
+}
+fn validate_types(data, schema) {
+  let keys = rec.keys(schema)
+  let errors = list.filter(keys, fn(k) {
+    if !(rec.has(data, k)) then false
+    else type_mismatch(data, schema, k)
+  })
+  if list.len(errors) == 0 then { ok: true }
+  else { ok: false, error: str.concat("type errors: ", str.join(errors, ", ")) }
+}
+
+fn validated(req, required_fields, handler) {
+  let data = req_json(req)
+  let check = require_fields(data, required_fields)
+  if check.ok == false then bad_request(check.error)
+  else handler(rec.set(req, "body_data", data))
+}
+
+// ── OpenAPI spec generation ───────────────────────────────────────────────────
+
+fn openapi_route(r) {
+  let method = str.lower(r.method)
+  let path   = r.pattern
+  let meta   = r.meta
+  let summary = if rec.has(meta, "summary") then rec.get(meta, "summary") else path
+  let tags    = if rec.has(meta, "tags")    then rec.get(meta, "tags")    else []
+  { method: method, path: path, summary: summary, tags: tags }
+}
+
+fn openapi(title, version, routes) {
+  let paths = list.fold(routes, {}, fn(acc, r) {
+    openapi_add_path(acc, r)
+  })
+  {
+    openapi: "3.0.0",
+    info: { title: title, version: version },
+    paths: paths
+  }
+}
+
+fn openapi_add_path(acc, r) {
+  let method  = str.lower(r.method)
+  let path    = r.pattern
+  let meta    = r.meta
+  let summary = if rec.has(meta, "summary") then rec.get(meta, "summary") else path
+  let existing = if rec.has(acc, path) then rec.get(acc, path) else {}
+  let op = { summary: summary, responses: { "200": { description: "OK" } } }
+  rec.set(acc, path, rec.set(existing, method, op))
+}
+
+fn openapi_handler(title, version, routes) {
+  let spec = openapi(title, version, routes)
+  fn(req) { ok(spec) }
+}
+
+// ── App builder ───────────────────────────────────────────────────────────────
+
+fn app(config) {
+  let title   = if rec.has(config, "title")   then rec.get(config, "title")   else "FARD API"
+  let version = if rec.has(config, "version") then rec.get(config, "version") else "1.0.0"
+  let routes  = if rec.has(config, "routes")  then rec.get(config, "routes")  else []
+  let mws     = if rec.has(config, "middleware") then rec.get(config, "middleware") else []
+  let with_docs = if rec.has(config, "docs") then rec.get(config, "docs") else false
+  let all_routes = if with_docs then
+    list.concat([routes, [get("/openapi.json", openapi_handler(title, version, routes))]])
+  else routes
+  let handler = wrap(router(all_routes), mws)
+  { title: title, version: version, routes: all_routes, handler: handler }
+}
+
+fn listen(application, port) {
+  net.serve(port, application.handler)
+}
+
+export {
+  res, ok, created, no_content, bad_request, unauthorized, forbidden,
+  not_found, method_not_allowed, conflict, server_error,
+  text_ok, html_ok, redirect,
+  req_json, req_path, req_method, req_body, req_header, req_param, req_query,
+  is_get, is_post, is_put, is_delete, is_patch,
+  match_path, path_segments,
+  route, route_meta, get, post, put, delete, patch, options,
+  dispatch, router, prefix, merge,
+  wrap, cors_mw, json_mw, request_id_mw, bearer_auth_mw, secure_headers_mw,
+  require_fields, validate_types, validated,
+  openapi, openapi_handler,
+  app, listen
+}

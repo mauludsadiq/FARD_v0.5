@@ -1,0 +1,4 @@
+name = "fard-web"
+version = "1.6.0"
+entry = "main.fard"
+description = "Full web framework for FARD — routing, validation, OpenAPI"
