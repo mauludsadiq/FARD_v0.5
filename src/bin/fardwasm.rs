@@ -392,43 +392,70 @@ impl Parser {
 }
 
 // ── WAT Code Generator ────────────────────────────────────────────────────────
+
+// ── Value representation ──────────────────────────────────────────────────────
+// All FARD values are i64 on the WASM stack.
+// Tag in high 8 bits:
+//   0x00 = Int   (i64 value in low 56 bits, sign-extended)
+//   0x01 = Float (f64 bits stored separately; i64 = ptr to f64 in memory)
+//   0x02 = Bool  (0 or 1 in low bits)
+//   0x03 = Null
+//   0x04 = Ptr to string: high 32 bits = ptr, low 32 bits = byte length
+//   0x05 = Ptr to record: i64 = ptr to {n_fields, [key_ptr, key_len, val_i64]...}
+//
+// For simplicity in this implementation:
+//   Int  -> raw i64 (no tag, pure numeric)
+//   Bool -> i64 (0 or 1)
+//   Null -> i64 0
+//   Float -> f64 stored in memory, i64 = tagged ptr
+//   String -> i64 = (ptr << 32 | len), string bytes in linear memory
+//   Record -> i64 = ptr, layout in linear memory
+//
+// Memory layout:
+//   0x0000 - 0x00FF: receipt buffer (256 bytes)
+//   0x0100 - 0x01FF: result JSON buffer (256 bytes, for WASI output)
+//   0x0200 - bump allocator start
+
+// ── Codegen ───────────────────────────────────────────────────────────────────
 struct Codegen {
-    // function bodies being built
-    out: String,
-    // local variable index map for current function
     locals: Vec<HashMap<String, u32>>,
     local_count: u32,
-    // top-level function table: name -> (param_count)
+    local_types: Vec<(u32, &'static str)>, // (local_idx, wasm_type)
     funcs: HashMap<String, usize>,
-    // global let bindings (compiled as i64 globals)
-    globals: Vec<(String, Expr)>,
-    // list of compiled func WAT strings
     func_defs: Vec<String>,
-    // list of (global_name, init_value) for simple constant globals
     global_defs: Vec<(String, i64)>,
     func_index: u32,
+    // string literals interned at compile time
+    string_pool: Vec<(String, u32)>, // (content, offset_in_data)
+    string_data_offset: u32,
+    needs_memory: bool,
+    needs_bump_alloc: bool,
 }
 
 impl Codegen {
     fn new() -> Self {
         Codegen {
-            out: String::new(),
             locals: Vec::new(),
             local_count: 0,
+            local_types: Vec::new(),
             funcs: HashMap::new(),
-            globals: Vec::new(),
             func_defs: Vec::new(),
             global_defs: Vec::new(),
             func_index: 0,
+            string_pool: Vec::new(),
+            string_data_offset: 0x0300, // start after reserved areas
+            needs_memory: false,
+            needs_bump_alloc: false,
         }
     }
 
     fn push_scope(&mut self) { self.locals.push(HashMap::new()); }
     fn pop_scope(&mut self) { self.locals.pop(); }
 
-    fn define_local(&mut self, name: &str) -> u32 {
+    fn define_local(&mut self, name: &str, ty: &'static str) -> u32 {
         let idx = self.local_count;
         self.local_count += 1;
+        self.local_types.push((idx, ty));
         if let Some(top) = self.locals.last_mut() {
             top.insert(name.to_string(), idx);
         }
@@ -442,44 +469,52 @@ impl Codegen {
         None
     }
 
+    fn intern_string(&mut self, s: &str) -> u32 {
+        // Return offset of string in data segment
+        for (content, offset) in &self.string_pool {
+            if content == s { return *offset; }
+        }
+        let offset = self.string_data_offset;
+        self.string_pool.push((s.to_string(), offset));
+        self.string_data_offset += s.len() as u32 + 1; // +1 for null terminator
+        self.needs_memory = true;
+        offset
+    }
+
     fn compile_expr(&mut self, e: &Expr, out: &mut String) {
         match e {
             Expr::Int(n) => { let _ = write!(out, "    i64.const {}\n", n); }
-            Expr::Float(f) => { let _ = write!(out, "    f64.const {}\n", f); }
+            Expr::Float(f) => {
+                // Store float as f64 on stack, boxed via local
+                let _ = write!(out, "    f64.const {}\n    i64.reinterpret_f64\n", f);
+            }
             Expr::Bool(b) => { let _ = write!(out, "    i64.const {}\n", if *b { 1 } else { 0 }); }
             Expr::Null => { let _ = write!(out, "    i64.const 0\n"); }
             Expr::Trap => { let _ = write!(out, "    unreachable\n"); }
 
             Expr::Var(name) => {
                 if let Some(idx) = self.lookup_local(name) {
-                    let wat = if idx >= 0xFFFF0000u32 { name.clone() } else { format!("{}", idx) };
-                    let _ = write!(out, "    local.get ${}\n", wat);
+                    let _ = write!(out, "    local.get $l{}\n", idx);
                 } else if self.funcs.contains_key(name) {
-                    // function reference — not directly representable as i64
-                    // emit a sentinel; actual call site handles it
                     let _ = write!(out, "    i64.const 0 ;; func ref {}\n", name);
                 } else {
-                    // global or import — emit global.get if it exists, else trap
                     let _ = write!(out, "    global.get $g_{}\n", name);
                 }
             }
 
             Expr::Let(name, val, body) => {
-                // compile val, store to local, compile body
-                let idx = self.define_local(name);
-                let _ = write!(out, "    (local ${}  i64)\n", idx);
+                let idx = self.define_local(name, "i64");
                 self.compile_expr(val, out);
-                let _ = write!(out, "    local.set ${}\n", idx);
+                let _ = write!(out, "    local.set $l{}\n", idx);
                 self.compile_expr(body, out);
             }
 
             Expr::Block(bindings, tail) => {
                 self.push_scope();
                 for (name, val) in bindings {
-                    let idx = self.define_local(name);
-                    let _ = write!(out, "    (local ${}  i64)\n", idx);
+                    let idx = self.define_local(name, "i64");
                     self.compile_expr(val, out);
-                    let _ = write!(out, "    local.set ${}\n", idx);
+                    let _ = write!(out, "    local.set $l{}\n", idx);
                 }
                 self.compile_expr(tail, out);
                 self.pop_scope();
@@ -487,7 +522,6 @@ impl Codegen {
 
             Expr::If(cond, then, else_) => {
                 self.compile_expr(cond, out);
-                // WAT if needs i32; comparisons give i32, booleans (i64) need wrap+ne
                 let _ = write!(out, "    i32.wrap_i64\n    (if (result i64)\n      (then\n");
                 self.compile_expr(then, out);
                 let _ = write!(out, "      )\n      (else\n");
@@ -496,6 +530,11 @@ impl Codegen {
             }
 
             Expr::Bin(op, lhs, rhs) => {
+                // String concatenation
+                if op == "+" {
+                    // Could be string or int — emit int path, strings need runtime check
+                    // For now: compile both, use i64.add (strings would need special handling)
+                }
                 self.compile_expr(lhs, out);
                 self.compile_expr(rhs, out);
                 let instr = match op.as_str() {
@@ -515,7 +554,6 @@ impl Codegen {
                     _    => "unreachable",
                 };
                 let _ = write!(out, "    {}\n", instr);
-                // comparisons return i32; extend to i64 so stack is always i64
                 match op.as_str() {
                     "==" | "!=" | "<" | ">" | "<=" | ">=" => {
                         let _ = write!(out, "    i64.extend_i32_s\n");
@@ -540,7 +578,6 @@ impl Codegen {
             }
 
             Expr::Call(f, args) => {
-                // Direct named call
                 if let Expr::Var(name) = f.as_ref() {
                     if self.funcs.contains_key(name) {
                         for arg in args { self.compile_expr(arg, out); }
@@ -548,31 +585,79 @@ impl Codegen {
                         return;
                     }
                 }
-                // Method call on module (e.g. math.add) → trap
-                if let Expr::Get(_, _) = f.as_ref() {
-                    let _ = write!(out, "    unreachable ;; import call\n");
-                    return;
+                // Method call: math.sqrt, str.len, etc.
+                if let Expr::Get(base, method) = f.as_ref() {
+                    if let Expr::Var(module) = base.as_ref() {
+                        match (module.as_str(), method.as_str()) {
+                            ("math", "sqrt") if args.len() == 1 => {
+                                self.compile_expr(&args[0], out);
+                                let _ = write!(out, "    f64.reinterpret_i64\n    f64.sqrt\n    i64.reinterpret_f64\n");
+                                return;
+                            }
+                            ("math", "abs") if args.len() == 1 => {
+                                self.compile_expr(&args[0], out);
+                                let _ = write!(out, "    i64.const 0\n    i64.lt_s\n    (if (result i64) (then i64.const 0 local.get $l0 i64.sub) (else local.get $l0))\n");
+                                return;
+                            }
+                            _ => {}
+                        }
+                    }
                 }
-                // Anonymous fn call — compile args, then trap (no closures in WAT)
+                // Unsupported call — trap
                 for arg in args { self.compile_expr(arg, out); }
-                let _ = write!(out, "    unreachable ;; indirect call\n");
+                let _ = write!(out, "    unreachable ;; unsupported call\n");
             }
 
             Expr::Fn(params, body) => {
-                // Inline lambda — compile as a nested func, return trap at call site
-                // (closures not supported in basic WAT)
                 let fname = format!("lambda_{}", self.func_index);
                 self.func_index += 1;
                 self.funcs.insert(fname.clone(), params.len());
                 let fdef = self.compile_func(&fname, params, body);
                 self.func_defs.push(fdef);
-                // The lambda expr itself has no i64 representation — push 0
-                let _ = write!(out, "    i64.const 0 ;; lambda ref {}\n", fname);
+                let _ = write!(out, "    i64.const 0 ;; lambda {}\n", fname);
             }
 
-            Expr::Get(_, _) | Expr::Index(_, _) | Expr::List(_) | Expr::Rec(_) => {
-                // Not representable as i64 — trap
-                let _ = write!(out, "    unreachable ;; not supported in WASM target\n");
+            Expr::Get(_, _) | Expr::Index(_, _) => {
+                let _ = write!(out, "    unreachable ;; field/index access\n");
+            }
+
+            Expr::List(items) => {
+                // Allocate list in linear memory: [n_items, item0, item1, ...]
+                // Returns i64 ptr
+                self.needs_memory = true;
+                self.needs_bump_alloc = true;
+                let n = items.len();
+                // bump_alloc((n+1) * 8) -> ptr
+                let _ = write!(out, "    i64.const {}\n    call $bump_alloc\n", (n + 1) * 8);
+                let ptr_local = self.define_local("__list_ptr", "i64");
+                let _ = write!(out, "    local.tee $l{}\n", ptr_local);
+                // store length
+                let _ = write!(out, "    i32.wrap_i64\n    i64.const {}\n    i64.store\n", n);
+                // store items
+                for (i, item) in items.iter().enumerate() {
+                    let _ = write!(out, "    local.get $l{}\n    i32.wrap_i64\n    i32.const {}\n    i32.add\n", ptr_local, (i + 1) * 8);
+                    self.compile_expr(item, out);
+                    let _ = write!(out, "    i64.store\n");
+                }
+                let _ = write!(out, "    local.get $l{}\n", ptr_local);
+            }
+
+            Expr::Rec(fields) => {
+                // Allocate record: [n_fields, [val0, val1, ...]]
+                // Key names encoded at compile time in data section
+                self.needs_memory = true;
+                self.needs_bump_alloc = true;
+                let n = fields.len();
+                let _ = write!(out, "    i64.const {}\n    call $bump_alloc\n", (n + 1) * 8);
+                let ptr_local = self.define_local("__rec_ptr", "i64");
+                let _ = write!(out, "    local.tee $l{}\n", ptr_local);
+                let _ = write!(out, "    i32.wrap_i64\n    i64.const {}\n    i64.store\n", n);
+                for (i, (_key, val)) in fields.iter().enumerate() {
+                    let _ = write!(out, "    local.get $l{}\n    i32.wrap_i64\n    i32.const {}\n    i32.add\n", ptr_local, (i + 1) * 8);
+                    self.compile_expr(val, out);
+                    let _ = write!(out, "    i64.store\n");
+                }
+                let _ = write!(out, "    local.get $l{}\n", ptr_local);
             }
         }
     }
@@ -580,16 +665,10 @@ impl Codegen {
     fn compile_func(&mut self, name: &str, params: &[String], body: &Expr) -> String {
         self.local_count = 0;
         self.locals.clear();
+        self.local_types.clear();
         self.push_scope();
 
-        let mut body_out = String::new();
-
-        // declare params as locals
-        let param_decls: String = params.iter().map(|p| {
-            format!(" (param ${} i64)", p)
-        }).collect();
-
-        // use actual param names in WAT; store sentinel 0xFFFF0000|i to distinguish from locals
+        // Register params with sentinel high bits
         for (i, p) in params.iter().enumerate() {
             if let Some(top) = self.locals.last_mut() {
                 top.insert(p.clone(), 0xFFFF0000u32 | i as u32);
@@ -597,27 +676,33 @@ impl Codegen {
         }
         self.local_count = params.len() as u32;
 
+        let mut body_out = String::new();
         self.compile_expr(body, &mut body_out);
         self.pop_scope();
 
-        // Hoist (local ...) declarations to top of func body
-        let mut local_decls = String::new();
-        let mut instrs = String::new();
-        for line in body_out.lines() {
-            let t = line.trim();
-            if t.starts_with("(local ") {
-                let _ = writeln!(local_decls, "    {}", t);
-            } else {
-                let _ = writeln!(instrs, "{}", line);
-            }
+        let param_decls: String = params.iter()
+            .map(|p| format!(" (param ${} i64)", p))
+            .collect();
+
+        // Collect non-param locals
+        let local_decls: String = self.local_types.iter()
+            .filter(|(idx, _)| *idx >= params.len() as u32)
+            .map(|(idx, ty)| format!("    (local $l{} {})\n", idx, ty))
+            .collect();
+
+        // Fix local references: replace $lN where N < n_params with $param_name
+        let mut fixed_body = body_out.clone();
+        for (i, p) in params.iter().enumerate() {
+            let sentinel = format!("$l{}", 0xFFFF0000u32 | i as u32);
+            fixed_body = fixed_body.replace(&sentinel, &format!("${}", p));
         }
 
         format!(
-            "  (func $f_{name}{param_decls} (result i64)\n{local_decls}{instrs}  )\n",
+            "  (func $f_{name}{param_decls} (result i64)\n{local_decls}{body}  )\n",
             name = name,
             param_decls = param_decls,
             local_decls = local_decls,
-            instrs = instrs,
+            body = fixed_body,
         )
     }
 }
@@ -669,6 +754,9 @@ fn main() {
 
     // Second pass: compile
     let mut exports = Vec::new();
+    let mut main_expr: Option<Expr> = None;
+    let mut top_globals: Vec<(String, i64)> = Vec::new();
+
     for item in items {
         match item {
             TopItem::Fn(name, params, body) => {
@@ -677,13 +765,14 @@ fn main() {
                 exports.push(name.clone());
             }
             TopItem::Let(name, expr) => {
-                // Simple constant globals only
-                if let Expr::Int(n) = expr {
-                    cg.global_defs.push((name, n));
-                } else if let Expr::Bool(b) = expr {
-                    cg.global_defs.push((name, if b { 1 } else { 0 }));
+                match &expr {
+                    Expr::Int(n) => { top_globals.push((name, *n)); }
+                    Expr::Bool(b) => { top_globals.push((name, if *b { 1 } else { 0 })); }
+                    _ => {
+                        // Last non-trivial let becomes the main expression
+                        main_expr = Some(expr);
+                    }
                 }
-                // Complex lets — skip for now
             }
         }
     }
@@ -692,17 +781,197 @@ fn main() {
     let mut wat = String::new();
     let _ = write!(wat, "(module\n");
 
-    // globals
-    for (name, val) in &cg.global_defs {
+    // WASI imports MUST come before memory and other definitions
+    if target == "wasi" {
+        let _ = write!(wat, "  (import \"wasi_snapshot_preview1\" \"fd_write\" (func $fd_write (param i32 i32 i32 i32) (result i32)))\n");
+        let _ = write!(wat, "  (import \"wasi_snapshot_preview1\" \"proc_exit\" (func $proc_exit (param i32)))\n");
+    }
+
+    // Memory
+    let needs_mem = cg.needs_memory || main_expr.is_some();
+    if needs_mem || target == "wasi" {
+        let _ = write!(wat, "  (memory (export \"memory\") 2)\n");
+    }
+
+    // Bump allocator global
+    if cg.needs_bump_alloc || target == "wasi" {
+        let _ = write!(wat, "  (global $heap_ptr (mut i32) (i32.const 0x0400))\n");
+    }
+
+    // Globals
+    for (name, val) in &top_globals {
         let _ = write!(wat, "  (global $g_{} i64 (i64.const {}))\n", name, val);
     }
 
-    // lambda funcs (defined during compilation)
+    // String data section
+    if !cg.string_pool.is_empty() {
+        for (content, offset) in &cg.string_pool {
+            let escaped: String = content.chars().map(|c| {
+                if c.is_ascii_graphic() || c == ' ' {
+                    c.to_string()
+                } else {
+                    format!("\\{:02x}", c as u8)
+                }
+            }).collect();
+            let _ = write!(wat, "  (data (i32.const {}) \"{}\\00\")\n", offset, escaped);
+        }
+    }
+
+    // Bump allocator function
+    if cg.needs_bump_alloc || target == "wasi" {
+        let _ = write!(wat, r#"  (func $bump_alloc (param $size i64) (result i64)
+    global.get $heap_ptr
+    i64.extend_i32_u
+    global.get $heap_ptr
+    local.get $size
+    i32.wrap_i64
+    i32.add
+    global.set $heap_ptr
+  )
+"#);
+    }
+
+    // i64_to_str helper (writes decimal i64 to memory, returns ptr+len as i64)
+    if target == "wasi" {
+        let _ = write!(wat, r#"  (func $i64_to_str (param $n i64) (result i32 i32)
+    (local $ptr i32)
+    (local $end i32)
+    (local $neg i32)
+    i32.const 0x0118
+    local.set $end
+    i32.const 0x0118
+    local.set $ptr
+    ;; handle zero
+    local.get $n
+    i64.const 0
+    i64.eq
+    (if
+      (then
+        local.get $ptr
+        i32.const 1
+        i32.sub
+        local.tee $ptr
+        i32.const 48
+        i32.store8
+        local.get $ptr
+        local.get $end
+        local.get $ptr
+        i32.sub
+        return
+      )
+    )
+    ;; handle negative
+    local.get $n
+    i64.const 0
+    i64.lt_s
+    local.tee $neg
+    (if
+      (then
+        i64.const 0
+        local.get $n
+        i64.sub
+        local.set $n
+      )
+    )
+    ;; digits
+    (block $break
+      (loop $loop
+        local.get $n
+        i64.const 0
+        i64.gt_s
+        i32.eqz
+        br_if $break
+        local.get $ptr
+        i32.const 1
+        i32.sub
+        local.tee $ptr
+        local.get $n
+        i64.const 10
+        i64.rem_s
+        i32.wrap_i64
+        i32.const 48
+        i32.add
+        i32.store8
+        local.get $n
+        i64.const 10
+        i64.div_s
+        local.set $n
+        br $loop
+      )
+    )
+    local.get $neg
+    (if
+      (then
+        local.get $ptr
+        i32.const 1
+        i32.sub
+        local.tee $ptr
+        i32.const 45
+        i32.store8
+      )
+    )
+    local.get $ptr
+    local.get $end
+    local.get $ptr
+    i32.sub
+  )
+"#);
+
+        // fd_write helper: print string at (ptr, len) to stdout
+        let _ = write!(wat, r#"  (func $print_i64 (param $n i64)
+    (local $ptr i32)
+    (local $len i32)
+    (local $iov i32)
+    local.get $n
+    call $i64_to_str
+    local.set $len
+    local.set $ptr
+    ;; iovec at 0x00F0: [ptr, len]
+    i32.const 0x00F0
+    local.set $iov
+    local.get $iov
+    local.get $ptr
+    i32.store
+    local.get $iov
+    i32.const 4
+    i32.add
+    local.get $len
+    i32.store
+    i32.const 1  ;; stdout fd
+    local.get $iov
+    i32.const 1  ;; 1 iovec
+    i32.const 0x00F8  ;; nwritten ptr
+    call $fd_write
+    drop
+  )
+"#);
+
+        // _start: evaluate main expr, print result, exit 0
+        let main_body = if let Some(ref me) = main_expr {
+            let mut mb = String::new();
+            cg.compile_expr(me, &mut mb);
+            // collect locals needed
+            let local_decls: String = cg.local_types.iter()
+                .map(|(idx, ty)| format!("    (local $l{} {})\n", idx, ty))
+                .collect();
+            format!("{}{}    call $print_i64\n", local_decls, mb)
+        } else if !exports.is_empty() {
+            // call first exported fn with no args as demo
+            format!("    i64.const 0\n    call $f_{}\n    call $print_i64\n", exports[0])
+        } else {
+            "    i64.const 0\n    call $print_i64\n".to_string()
+        };
+
+        let _ = write!(wat, "  (func $_start\n{}    i32.const 0\n    call $proc_exit\n  )\n", main_body);
+        let _ = write!(wat, "  (export \"_start\" (func $_start))\n");
+    }
+
+    // Compiled functions
     for fdef in &cg.func_defs {
         let _ = write!(wat, "{}", fdef);
     }
 
-    // exports
+    // Function exports
     for name in &exports {
         let _ = write!(wat, "  (export \"{}\" (func $f_{}))\n", name, name);
     }
@@ -710,38 +979,26 @@ fn main() {
     let _ = write!(wat, ")\n");
 
     if target == "wasi" {
-        // Assemble WAT to WASM using wat2wasm, then report
         let tmp_wat = format!("{}.tmp.wat", out_path);
-        match std::fs::write(&tmp_wat, &wat) {
-            Ok(_) => {}
-            Err(e) => { eprintln!("error writing {}: {}", tmp_wat, e); std::process::exit(1); }
-        }
+        std::fs::write(&tmp_wat, &wat).unwrap_or_else(|e| { eprintln!("error: {e}"); std::process::exit(1); });
         let status = std::process::Command::new("wat2wasm")
             .arg(&tmp_wat).arg("-o").arg(&out_path)
             .status();
         let _ = std::fs::remove_file(&tmp_wat);
         match status {
             Ok(s) if s.success() => {
-                println!("wrote {} (wasm)", out_path);
+                println!("wrote {} (wasm, WASI)", out_path);
                 println!("{} function(s) exported", exports.len());
-                if !exports.is_empty() {
-                    println!("exports: {}", exports.join(", "));
-                }
+                if !exports.is_empty() { println!("exports: {}", exports.join(", ")); }
+                println!("run with: wasmtime {}", out_path);
             }
             Ok(_) => { eprintln!("wat2wasm failed"); std::process::exit(1); }
-            Err(e) => { eprintln!("wat2wasm not found: {e}
-Install with: brew install wabt"); std::process::exit(1); }
+            Err(e) => { eprintln!("wat2wasm not found: {e}\nInstall: brew install wabt"); std::process::exit(1); }
         }
     } else {
-        match std::fs::write(&out_path, &wat) {
-            Ok(_) => {
-                println!("wrote {}", out_path);
-                println!("{} function(s) exported", exports.len());
-                if !exports.is_empty() {
-                    println!("exports: {}", exports.join(", "));
-                }
-            }
-            Err(e) => { eprintln!("error writing {out_path}: {e}"); std::process::exit(1); }
-        }
+        std::fs::write(&out_path, &wat).unwrap_or_else(|e| { eprintln!("error: {e}"); std::process::exit(1); });
+        println!("wrote {}", out_path);
+        println!("{} function(s) exported", exports.len());
+        if !exports.is_empty() { println!("exports: {}", exports.join(", ")); }
     }
 }
