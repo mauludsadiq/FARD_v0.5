@@ -87,17 +87,22 @@ jobs:
             --bin fardregistry \
             --bin fardlock \
             --bin fardbundle \
-            --bin fardverify
+            --bin fardverify \
+            --bin fardpkg \
+            --bin fardc \
+            --bin farddoc \
+            --bin fard-build
 
       - name: Package binaries
         run: |
           DIST="fard-${{ matrix.suffix }}"
           mkdir -p "$DIST"
-          for bin in fardrun fardfmt fardcheck fardwasm fardregistry fardlock fardbundle fardverify; do
+          for bin in fardrun fardfmt fardcheck fardwasm fardregistry fardlock fardbundle fardverify fardpkg fardc farddoc fard-build; do
             cp "target/${{ matrix.target }}/release/$bin" "$DIST/" 2>/dev/null || true
           done
           cp README.md "$DIST/"
           tar czf "${DIST}.tar.gz" "$DIST"
+          # Also include install.sh for the first matrix entry
           echo "ASSET=${DIST}.tar.gz" >> $GITHUB_ENV
 
       - name: Upload release asset
@@ -107,8 +112,12 @@ jobs:
           body: |
             ## Install
 
-            Download the archive for your platform, extract, and add to PATH:
+            **One-line install:**
+            ```bash
+            curl -fsSL https://github.com/mauludsadiq/FARD/releases/latest/download/install.sh | sh
+            ```
 
+            **Manual install:**
             ```bash
             # macOS (Apple Silicon)
             curl -L https://github.com/mauludsadiq/FARD/releases/latest/download/fard-macos-aarch64.tar.gz | tar xz
@@ -122,5 +131,20 @@ jobs:
             curl -L https://github.com/mauludsadiq/FARD/releases/latest/download/fard-linux-x86_64.tar.gz | tar xz
             sudo mv fard-linux-x86_64/fard* /usr/local/bin/
             ```
+
+            **Verify install:**
+            ```bash
+            fardrun --version
+            ```
+
+            13 binaries: fardrun, fardfmt, fardcheck, fardwasm, fardregistry, fardlock, fardbundle, fardverify, fardpkg, fardc, farddoc, fard-build, fard-lsp
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload install script (aarch64 only)
+        if: matrix.suffix == 'macos-aarch64'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: install.sh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
