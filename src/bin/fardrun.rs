@@ -3862,8 +3862,11 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
         Expr::While(init_expr, cond_expr, body_expr) => {
             let mut state = eval(init_expr, env, tracer, loader)?;
             let mut chain: [u8;32] = sha256_raw(b"").try_into().unwrap_or([0u8;32]);
-            let mut steps: Vec<Val> = Vec::new();
             let mut step_idx: i64 = 0;
+            let compact = std::env::var("FARD_COMPACT_WHILE").is_ok();
+            if compact {
+                let _ = tracer.emit_raw(&format!(r#"{{"t":"while_start"}}"#));
+            }
             loop {
                 let cv = call(eval(cond_expr, env, tracer, loader)?, vec![state.clone()], tracer, loader)?;
                 match cv {
@@ -3871,28 +3874,27 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                     Val::Bool(true) => {
                         let before = state.clone();
                         state = call(eval(body_expr, env, tracer, loader)?, vec![before.clone()], tracer, loader)?;
-                        // build step digest
                         let before_j = before.to_json().map(|j| json_to_string(&j)).unwrap_or_else(|| "null".to_string());
                         let after_j  = state.to_json().map(|j| json_to_string(&j)).unwrap_or_else(|| "null".to_string());
                         let pre_hex  = hex_lower(&chain);
                         let args_str = format!("{{\"step\":{},\"before\":{},\"after\":{}}}", step_idx, before_j, after_j);
                         let digest_input = format!("{{\"args\":{},\"op\":\"WHILE_STEP\",\"post\":\"{}\",\"pre\":\"{}\"}}", args_str, after_j, pre_hex);
                         chain = sha256_raw(digest_input.as_bytes()).try_into().unwrap_or([0u8;32]);
-                        let chain_hex = hex_lower(&chain);
-                        let mut step_rec = BTreeMap::new();
-                        step_rec.insert("step".to_string(), Val::Int(step_idx));
-                        step_rec.insert("before".to_string(), before);
-                        step_rec.insert("after".to_string(), state.clone());
-                        step_rec.insert("chain_hex".to_string(), Val::Text(chain_hex));
-                        steps.push(Val::Record(step_rec));
+                        if compact {
+                            let ch16 = &hex_lower(&chain)[..16];
+                            let _ = tracer.emit_raw(&format!(r#"{{"t":"while_step","s":{},"h":"{}"}}"#, step_idx, ch16));
+                        }
                         step_idx += 1;
                     }
                     _ => bail!("while cond_fn must return bool"),
                 }
             }
+            if compact {
+                let _ = tracer.emit_raw(&format!(r#"{{"t":"while_end","steps":{},"chain_hex":"{}"}}"#, step_idx, hex_lower(&chain)));
+            }
             let mut result = BTreeMap::new();
             result.insert("value".to_string(), state);
-            result.insert("steps".to_string(), Val::List(steps));
+            result.insert("steps".to_string(), Val::Int(step_idx));
             result.insert("chain_hex".to_string(), Val::Text(hex_lower(&chain)));
             Ok(Val::Record(result))
         }
