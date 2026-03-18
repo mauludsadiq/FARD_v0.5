@@ -1035,8 +1035,13 @@ impl Checker {
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
+fn count_fn_lines(body: &str) -> usize {
+    body.lines().filter(|l| !l.trim().is_empty()).count()
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    let hex_haiku = args.iter().any(|a| a == "--hex-haiku");
     let program = args.iter().skip(1)
         .find(|a| !a.starts_with('-'))
         .cloned()
@@ -1107,14 +1112,41 @@ fn main() {
         }
     }
 
-    if checker.errors.is_empty() {
+    // Hex-Haiku check
+    let mut hh_warnings = 0;
+    if hex_haiku {
+        for item in &items {
+            if let TopItem::Fn(name, _, body, line) = item {
+                // Count semantic lines: number of let-bindings + 1 (return expr)
+                let line_count = match body {
+                    Expr::Block(bindings, _, _) => bindings.len() + 1,
+                    _ => 1,
+                };
+                if line_count > 6 {
+                    eprintln!("HEX_HAIKU line {}: fn '{}' is {} semantic lines (max 6)", line, name, line_count);
+                    hh_warnings += 1;
+                } else {
+                    println!("✓ fn '{}': {} line(s)", name, line_count);
+                }
+            }
+        }
+        if hh_warnings > 0 {
+            eprintln!("{} hex-haiku violation(s)", hh_warnings);
+        } else {
+            println!("hex-haiku ok — all functions ≤6 lines");
+        }
+    }
+
+    if checker.errors.is_empty() && hh_warnings == 0 {
         println!("ok — {} items checked, 0 errors", items.len());
         std::process::exit(0);
-    } else {
+    } else if !checker.errors.is_empty() {
         for e in &checker.errors {
             eprintln!("TYPE ERROR line {}: {}", e.line, e.msg);
         }
         eprintln!("{} error(s)", checker.errors.len());
+        std::process::exit(1);
+    } else {
         std::process::exit(1);
     }
 }
