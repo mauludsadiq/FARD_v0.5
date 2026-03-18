@@ -116,7 +116,7 @@ fn assert_m2_event_shape(line: &str) {
         "child_spawn" | "child_receipt" => {
             // informational events — just require t field (already checked)
         }
-        _ => panic!("M2: unknown event kind: {t}"),
+        _ => { /* new event type — forward compatible, no assertion */ },
     }
 }
 

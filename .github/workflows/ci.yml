@@ -89,10 +89,10 @@ jobs:
             --bin fardbundle \
             --bin fardverify \
             --bin fardpkg \
-            --bin fardc \
             --bin farddoc \
-            --bin fard-build \
-            --bin fard-lsp
+            --bin fard-build
+          cargo build --release --target ${{ matrix.target }} -p fardc --bin fardc
+          cargo build --release --target ${{ matrix.target }} -p fard-lsp --bin fard-lsp
 
       - name: Package binaries
         run: |
