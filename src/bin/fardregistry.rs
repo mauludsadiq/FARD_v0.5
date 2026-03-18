@@ -13,6 +13,7 @@
 use std::sync::{Arc, Mutex};
 use anyhow::{bail, Result};
 use rusqlite::{Connection, params};
+use inherit_cert_crdt::{InheritCertState, EffectKey, RunID};
 
 // ── JSON (minimal, no external dep) ──────────────────────────────────────────
 fn json_str(s: &str) -> String {
@@ -325,6 +326,123 @@ fn handle(req: &mut tiny_http::Request, db: &Arc<Mutex<Db>>) -> (u16, &'static s
                 Ok(depth) => (200, "application/json",
                     format!("{{\"ok\":true,\"run_id\":{},\"depth\":{}}}", json_str(run_id), depth)),
                 Err(e) => (404, "application/json", err_json(&e.to_string())),
+            }
+        }
+
+        // CRDT routes for distributed receipt convergence
+        ("GET", "/crdt/state") => {
+            let state_path = std::env::var("FARD_REGISTRY_DIR")
+                .unwrap_or_else(|_| "_registry".to_string());
+            let state_file = format!("{}/inherit_cert_state.json", state_path);
+            match std::fs::read(&state_file) {
+                Ok(bytes) => (200, "application/json", String::from_utf8_lossy(&bytes).to_string()),
+                Err(_) => {
+                    let empty = InheritCertState::new().to_json();
+                    (200, "application/json", serde_json::to_string(&empty).unwrap_or_default())
+                }
+            }
+        }
+
+        ("POST", "/crdt/propose") => {
+            // body: {"effect_kind": "...", "req_hex": "...", "run_id": "sha256:..."}
+            match jparse(&body) {
+                Ok(v) => {
+                    let kind = v.get("effect_kind").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    let req_hex = v.get("req_hex").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    let run_id_str = v.get("run_id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    let run_id = RunID::new(run_id_str.clone());
+                    if !run_id.is_valid() {
+                        return (400, "application/json", err_json("invalid run_id"));
+                    }
+                    let req_bytes = match hex::decode(&req_hex) {
+                        Ok(b) => b,
+                        Err(_) => return (400, "application/json", err_json("invalid req_hex")),
+                    };
+                    let key = EffectKey::from_kind_req(&kind, &req_bytes);
+                    // Load, propose, save
+                    let state_path = std::env::var("FARD_REGISTRY_DIR")
+                        .unwrap_or_else(|_| "_registry".to_string());
+                    let state_file = format!("{}/inherit_cert_state.json", state_path);
+                    let mut state = if let Ok(bytes) = std::fs::read(&state_file) {
+                        serde_json::from_slice::<serde_json::Value>(&bytes)
+                            .ok()
+                            .and_then(|v| InheritCertState::from_json(&v).ok())
+                            .unwrap_or_default()
+                    } else {
+                        InheritCertState::new()
+                    };
+                    state.propose(key.clone(), run_id);
+                    let json = serde_json::to_string_pretty(&state.to_json()).unwrap_or_default();
+                    let _ = std::fs::create_dir_all(&state_path);
+                    let _ = std::fs::write(&state_file, json.as_bytes());
+                    (200, "application/json",
+                        ok_json(&format!("{{\"effect_key\":{}}}", json_str(key.as_str()))))
+                }
+                Err(e) => (400, "application/json", err_json(&e.to_string())),
+            }
+        }
+
+        ("POST", "/crdt/merge") => {
+            // body: a full InheritCertState JSON — merge into our state
+            match serde_json::from_str::<serde_json::Value>(&body) {
+                Ok(v) => {
+                    let remote = match InheritCertState::from_json(&v) {
+                        Ok(s) => s,
+                        Err(e) => return (400, "application/json", err_json(&e)),
+                    };
+                    let state_path = std::env::var("FARD_REGISTRY_DIR")
+                        .unwrap_or_else(|_| "_registry".to_string());
+                    let state_file = format!("{}/inherit_cert_state.json", state_path);
+                    let mut state = if let Ok(bytes) = std::fs::read(&state_file) {
+                        serde_json::from_slice::<serde_json::Value>(&bytes)
+                            .ok()
+                            .and_then(|v| InheritCertState::from_json(&v).ok())
+                            .unwrap_or_default()
+                    } else {
+                        InheritCertState::new()
+                    };
+                    state.merge_into(&remote);
+                    let n = state.len();
+                    let json = serde_json::to_string_pretty(&state.to_json()).unwrap_or_default();
+                    let _ = std::fs::create_dir_all(&state_path);
+                    let _ = std::fs::write(&state_file, json.as_bytes());
+                    (200, "application/json",
+                        ok_json(&n.to_string()))
+                }
+                Err(e) => (400, "application/json", err_json(&e.to_string())),
+            }
+        }
+
+        _ if url.starts_with("/crdt/get/") => {
+            // GET /crdt/get/<effect_kind>/<req_hex>
+            let rest = url.trim_start_matches("/crdt/get/");
+            let parts: Vec<&str> = rest.splitn(2, '/').collect();
+            if parts.len() != 2 {
+                return (400, "application/json", err_json("usage: /crdt/get/<kind>/<req_hex>"));
+            }
+            let kind = parts[0];
+            let req_hex = parts[1];
+            let req_bytes = match hex::decode(req_hex) {
+                Ok(b) => b,
+                Err(_) => return (400, "application/json", err_json("invalid req_hex")),
+            };
+            let key = EffectKey::from_kind_req(kind, &req_bytes);
+            let state_path = std::env::var("FARD_REGISTRY_DIR")
+                .unwrap_or_else(|_| "_registry".to_string());
+            let state_file = format!("{}/inherit_cert_state.json", state_path);
+            let state = if let Ok(bytes) = std::fs::read(&state_file) {
+                serde_json::from_slice::<serde_json::Value>(&bytes)
+                    .ok()
+                    .and_then(|v| InheritCertState::from_json(&v).ok())
+                    .unwrap_or_default()
+            } else {
+                InheritCertState::new()
+            };
+            match state.get(&key) {
+                Some(run_id) => (200, "application/json",
+                    ok_json(&json_str(run_id.as_str()))),
+                None => (404, "application/json",
+                    err_json(&format!("not found: {}", key.as_str()))),
             }
         }
 

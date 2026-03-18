@@ -4,4 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+inherit_cert_crdt = { path = "../inherit_cert_crdt" }
+hex = "0.4"
+serde_json = "1"
 anyhow = "1"

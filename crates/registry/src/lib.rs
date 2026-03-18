@@ -61,3 +61,79 @@ pub fn get_bytes(runid: &str) -> Result<Vec<u8>> {
 pub fn get_path(runid: &str) -> Result<PathBuf> {
     path_for(runid)
 }
+
+// ── Inherit-Cert CRDT integration ─────────────────────────────────────────────
+
+use inherit_cert_crdt::{InheritCertState, InheritCertDelta, EffectKey, RunID};
+
+fn crdt_state_path() -> Result<PathBuf> {
+    let mut p = store_root()?;
+    p.push("inherit_cert_state.json");
+    Ok(p)
+}
+
+/// Load the current CRDT state from disk.
+pub fn crdt_load() -> Result<InheritCertState> {
+    let p = crdt_state_path()?;
+    if !p.exists() {
+        return Ok(InheritCertState::new());
+    }
+    let bytes = fs::read(&p).context("crdt_load read")?;
+    let v: serde_json::Value = serde_json::from_slice(&bytes).context("crdt_load parse")?;
+    InheritCertState::from_json(&v).map_err(|e| anyhow!("crdt_load: {}", e))
+}
+
+/// Save the CRDT state to disk atomically.
+pub fn crdt_save(state: &InheritCertState) -> Result<()> {
+    let p = crdt_state_path()?;
+    fs::create_dir_all(p.parent().unwrap())?;
+    let json = serde_json::to_string_pretty(&state.to_json())?;
+    // Atomic write via temp file
+    let tmp = p.with_extension("tmp");
+    fs::write(&tmp, json.as_bytes())?;
+    fs::rename(&tmp, &p)?;
+    Ok(())
+}
+
+/// Propose a RunID for an effect — merges into persistent CRDT state.
+pub fn crdt_propose(effect_key: EffectKey, run_id: RunID) -> Result<()> {
+    let mut state = crdt_load()?;
+    state.propose(effect_key, run_id);
+    crdt_save(&state)
+}
+
+/// Merge a delta into the persistent CRDT state.
+/// Returns the number of updates applied.
+pub fn crdt_merge_delta(delta: &InheritCertDelta) -> Result<usize> {
+    let mut state = crdt_load()?;
+    let before = state.len();
+    delta.apply_to(&mut state);
+    let after = state.len();
+    crdt_save(&state)?;
+    Ok(after - before + delta.updates.values()
+        .filter(|run_id| state.get(&delta.updates.keys()
+            .find(|k| state.certs.get(*k).map(|r| &r.value) == Some(run_id))
+            .unwrap_or(&EffectKey("".to_string()))).is_some())
+        .count())
+}
+
+/// Merge another full state into the persistent CRDT state.
+pub fn crdt_merge_state(other: &InheritCertState) -> Result<InheritCertState> {
+    let mut state = crdt_load()?;
+    state.merge_into(other);
+    crdt_save(&state)?;
+    Ok(state)
+}
+
+/// Get the canonical RunID for an effect, if any.
+pub fn crdt_get(effect_key: &EffectKey) -> Result<Option<RunID>> {
+    let state = crdt_load()?;
+    Ok(state.get(effect_key).cloned())
+}
+
+/// Compute the delta between our state and another replica's state.
+/// Returns what the other replica needs to converge.
+pub fn crdt_delta_for(their_state: &InheritCertState) -> Result<InheritCertDelta> {
+    let our_state = crdt_load()?;
+    Ok(InheritCertDelta::compute(their_state, &our_state))
+}
