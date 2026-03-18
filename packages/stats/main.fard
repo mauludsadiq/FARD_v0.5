@@ -6,10 +6,14 @@ import("std/str")   as str
 import("std/rec")   as rec
 import("std/int")   as ints
 
+/// Returns the sum of all elements in a list.
+/// xs: List(Int|Float)
 fn sum(xs) {
   list.fold(xs, 0, fn(acc, x) { acc + x })
 }
 
+/// Returns the arithmetic mean of a list. Returns 0 for empty list.
+/// xs: List(Int|Float)
 fn mean(xs) {
   let n = list.len(xs)
   if n == 0 then 0
@@ -26,6 +30,8 @@ fn variance_nonempty(xs, n) {
   let s = list.fold(sq_diffs, float.from_int(0), fn(acc, x) { float.add(acc, x) })
   float.div(s, float.from_int(n))
 }
+/// Returns the population variance of a list.
+/// xs: List(Int|Float)
 fn variance(xs) {
   let n = list.len(xs)
   if n == 0 then float.from_int(0)
