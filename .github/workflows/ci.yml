@@ -91,13 +91,14 @@ jobs:
             --bin fardpkg \
             --bin fardc \
             --bin farddoc \
-            --bin fard-build
+            --bin fard-build \
+            --bin fard-lsp
 
       - name: Package binaries
         run: |
           DIST="fard-${{ matrix.suffix }}"
           mkdir -p "$DIST"
-          for bin in fardrun fardfmt fardcheck fardwasm fardregistry fardlock fardbundle fardverify fardpkg fardc farddoc fard-build; do
+          for bin in fardrun fardfmt fardcheck fardwasm fardregistry fardlock fardbundle fardverify fardpkg fardc farddoc fard-build fard-lsp; do
             cp "target/${{ matrix.target }}/release/$bin" "$DIST/" 2>/dev/null || true
           done
           cp README.md "$DIST/"

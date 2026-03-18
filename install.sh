@@ -42,7 +42,7 @@ tar xzf "$TMP/$ARCHIVE" -C "$TMP"
 DIST="$TMP/fard-${SUFFIX}"
 INSTALLED=0
 
-for bin in "$DIST"/fard*; do
+for bin in "$DIST"/fard* "$DIST"/fard-lsp "$DIST"/fard-build; do
   [ -f "$bin" ] || continue
   name=$(basename "$bin")
   dest="$INSTALL_DIR/$name"
