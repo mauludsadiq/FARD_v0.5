@@ -264,3 +264,23 @@ pub extern "C" fn fard_onnx_result_count() -> i64 {
     let trimmed = json.trim().trim_start_matches('[').trim_end_matches(']');
     trimmed.split(',').filter(|s| !s.trim().is_empty()).count() as i64
 }
+
+/// Argmax of second half of result (indices 8..15 = tgt_layer head)
+#[no_mangle]
+pub extern "C" fn fard_onnx_result_argmax2() -> i64 {
+    let guard = LAST_RESULT.read().unwrap();
+    let json = guard.as_str();
+    if json.is_empty() { return -1; }
+    let trimmed = json.trim().trim_start_matches('[').trim_end_matches(']');
+    let vals: Vec<f32> = trimmed
+        .split(',')
+        .filter_map(|s| s.trim().parse::<f32>().ok())
+        .collect();
+    if vals.len() < 16 { return -1; }
+    // Second head is indices 8..16
+    vals[8..16].iter()
+        .enumerate()
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(i, _)| i as i64)
+        .unwrap_or(-1)
+}
