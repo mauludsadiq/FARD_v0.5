@@ -1,0 +1,14 @@
+[package]
+name = "fard-onnx"
+version = "1.6.0"
+edition = "2021"
+
+[lib]
+name = "fard_onnx"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ort = { version = "2.0.0-rc.12", features = ["load-dynamic"] }
+
+[profile.release]
+opt-level = 3

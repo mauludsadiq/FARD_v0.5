@@ -1,0 +1,35 @@
+/// FARD ONNX inference wrapper
+/// Every inference call is cryptographically receipted via ffi.call_checked.
+///
+/// Usage:
+///   import("pkg:onnx") as onnx
+///   let model = onnx.load(lib, "/path/to/model.onnx")?
+///   let result = onnx.infer(lib, model, input_floats, output_len)?
+///   let _ = onnx.free(lib, model)
+
+import("std/ffi") as ffi
+import("std/str") as str
+
+fn open_lib(path) {
+  ffi.load(path)
+}
+
+fn ping(lib) {
+  ffi.call_checked(lib, "fard_onnx_ping", [], "fard_onnx health check")
+}
+
+fn load(lib, model_path) {
+  let path_len = str.len(model_path)
+  let r = ffi.call_checked(lib, "fard_onnx_load",
+    [model_path, path_len],
+    "load ONNX model from disk")
+  if r.t == "err"
+    then { t: "err", e: r.e }
+    else if r.ok < 0
+      then { t: "err", e: "model load failed — check path and ONNX format" }
+      else { t: "ok", v: r.ok }
+}
+
+fn free(lib, handle) {
+  ffi.call_checked(lib, "fard_onnx_free", [handle], "free ONNX session")
+}

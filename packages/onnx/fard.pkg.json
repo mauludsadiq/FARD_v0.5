@@ -1,0 +1,1 @@
+{"name":"onnx","version":"1.6.0","description":"ONNX Runtime inference via ffi.call_checked — every forward pass is cryptographically witnessed","entry":"main.fard","category":"ML"}

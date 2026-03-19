@@ -42,6 +42,7 @@ hex = "0.4"
 [workspace]
 exclude = ["examples/fard-db/native"]
 members = [
+    "crates/fard-onnx",
   "crates/valuecore",
   "crates/witnesscore",
     "crates/inherit_cert_crdt",
