@@ -1,6 +1,6 @@
 # FARD — ISO EBNF Grammar
 
-**17 Mar 2026 · v1.6.0 · fully audited against `src/bin/fardrun.rs`**
+**18 Mar 2026 · v1.6.0 · fully audited against `src/bin/fardrun.rs`**
 
 This document covers the **fardrun** production dialect. All stdlib module contents
 verified directly from source — not inferred from prior documentation.
@@ -121,8 +121,8 @@ sha256_string   = string ;
 
 export_item     = "export" , "{" , ident , { "," , ident } , [ "," ] , "}" ;
 
-(* Module-level let binds IDENT only (no pattern, no "in") *)
-let_item        = "let" , ident , "=" , expr ;
+(* Module-level let binds IDENT or destructuring pattern *)
+let_item        = "let" , ( ident | obj_pat | list_pat ) , "=" , expr ;
 
 fn_item         = "fn" , ident , "(" , [ fn_param , { "," , fn_param } ] , ")"
                 , [ "->" , type ]
@@ -147,7 +147,7 @@ fn_param        = pat , [ ":" , type ] ;
 fn_block_body   = fn_block_inner , "}" ;
 fn_block_inner  = { let_binding } , seq_expr ;
 
-let_binding     = "let" , ident , "=" , expr ,
+let_binding     = "let" , ( ident | obj_pat | list_pat ) , "=" , expr ,
                   ( "in" , expr               (* terminates — inline let-in *)
                   | "|" , fn_block_inner      (* sequencing continuation *)
                   | (* nothing — block binding, continues *)
@@ -510,7 +510,9 @@ Returns hex string prefixed `sha256:`.
 
 ### std/promise
 
-`spawn`, `await`
+`spawn`, `await`, `spawn_ordered`
+
+> `spawn_ordered(fns)` spawns a list of zero-argument functions concurrently and joins in spawn order. Returns a list of results with guaranteed ordering — same digest across runs.
 
 ### std/chan
 
@@ -564,7 +566,9 @@ Returns hex string prefixed `sha256:`.
 
 ### std/ffi
 
-`open`/`load`, `call`, `call_pure`, `call_str`, `close`
+`open`/`load`, `call`, `call_pure`, `call_checked`, `call_str`, `close`
+
+> `call_checked` calls the function twice and verifies identical results (determinism check). Emits `ffi_checked` trace event on success. `call` emits `ffi_oracle` boundary event.
 
 ### std/compress
 
@@ -638,6 +642,7 @@ Returns hex string prefixed `sha256:`.
 1. **`list.concat` takes one argument** — a list of lists.
 1. **`rec.remove` not `rec.delete`.**
 1. **`int` is a reserved alias.** Use any other name.
+1. **Destructuring in `let`** — `let { a, b } = expr` works at top-level and in fn bodies. Shorthand `{ name }` without `: pat` binds to variable `name`. List destructuring `let [a, b] = list` is also supported.
 1. **`float.div` returns `Val::Bytes`.** Use integer division for serializable output.
 1. **`std/compress` uses `gzip`/`gunzip`**, not `gzip_compress`/`gzip_decompress`.
 1. **`std/graph` uses `of`/`ancestors`/`leaves`/`to_dot`**, not the previously documented API.
