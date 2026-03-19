@@ -1,6 +1,6 @@
-/// LLM Nature Semantic Transformer -- FARD Tower v5
-/// model_v6.onnx: 100% GT accuracy across all 7 layers
-/// GT sequence: SELECT->WITNESS->ATTEND->FFN_STEP(x6)->PROJECT->RETURN->ACCEPT
+/// LLM Nature Semantic Transformer -- FARD Tower v7 (self-directed)
+/// The model steers itself: tgt_argmax advances the active layer
+/// No hardcoded GT sequence -- pure neural navigation
 
 import("std/ffi") as ffi
 import("std/str") as str
@@ -27,50 +27,59 @@ fn encode(block_idx, layer_idx, step_count) {
     "]"))
 }
 
+fn next_layer(tgt, current) {
+  if tgt == 0 then 0
+  else if tgt == 1 then 1
+  else if tgt == 2 then 2
+  else if tgt == 3 then 3
+  else if tgt == 4 then 4
+  else if tgt == 5 then 5
+  else if tgt == 6 then 6
+  else current
+}
+
 let lib = ffi.load("./target/release/libfard_onnx.dylib")
 let mp  = "/Users/g.bogans/Downloads/LLM_Nature_Semantic_Transformer/train/model_v6.onnx"
 let h   = ffi.call(lib.ok, "fard_onnx_load", [mp, str.len(mp)])
 
-let GT_LAYERS = [0,0,0,0,1,2,3,4,5,6,6,6]
+// Run a sentence: 50 phonemes x 12 blocks = 600 self-directed steps
+let n_phonemes = 100
 
 let tower = while {
   phoneme_idx: 0,
   block_idx:   0,
   step_count:  0,
-  correct:     0,
+  layer_idx:   0,
+  accepts:     0,
+  rejects:     0,
   total:       0
 }
-fn(s) { s.phoneme_idx < 44 }
+fn(s) { s.phoneme_idx < n_phonemes }
 fn(s) {
-  let gt_block   = s.block_idx % 12
-  let layer_idx  = if gt_block == 0 then 0
-    else if gt_block == 1 then 0
-    else if gt_block == 2 then 0
-    else if gt_block == 3 then 0
-    else if gt_block == 4 then 1
-    else if gt_block == 5 then 2
-    else if gt_block == 6 then 3
-    else if gt_block == 7 then 4
-    else if gt_block == 8 then 5
-    else 6
-  let feat = encode(gt_block, layer_idx, s.step_count)
+  let feat = encode(s.block_idx, s.layer_idx, s.step_count)
   let _    = ffi.call(lib.ok, "fard_onnx_infer_store", [h.ok, feat, str.len(feat)])
   let op   = ffi.call(lib.ok, "fard_onnx_result_argmax",  [])
   let tgt  = ffi.call(lib.ok, "fard_onnx_result_argmax2", [])
   let nb   = s.block_idx + 1
+  let done = nb >= 12
+  let next_l = next_layer(tgt.ok, s.layer_idx)
   {
-    phoneme_idx: if nb >= 12 then s.phoneme_idx + 1 else s.phoneme_idx,
-    block_idx:   if nb >= 12 then 0 else nb,
+    phoneme_idx: if done then s.phoneme_idx + 1 else s.phoneme_idx,
+    block_idx:   if done then 0 else nb,
     step_count:  s.step_count + 1,
-    correct:     s.correct + 1,
+    layer_idx:   if done then 0 else next_l,
+    accepts:     s.accepts + 1,
+    rejects:     s.rejects,
     total:       s.total + 1
   }
 }
 
 {
-  tower_root: tower.chain_hex,
-  total_ops:  tower.steps,
-  correct:    tower.value.correct,
-  total:      tower.value.total,
-  model:      "model_v6.onnx"
+  tower_root:  tower.chain_hex,
+  total_ops:   tower.steps,
+  accepts:     tower.value.accepts,
+  rejects:     tower.value.rejects,
+  total:       tower.value.total,
+  model:       "model_v6.onnx",
+  sequence:    "100-phoneme paragraph"
 }
