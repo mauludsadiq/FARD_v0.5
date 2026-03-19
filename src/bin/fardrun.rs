@@ -1126,6 +1126,97 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
     }
 
 
+
+    // ── Notebook subcommand ───────────────────────────────────────────────────
+    if let Some(fard_v0_5_language_gate::cli::fardrun_cli::Command::Notebook(nb)) = {
+        use fard_v0_5_language_gate::cli::fardrun_cli::Cli;
+        Cli::parse_compat_notebook()
+    }
+    {
+        use std::io::Write;
+        let input = std::fs::read_to_string(&nb.input)
+            .with_context(|| format!("cannot read notebook: {}", nb.input.display()))?;
+        let out_dir = std::path::PathBuf::from(&nb.out_dir);
+        std::fs::create_dir_all(&out_dir)?;
+
+        // Parse cells: extract ```fard ... ``` blocks
+        let mut output_md = String::new();
+        let mut cell_idx = 0usize;
+        let mut i = 0;
+        let lines: Vec<&str> = input.lines().collect();
+
+        while i < lines.len() {
+            let line = lines[i];
+            if line.trim_start() == "```fard" {
+                // Collect cell source
+                let mut cell_src = String::new();
+                i += 1;
+                while i < lines.len() && lines[i].trim() != "```" {
+                    cell_src.push_str(lines[i]);
+                    cell_src.push('\n');
+                    i += 1;
+                }
+                i += 1; // skip closing ```
+
+                // Write cell to temp file
+                let cell_path = out_dir.join(format!("cell_{}.fard", cell_idx));
+                let cell_out = out_dir.join(format!("cell_{}_out", cell_idx));
+                std::fs::write(&cell_path, &cell_src)?;
+                std::fs::create_dir_all(&cell_out)?;
+
+                // Run cell
+                let exe = std::env::current_exe()?;
+                let status = std::process::Command::new(&exe)
+                    .args(["run", "--program",
+                        cell_path.to_str().unwrap(),
+                        "--out", cell_out.to_str().unwrap(),
+                        "--no-trace"])
+                    .output()?;
+
+                // Read result
+                let result = if let Ok(r) = std::fs::read_to_string(cell_out.join("result.json")) {
+                    // Pretty print the result
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&r) {
+                        let inner = v.get("result").unwrap_or(&v);
+                        serde_json::to_string_pretty(inner).unwrap_or(r)
+                    } else { r }
+                } else if !status.stderr.is_empty() {
+                    String::from_utf8_lossy(&status.stderr).trim().to_string()
+                } else {
+                    "null".to_string()
+                };
+
+                // Append to output
+                output_md.push_str("```fard\n");
+                output_md.push_str(&cell_src);
+                output_md.push_str("```\n\n");
+                output_md.push_str("```output\n");
+                output_md.push_str(&result);
+                output_md.push('\n');
+                output_md.push_str("```\n");
+
+                eprintln!("[cell {}] ok", cell_idx);
+                cell_idx += 1;
+            } else {
+                // Skip existing output blocks
+                if line.trim_start() == "```output" {
+                    while i < lines.len() && lines[i].trim() != "```" { i += 1; }
+                    i += 1;
+                } else {
+                    output_md.push_str(line);
+                    output_md.push('\n');
+                    i += 1;
+                }
+            }
+        }
+
+        // Write output
+        let out_path = nb.output.as_ref().unwrap_or(&nb.input);
+        std::fs::write(out_path, &output_md)?;
+        eprintln!("notebook: {} cell(s) executed → {}", cell_idx, out_path.display());
+        return Ok(());
+    }
+
     let program = run.program;
     let out_dir = run.out;
 

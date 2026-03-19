@@ -22,6 +22,7 @@ pub enum Command {
     Install(InstallArgs),
     New(NewArgs),
     Search(SearchArgs),
+    Notebook(NotebookArgs),
 }
 
 #[derive(Args, Debug)]
@@ -91,6 +92,19 @@ pub struct InstallArgs {
     pub manifest: PathBuf,
     #[arg(long)]
     pub registry: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+pub struct NotebookArgs {
+    /// Input notebook file (.fardnb.md)
+    #[arg(long, default_value = "notebook.fardnb.md")]
+    pub input: std::path::PathBuf,
+    /// Output file (default: overwrites input with results)
+    #[arg(long)]
+    pub output: Option<std::path::PathBuf>,
+    /// Directory for cell outputs
+    #[arg(long, default_value = "./notebook_out")]
+    pub out_dir: String,
 }
 
 #[derive(Args, Debug)]
@@ -195,6 +209,20 @@ impl Cli {
                 };
                 return (dummy, false, false, None, None, None, Some(n));
             }
+            Some(Command::Notebook(_)) => {
+                // Handled directly in fardrun.rs
+                let dummy = RunArgs {
+                    program: std::path::PathBuf::from("."),
+                    out: std::path::PathBuf::from("."),
+                    lockfile: None,
+                    registry: None,
+                    enforce_lockfile: false,
+                    no_trace: false,
+                    strict_types: false,
+                    program_args: vec![],
+                };
+                return (dummy, false, false, None, None, None, None);
+            }
             Some(Command::Search(s)) => {
                 let query = s.query.unwrap_or_default();
                 // Print search results and exit
@@ -236,5 +264,29 @@ impl Cli {
         };
 
         (run, false, false, None, None, None, None)
+    }
+}
+
+impl Cli {
+    pub fn parse_compat_notebook() -> Option<Command> {
+        let args: Vec<String> = std::env::args().collect();
+        if args.get(1).map(|s| s.as_str()) == Some("notebook") {
+            let mut input = std::path::PathBuf::from("notebook.fardnb.md");
+            let mut output: Option<std::path::PathBuf> = None;
+            let mut out_dir = "./notebook_out".to_string();
+            let mut i = 2;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--input" => { i += 1; if i < args.len() { input = std::path::PathBuf::from(&args[i]); } }
+                    "--output" => { i += 1; if i < args.len() { output = Some(std::path::PathBuf::from(&args[i])); } }
+                    "--out-dir" => { i += 1; if i < args.len() { out_dir = args[i].clone(); } }
+                    _ => {}
+                }
+                i += 1;
+            }
+            Some(Command::Notebook(NotebookArgs { input, output, out_dir }))
+        } else {
+            None
+        }
     }
 }
