@@ -217,3 +217,50 @@ pub extern "C" fn fard_onnx_result_ptr() -> i64 {
 pub extern "C" fn fard_onnx_result_len() -> i64 {
     LAST_RESULT.read().unwrap().len() as i64
 }
+
+/// Return the argmax of the last stored inference result.
+/// Returns the index of the highest logit, or -1 if no result stored.
+#[no_mangle]
+pub extern "C" fn fard_onnx_result_argmax() -> i64 {
+    let guard = LAST_RESULT.read().unwrap();
+    let json = guard.as_str();
+    if json.is_empty() { return -1; }
+    let trimmed = json.trim().trim_start_matches('[').trim_end_matches(']');
+    let vals: Vec<f32> = trimmed
+        .split(',')
+        .filter_map(|s| s.trim().parse::<f32>().ok())
+        .collect();
+    if vals.is_empty() { return -1; }
+    vals.iter()
+        .enumerate()
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(i, _)| i as i64)
+        .unwrap_or(-1)
+}
+
+/// Return the value at a specific index of the last stored result.
+/// Returns the raw bits of the f32 as i64, or -1 on error.
+#[no_mangle]
+pub extern "C" fn fard_onnx_result_at(idx: i64) -> i64 {
+    let guard = LAST_RESULT.read().unwrap();
+    let json = guard.as_str();
+    if json.is_empty() { return -1; }
+    let trimmed = json.trim().trim_start_matches('[').trim_end_matches(']');
+    let vals: Vec<f32> = trimmed
+        .split(',')
+        .filter_map(|s| s.trim().parse::<f32>().ok())
+        .collect();
+    if idx < 0 || idx as usize >= vals.len() { return -1; }
+    // Return as fixed-point * 1000000 to preserve sign and magnitude as i64
+    (vals[idx as usize] * 1_000_000.0) as i64
+}
+
+/// Return the number of elements in the last stored result.
+#[no_mangle]
+pub extern "C" fn fard_onnx_result_count() -> i64 {
+    let guard = LAST_RESULT.read().unwrap();
+    let json = guard.as_str();
+    if json.is_empty() { return 0; }
+    let trimmed = json.trim().trim_start_matches('[').trim_end_matches(']');
+    trimmed.split(',').filter(|s| !s.trim().is_empty()).count() as i64
+}
