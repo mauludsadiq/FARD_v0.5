@@ -1,5 +1,5 @@
 /// LLM Nature Semantic Transformer -- FARD Tower v5
-/// model_v5.onnx: 100% GT accuracy across all 7 layers
+/// model_v6.onnx: 100% GT accuracy across all 7 layers
 /// GT sequence: SELECT->WITNESS->ATTEND->FFN_STEP(x6)->PROJECT->RETURN->ACCEPT
 
 import("std/ffi") as ffi
@@ -28,7 +28,7 @@ fn encode(block_idx, layer_idx, step_count) {
 }
 
 let lib = ffi.load("./target/release/libfard_onnx.dylib")
-let mp  = "/Users/g.bogans/Downloads/LLM_Nature_Semantic_Transformer/train/model_v5.onnx"
+let mp  = "/Users/g.bogans/Downloads/LLM_Nature_Semantic_Transformer/train/model_v6.onnx"
 let h   = ffi.call(lib.ok, "fard_onnx_load", [mp, str.len(mp)])
 
 let GT_LAYERS = [0,0,0,0,1,2,3,4,5,6,6,6]
@@ -72,5 +72,5 @@ fn(s) {
   total_ops:  tower.steps,
   correct:    tower.value.correct,
   total:      tower.value.total,
-  model:      "model_v5.onnx"
+  model:      "model_v6.onnx"
 }
