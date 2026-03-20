@@ -1,0 +1,26 @@
+import("std/linalg") as linalg
+
+let W = [
+  [0.1, 0.2, -0.1, 0.3],
+  [0.4, -0.2, 0.1, 0.1],
+  [-0.1, 0.3, 0.2, -0.3]
+]
+let x    = [1.0, 0.5, -0.5, 2.0]
+let b    = [0.1, -0.1, 0.05]
+let z    = linalg.matvec(W, x)
+let z_b  = linalg.vec_add(z, b)
+let probs= linalg.softmax(z_b)
+let pred = linalg.argmax(probs)
+let loss = linalg.cross_entropy(probs, 0)
+let grad_z = linalg.softmax_grad(probs, 0)
+let grads  = linalg.mat_mul_vec_grad(W, x, grad_z)
+
+{
+  t: "fard_forward_pass",
+  probs: probs,
+  pred: pred,
+  loss: loss,
+  grad_z: grad_z,
+  dW: grads.dW,
+  dx: grads.dx
+}
