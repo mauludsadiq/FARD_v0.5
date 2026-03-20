@@ -1,0 +1,80 @@
+import("std/linalg") as linalg
+
+// Stage 6 — Witnessed Training Loop in FARD
+// 4 examples, 2 features, 2 classes (XOR problem)
+
+let x0 = [0.0, 0.0]
+let x1 = [0.0, 1.0]
+let x2 = [1.0, 0.0]
+let x3 = [1.0, 1.0]
+
+let W0 = [[0.1, 0.2], [-0.1, 0.3]]
+let b0 = [0.0, 0.0]
+let lr  = 0.1
+
+fn forward(W, b, x) {
+  let z   = linalg.matvec(W, x)
+  let z_b = linalg.vec_add(z, b)
+  linalg.softmax(z_b)
+}
+
+fn step_grad(W, b, x, y) {
+  let probs  = forward(W, b, x)
+  let grad_z = linalg.softmax_grad(probs, y)
+  let grads  = linalg.mat_mul_vec_grad(W, x, grad_z)
+  {dW: grads.dW, db: grad_z, loss: linalg.cross_entropy(probs, y)}
+}
+
+fn update_W(W, dW, lr) {
+  let s    = linalg.mat_scale(dW, lr)
+  let row0 = linalg.vec_sub(W[0], s[0])
+  let row1 = linalg.vec_sub(W[1], s[1])
+  [row0, row1]
+}
+
+fn update_b(b, db, lr) {
+  linalg.vec_sub(b, linalg.vec_scale(db, lr))
+}
+
+fn train_epoch(W, b, lr) {
+  let g0 = step_grad(W,  b,  x0, 0)
+  let W1 = update_W(W,  g0.dW, lr)
+  let b1 = update_b(b,  g0.db, lr)
+  let g1 = step_grad(W1, b1, x1, 1)
+  let W2 = update_W(W1, g1.dW, lr)
+  let b2 = update_b(b1, g1.db, lr)
+  let g2 = step_grad(W2, b2, x2, 1)
+  let W3 = update_W(W2, g2.dW, lr)
+  let b3 = update_b(b2, g2.db, lr)
+  let g3 = step_grad(W3, b3, x3, 0)
+  let W4 = update_W(W3, g3.dW, lr)
+  let b4 = update_b(b3, g3.db, lr)
+  let total_loss = linalg.vec_sum([g0.loss, g1.loss, g2.loss, g3.loss])
+  {W: W4, b: b4, loss: total_loss}
+}
+
+let e1  = train_epoch(W0,   b0,   lr)
+let e2  = train_epoch(e1.W, e1.b, lr)
+let e3  = train_epoch(e2.W, e2.b, lr)
+let e4  = train_epoch(e3.W, e3.b, lr)
+let e5  = train_epoch(e4.W, e4.b, lr)
+let e6  = train_epoch(e5.W, e5.b, lr)
+let e7  = train_epoch(e6.W, e6.b, lr)
+let e8  = train_epoch(e7.W, e7.b, lr)
+let e9  = train_epoch(e8.W, e8.b, lr)
+let e10 = train_epoch(e9.W, e9.b, lr)
+
+let p0 = linalg.argmax(forward(e10.W, e10.b, x0))
+let p1 = linalg.argmax(forward(e10.W, e10.b, x1))
+let p2 = linalg.argmax(forward(e10.W, e10.b, x2))
+let p3 = linalg.argmax(forward(e10.W, e10.b, x3))
+
+{
+  t:           "stage6_training_loop",
+  epochs:      10,
+  loss_e1:     e1.loss,
+  loss_e5:     e5.loss,
+  loss_e10:    e10.loss,
+  predictions: [p0, p1, p2, p3],
+  targets:     [0, 1, 1, 0]
+}
