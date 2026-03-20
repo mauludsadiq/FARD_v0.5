@@ -132,7 +132,7 @@ pub fn std_aliases() -> BTreeMap<String, BTreeMap<String, String>> {
         ("crypto",&["sha256","hkdf_sha256","xchacha20poly1305_seal","xchacha20poly1305_open"]),
         ("encode",&["base64url_encode","base64url_decode","json_parse","json_emit"]),
         ("float",&["from_int","to_int","from_text","to_text","add","sub","mul","div","exp","ln","sqrt","pow","abs","neg","lt","gt","le","ge","eq","nan","inf","is_nan","is_finite","floor","ceil","round"]),
-        ("linalg",&["dot","norm","zeros","eye","matvec","matmul","transpose","eigh","vec_add","vec_sub","vec_scale","mat_add","mat_scale"]),
+        ("linalg",&["dot","norm","zeros","eye","matvec","matmul","transpose","eigh","vec_add","vec_sub","vec_scale","mat_add","mat_scale","vec_exp","vec_log","vec_sum","vec_max","vec_mul","vec_relu","vec_relu_grad","softmax","softmax_grad","cross_entropy","outer","mat_mul_vec_grad","vec_scalar_add","mat_row_sum"]),
         ("result",&["ok","err"]),
         ("io",    &["read_file","write_file","clock_now","random_bytes"]),
         ("http",  &["http_get"]),
@@ -719,6 +719,20 @@ fn is_builtin(f: &str) -> bool {
             | "linalg_vec_scale"
             | "linalg_mat_add"
             | "linalg_mat_scale"
+            | "linalg_vec_exp"
+            | "linalg_vec_log"
+            | "linalg_vec_sum"
+            | "linalg_vec_max"
+            | "linalg_vec_mul"
+            | "linalg_vec_relu"
+            | "linalg_vec_relu_grad"
+            | "linalg_softmax"
+            | "linalg_softmax_grad"
+            | "linalg_cross_entropy"
+            | "linalg_outer"
+            | "linalg_mat_mul_vec_grad"
+            | "linalg_vec_scalar_add"
+            | "linalg_mat_row_sum"
     )
 }
 
@@ -1504,6 +1518,244 @@ fn eval_linalg_builtin(f: &str, args: &[V]) -> Result<V> {
                 ("vals".into(), vec_to_v(&eigenvalues)),
                 ("vecs".into(), mat_to_v(&eigenvecs)),
             ]))
+        }
+        "linalg_vec_exp" => {
+            if args.len() != 1 { return Ok(V::err("ERROR_ARITY linalg_vec_exp expects 1 arg")); }
+            let v = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            Ok(vec_to_v(&v.iter().map(|x| x.exp()).collect::<Vec<_>>()))
+        }
+        "linalg_vec_log" => {
+            if args.len() != 1 { return Ok(V::err("ERROR_ARITY linalg_vec_log expects 1 arg")); }
+            let v = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            Ok(vec_to_v(&v.iter().map(|x| x.ln()).collect::<Vec<_>>()))
+        }
+        "linalg_vec_sum" => {
+            if args.len() != 1 { return Ok(V::err("ERROR_ARITY linalg_vec_sum expects 1 arg")); }
+            let v = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            Ok(V::Float(v.iter().sum()))
+        }
+        "linalg_vec_max" => {
+            if args.len() != 1 { return Ok(V::err("ERROR_ARITY linalg_vec_max expects 1 arg")); }
+            let v = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            if v.is_empty() { return Ok(V::err("ERROR_BADARG linalg_vec_max empty")); }
+            Ok(V::Float(v.iter().cloned().fold(f64::NEG_INFINITY, f64::max)))
+        }
+        "linalg_vec_mul" => {
+            if args.len() != 2 { return Ok(V::err("ERROR_ARITY linalg_vec_mul expects 2 args")); }
+            let a = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            let b = match v_to_vec(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            if a.len() != b.len() { return Ok(V::err("ERROR_BADARG linalg_vec_mul length mismatch")); }
+            Ok(vec_to_v(&a.iter().zip(b.iter()).map(|(x,y)| x*y).collect::<Vec<_>>()))
+        }
+        "linalg_vec_relu" => {
+            if args.len() != 1 { return Ok(V::err("ERROR_ARITY linalg_vec_relu expects 1 arg")); }
+            let v = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            Ok(vec_to_v(&v.iter().map(|x| x.max(0.0)).collect::<Vec<_>>()))
+        }
+        "linalg_vec_relu_grad" => {
+            // gradient of relu: 1 if x > 0 else 0, multiplied by upstream grad
+            if args.len() != 2 { return Ok(V::err("ERROR_ARITY linalg_vec_relu_grad expects 2 args")); }
+            let x  = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            let dv = match v_to_vec(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            if x.len() != dv.len() { return Ok(V::err("ERROR_BADARG linalg_vec_relu_grad length mismatch")); }
+            Ok(vec_to_v(&x.iter().zip(dv.iter()).map(|(xi,di)| if *xi > 0.0 { *di } else { 0.0 }).collect::<Vec<_>>()))
+        }
+        "linalg_softmax" => {
+            // numerically stable softmax over a vector
+            if args.len() != 1 { return Ok(V::err("ERROR_ARITY linalg_softmax expects 1 arg")); }
+            let v = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            if v.is_empty() { return Ok(vec_to_v(&[])); }
+            let max = v.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let exps: Vec<f64> = v.iter().map(|x| (x - max).exp()).collect();
+            let sum: f64 = exps.iter().sum();
+            Ok(vec_to_v(&exps.iter().map(|x| x / sum).collect::<Vec<_>>()))
+        }
+        "linalg_softmax_grad" => {
+            // gradient of softmax cross-entropy: s - one_hot(y)
+            // args: softmax output s [n], true class index y (as int string)
+            if args.len() != 2 { return Ok(V::err("ERROR_ARITY linalg_softmax_grad expects 2 args")); }
+            let s = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            let y = match &args[1] {
+                V::Int(i) => *i as usize,
+                V::Text(s) => s.parse::<usize>().unwrap_or(0),
+                _ => return Ok(V::err("ERROR_BADARG linalg_softmax_grad expects int label")),
+            };
+            let mut grad = s.clone();
+            if y < grad.len() { grad[y] -= 1.0; }
+            Ok(vec_to_v(&grad))
+        }
+        "linalg_cross_entropy" => {
+            // cross entropy loss: -log(s[y])
+            // args: softmax output s [n], true class index y
+            if args.len() != 2 { return Ok(V::err("ERROR_ARITY linalg_cross_entropy expects 2 args")); }
+            let s = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            let y = match &args[1] {
+                V::Int(i) => *i as usize,
+                V::Text(s) => s.parse::<usize>().unwrap_or(0),
+                _ => return Ok(V::err("ERROR_BADARG linalg_cross_entropy expects int label")),
+            };
+            if y >= s.len() { return Ok(V::err("ERROR_BADARG linalg_cross_entropy label out of range")); }
+            let loss = -(s[y].max(1e-15).ln());
+            Ok(V::Float(loss))
+        }
+        "linalg_outer" => {
+            // outer product: a [m] x b [n] -> mat [m][n]
+            if args.len() != 2 { return Ok(V::err("ERROR_ARITY linalg_outer expects 2 args")); }
+            let a = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            let b = match v_to_vec(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            let mat: Vec<Vec<f64>> = a.iter().map(|ai| b.iter().map(|bj| ai*bj).collect()).collect();
+            Ok(mat_to_v(&mat))
+        }
+        "linalg_mat_mul_vec_grad" => {
+            // gradient of y=Wx wrt W: outer(grad_y, x)
+            // gradient of y=Wx wrt x: W^T @ grad_y
+            // args: W [m,n], x [n], grad_y [m]
+            // returns: {dW: mat[m,n], dx: vec[n]}
+            if args.len() != 3 { return Ok(V::err("ERROR_ARITY linalg_mat_mul_vec_grad expects 3 args")); }
+            let w    = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            let x    = match v_to_vec(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            let dout = match v_to_vec(&args[2]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            // dW = outer(dout, x)
+            let dw: Vec<Vec<f64>> = dout.iter().map(|di| x.iter().map(|xj| di*xj).collect()).collect();
+            // dx = W^T @ dout
+            let m = w.len(); let n = if m>0 { w[0].len() } else { 0 };
+            let mut dx = vec![0.0f64; n];
+            for i in 0..m { for j in 0..n { dx[j] += w[i][j] * dout[i]; } }
+            Ok(V::Record(vec![
+                ("dW".into(), mat_to_v(&dw)),
+                ("dx".into(), vec_to_v(&dx)),
+            ]))
+        }
+        "linalg_vec_scalar_add" => {
+            if args.len() != 2 { return Ok(V::err("ERROR_ARITY linalg_vec_scalar_add expects 2 args")); }
+            let v = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            let s = match &args[1] { V::Float(f)=>*f, V::Int(i)=>*i as f64, _=>return Ok(V::err("ERROR_BADARG scalar")) };
+            Ok(vec_to_v(&v.iter().map(|x| x+s).collect::<Vec<_>>()))
+        }
+        "linalg_mat_row_sum" => {
+            // sum each row of a matrix -> vec of row sums
+            if args.len() != 1 { return Ok(V::err("ERROR_ARITY linalg_mat_row_sum expects 1 arg")); }
+            let m = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            Ok(vec_to_v(&m.iter().map(|row| row.iter().sum()).collect::<Vec<_>>()))
+        }
+        "linalg_vec_exp" => {
+            if args.len() != 1 { return Ok(V::err("ERROR_ARITY linalg_vec_exp expects 1 arg")); }
+            let v = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            Ok(vec_to_v(&v.iter().map(|x| x.exp()).collect::<Vec<_>>()))
+        }
+        "linalg_vec_log" => {
+            if args.len() != 1 { return Ok(V::err("ERROR_ARITY linalg_vec_log expects 1 arg")); }
+            let v = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            Ok(vec_to_v(&v.iter().map(|x| x.ln()).collect::<Vec<_>>()))
+        }
+        "linalg_vec_sum" => {
+            if args.len() != 1 { return Ok(V::err("ERROR_ARITY linalg_vec_sum expects 1 arg")); }
+            let v = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            Ok(V::Float(v.iter().sum()))
+        }
+        "linalg_vec_max" => {
+            if args.len() != 1 { return Ok(V::err("ERROR_ARITY linalg_vec_max expects 1 arg")); }
+            let v = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            if v.is_empty() { return Ok(V::err("ERROR_BADARG linalg_vec_max empty")); }
+            Ok(V::Float(v.iter().cloned().fold(f64::NEG_INFINITY, f64::max)))
+        }
+        "linalg_vec_mul" => {
+            if args.len() != 2 { return Ok(V::err("ERROR_ARITY linalg_vec_mul expects 2 args")); }
+            let a = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            let b = match v_to_vec(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            if a.len() != b.len() { return Ok(V::err("ERROR_BADARG linalg_vec_mul length mismatch")); }
+            Ok(vec_to_v(&a.iter().zip(b.iter()).map(|(x,y)| x*y).collect::<Vec<_>>()))
+        }
+        "linalg_vec_relu" => {
+            if args.len() != 1 { return Ok(V::err("ERROR_ARITY linalg_vec_relu expects 1 arg")); }
+            let v = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            Ok(vec_to_v(&v.iter().map(|x| x.max(0.0)).collect::<Vec<_>>()))
+        }
+        "linalg_vec_relu_grad" => {
+            // gradient of relu: 1 if x > 0 else 0, multiplied by upstream grad
+            if args.len() != 2 { return Ok(V::err("ERROR_ARITY linalg_vec_relu_grad expects 2 args")); }
+            let x  = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            let dv = match v_to_vec(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            if x.len() != dv.len() { return Ok(V::err("ERROR_BADARG linalg_vec_relu_grad length mismatch")); }
+            Ok(vec_to_v(&x.iter().zip(dv.iter()).map(|(xi,di)| if *xi > 0.0 { *di } else { 0.0 }).collect::<Vec<_>>()))
+        }
+        "linalg_softmax" => {
+            // numerically stable softmax over a vector
+            if args.len() != 1 { return Ok(V::err("ERROR_ARITY linalg_softmax expects 1 arg")); }
+            let v = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            if v.is_empty() { return Ok(vec_to_v(&[])); }
+            let max = v.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let exps: Vec<f64> = v.iter().map(|x| (x - max).exp()).collect();
+            let sum: f64 = exps.iter().sum();
+            Ok(vec_to_v(&exps.iter().map(|x| x / sum).collect::<Vec<_>>()))
+        }
+        "linalg_softmax_grad" => {
+            // gradient of softmax cross-entropy: s - one_hot(y)
+            // args: softmax output s [n], true class index y (as int string)
+            if args.len() != 2 { return Ok(V::err("ERROR_ARITY linalg_softmax_grad expects 2 args")); }
+            let s = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            let y = match &args[1] {
+                V::Int(i) => *i as usize,
+                V::Text(s) => s.parse::<usize>().unwrap_or(0),
+                _ => return Ok(V::err("ERROR_BADARG linalg_softmax_grad expects int label")),
+            };
+            let mut grad = s.clone();
+            if y < grad.len() { grad[y] -= 1.0; }
+            Ok(vec_to_v(&grad))
+        }
+        "linalg_cross_entropy" => {
+            // cross entropy loss: -log(s[y])
+            // args: softmax output s [n], true class index y
+            if args.len() != 2 { return Ok(V::err("ERROR_ARITY linalg_cross_entropy expects 2 args")); }
+            let s = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            let y = match &args[1] {
+                V::Int(i) => *i as usize,
+                V::Text(s) => s.parse::<usize>().unwrap_or(0),
+                _ => return Ok(V::err("ERROR_BADARG linalg_cross_entropy expects int label")),
+            };
+            if y >= s.len() { return Ok(V::err("ERROR_BADARG linalg_cross_entropy label out of range")); }
+            let loss = -(s[y].max(1e-15).ln());
+            Ok(V::Float(loss))
+        }
+        "linalg_outer" => {
+            // outer product: a [m] x b [n] -> mat [m][n]
+            if args.len() != 2 { return Ok(V::err("ERROR_ARITY linalg_outer expects 2 args")); }
+            let a = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            let b = match v_to_vec(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            let mat: Vec<Vec<f64>> = a.iter().map(|ai| b.iter().map(|bj| ai*bj).collect()).collect();
+            Ok(mat_to_v(&mat))
+        }
+        "linalg_mat_mul_vec_grad" => {
+            // gradient of y=Wx wrt W: outer(grad_y, x)
+            // gradient of y=Wx wrt x: W^T @ grad_y
+            // args: W [m,n], x [n], grad_y [m]
+            // returns: {dW: mat[m,n], dx: vec[n]}
+            if args.len() != 3 { return Ok(V::err("ERROR_ARITY linalg_mat_mul_vec_grad expects 3 args")); }
+            let w    = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            let x    = match v_to_vec(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            let dout = match v_to_vec(&args[2]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            // dW = outer(dout, x)
+            let dw: Vec<Vec<f64>> = dout.iter().map(|di| x.iter().map(|xj| di*xj).collect()).collect();
+            // dx = W^T @ dout
+            let m = w.len(); let n = if m>0 { w[0].len() } else { 0 };
+            let mut dx = vec![0.0f64; n];
+            for i in 0..m { for j in 0..n { dx[j] += w[i][j] * dout[i]; } }
+            Ok(V::Record(vec![
+                ("dW".into(), mat_to_v(&dw)),
+                ("dx".into(), vec_to_v(&dx)),
+            ]))
+        }
+        "linalg_vec_scalar_add" => {
+            if args.len() != 2 { return Ok(V::err("ERROR_ARITY linalg_vec_scalar_add expects 2 args")); }
+            let v = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            let s = match &args[1] { V::Float(f)=>*f, V::Int(i)=>*i as f64, _=>return Ok(V::err("ERROR_BADARG scalar")) };
+            Ok(vec_to_v(&v.iter().map(|x| x+s).collect::<Vec<_>>()))
+        }
+        "linalg_mat_row_sum" => {
+            // sum each row of a matrix -> vec of row sums
+            if args.len() != 1 { return Ok(V::err("ERROR_ARITY linalg_mat_row_sum expects 1 arg")); }
+            let m = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err(&e.to_string())) };
+            Ok(vec_to_v(&m.iter().map(|row| row.iter().sum()).collect::<Vec<_>>()))
         }
         _ => Err(anyhow!("ERROR_EVAL unknown linalg builtin: {}", f)),
     }

@@ -3650,6 +3650,9 @@ enum Builtin {
     LinalgRelu,
     LinalgSoftmax,
     LinalgArgmax,
+    LinalgVecExp, LinalgVecLog, LinalgVecSum, LinalgVecMax, LinalgVecMul,
+    LinalgVecRelu, LinalgVecReluGrad, LinalgSoftmaxGrad, LinalgCrossEntropy,
+    LinalgOuter, LinalgMatMulVecGrad, LinalgVecScalarAdd, LinalgMatRowSum,
     ListSet,
     CastFloat, CastInt, CastText, StrJoin, ListAny, ListAll, ListFind, ListFindIndex, ListTake, ListDrop, ListFlatMap,
     MathSin, MathCos, MathTan, MathAtan2, IntToHex, IntToBin, FloatIsInf, TypeOf,
@@ -9665,6 +9668,79 @@ fn call_builtin(
             let vecs: Vec<Val> = eigenvecs.iter().map(|row| Val::List(row.iter().map(|&v| fv(v)).collect())).collect();
             { let mut m = BTreeMap::new(); m.insert("vals".into(), Val::List(vals)); m.insert("vecs".into(), Val::List(vecs)); Ok(Val::Record(m)) }
         }
+        Builtin::LinalgVecExp => {
+            let xs: Vec<f64> = vl_to_vec(&args[0])?;
+            Ok(Val::List(xs.iter().map(|x| fv(x.exp())).collect()))
+        }
+        Builtin::LinalgVecLog => {
+            let xs: Vec<f64> = vl_to_vec(&args[0])?;
+            Ok(Val::List(xs.iter().map(|x| fv(x.ln())).collect()))
+        }
+        Builtin::LinalgVecSum => {
+            let xs: Vec<f64> = vl_to_vec(&args[0])?;
+            Ok(fv(xs.iter().sum()))
+        }
+        Builtin::LinalgVecMax => {
+            let xs: Vec<f64> = vl_to_vec(&args[0])?;
+            if xs.is_empty() { bail!("ERROR_BADARG vec_max empty"); }
+            Ok(fv(xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max)))
+        }
+        Builtin::LinalgVecMul => {
+            let a: Vec<f64> = vl_to_vec(&args[0])?;
+            let b: Vec<f64> = vl_to_vec(&args[1])?;
+            if a.len() != b.len() { bail!("ERROR_BADARG vec_mul length mismatch"); }
+            Ok(Val::List(a.iter().zip(b.iter()).map(|(x,y)| fv(x*y)).collect()))
+        }
+        Builtin::LinalgVecRelu => {
+            let xs: Vec<f64> = vl_to_vec(&args[0])?;
+            Ok(Val::List(xs.iter().map(|x| fv(x.max(0.0))).collect()))
+        }
+        Builtin::LinalgVecReluGrad => {
+            let x:  Vec<f64> = vl_to_vec(&args[0])?;
+            let dv: Vec<f64> = vl_to_vec(&args[1])?;
+            if x.len() != dv.len() { bail!("ERROR_BADARG vec_relu_grad length mismatch"); }
+            Ok(Val::List(x.iter().zip(dv.iter()).map(|(xi,di)| fv(if *xi > 0.0 { *di } else { 0.0 })).collect()))
+        }
+        Builtin::LinalgSoftmaxGrad => {
+            let s: Vec<f64> = vl_to_vec(&args[0])?;
+            let y = match &args[1] { Val::Int(i) => *i as usize, _ => bail!("ERROR_BADARG softmax_grad expects int label") };
+            let mut g = s.clone();
+            if y < g.len() { g[y] -= 1.0; }
+            Ok(Val::List(g.iter().map(|x| fv(*x)).collect()))
+        }
+        Builtin::LinalgCrossEntropy => {
+            let s: Vec<f64> = vl_to_vec(&args[0])?;
+            let y = match &args[1] { Val::Int(i) => *i as usize, _ => bail!("ERROR_BADARG cross_entropy expects int label") };
+            if y >= s.len() { bail!("ERROR_BADARG cross_entropy label out of range"); }
+            Ok(fv(-(s[y].max(1e-15).ln())))
+        }
+        Builtin::LinalgOuter => {
+            let a: Vec<f64> = vl_to_vec(&args[0])?;
+            let b: Vec<f64> = vl_to_vec(&args[1])?;
+            Ok(Val::List(a.iter().map(|ai| Val::List(b.iter().map(|bj| fv(ai*bj)).collect())).collect()))
+        }
+        Builtin::LinalgMatMulVecGrad => {
+            let w = vl_to_mat(&args[0])?;
+            let x: Vec<f64> = vl_to_vec(&args[1])?;
+            let dout: Vec<f64> = vl_to_vec(&args[2])?;
+            let dw: Vec<Val> = dout.iter().map(|di| Val::List(x.iter().map(|xj| fv(di*xj)).collect())).collect();
+            let m = w.len(); let n = if m>0 { w[0].len() } else { 0 };
+            let mut dx = vec![0.0f64; n];
+            for i in 0..m { for j in 0..n { dx[j] += w[i][j] * dout[i]; } }
+            let mut rec = BTreeMap::new();
+            rec.insert("dW".into(), Val::List(dw));
+            rec.insert("dx".into(), Val::List(dx.iter().map(|x| fv(*x)).collect()));
+            Ok(Val::Record(rec))
+        }
+        Builtin::LinalgVecScalarAdd => {
+            let v: Vec<f64> = vl_to_vec(&args[0])?;
+            let s = val_to_f64_linalg(&args[1])?;
+            Ok(Val::List(v.iter().map(|x| fv(x+s)).collect()))
+        }
+        Builtin::LinalgMatRowSum => {
+            let m = vl_to_mat(&args[0])?;
+            Ok(Val::List(m.iter().map(|row| fv(row.iter().sum())).collect()))
+        }
     }
 }
 
@@ -9705,6 +9781,19 @@ fn vl_to_f64(v: &Val) -> anyhow::Result<Vec<f64>> {
     }
 }
 
+fn vl_to_vec(v: &Val) -> anyhow::Result<Vec<f64>> {
+    match v {
+        Val::List(xs) => xs.iter().map(|x| val_to_f64_linalg(x)).collect(),
+        Val::Bytes(b) => {
+            if b.len() % 8 != 0 { anyhow::bail!("ERROR_BADARG vec bytes not multiple of 8"); }
+            b.chunks(8).map(|c| {
+                let arr: [u8;8] = c.try_into().unwrap();
+                Ok(f64::from_le_bytes(arr))
+            }).collect()
+        }
+        _ => anyhow::bail!("ERROR_BADARG vl_to_vec: expected list"),
+    }
+}
 fn vl_to_mat(v: &Val) -> anyhow::Result<Vec<Vec<f64>>> {
     match v {
         Val::List(rows) => rows.iter().map(vl_to_f64).collect(),
@@ -11077,6 +11166,19 @@ Ok(m)
                 m.insert("vec_scale".to_string(), Val::Builtin(Builtin::LinalgVecScale));
                 m.insert("mat_add".to_string(), Val::Builtin(Builtin::LinalgMatAdd));
                 m.insert("mat_scale".to_string(), Val::Builtin(Builtin::LinalgMatScale));
+                m.insert("vec_exp".to_string(), Val::Builtin(Builtin::LinalgVecExp));
+                m.insert("vec_log".to_string(), Val::Builtin(Builtin::LinalgVecLog));
+                m.insert("vec_sum".to_string(), Val::Builtin(Builtin::LinalgVecSum));
+                m.insert("vec_max".to_string(), Val::Builtin(Builtin::LinalgVecMax));
+                m.insert("vec_mul".to_string(), Val::Builtin(Builtin::LinalgVecMul));
+                m.insert("vec_relu".to_string(), Val::Builtin(Builtin::LinalgVecRelu));
+                m.insert("vec_relu_grad".to_string(), Val::Builtin(Builtin::LinalgVecReluGrad));
+                m.insert("softmax_grad".to_string(), Val::Builtin(Builtin::LinalgSoftmaxGrad));
+                m.insert("cross_entropy".to_string(), Val::Builtin(Builtin::LinalgCrossEntropy));
+                m.insert("outer".to_string(), Val::Builtin(Builtin::LinalgOuter));
+                m.insert("mat_mul_vec_grad".to_string(), Val::Builtin(Builtin::LinalgMatMulVecGrad));
+                m.insert("vec_scalar_add".to_string(), Val::Builtin(Builtin::LinalgVecScalarAdd));
+                m.insert("mat_row_sum".to_string(), Val::Builtin(Builtin::LinalgMatRowSum));
                 Ok(m)
             }
             _ => bail!("unknown std module: {name}"),
